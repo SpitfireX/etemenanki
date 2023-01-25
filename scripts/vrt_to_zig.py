@@ -2,6 +2,8 @@
 
 import argparse
 
+from varint import encode_varint
+
 from pathlib import Path
 from uuid import UUID
 from struct import pack
@@ -57,7 +59,10 @@ BOM_START = 160
 LEN_BOM_ENTRY = 48
 
 def align_offset(o):
-    return o + (8 - (o % 8))
+    if o % 8 > 0:
+        return o + (8 - (o % 8))
+    else:
+        return o
 
 def data_start(clen):
     return BOM_START + (clen * LEN_BOM_ENTRY)
@@ -189,19 +194,29 @@ offset_stream = list(accumulate(chain([0], corpus[0]), lambda x, y: x + len(y)))
 offset_stream = [pack('<q', o) for o in offset_stream]
 offset_stream = b''.join(offset_stream)
 
+# build StringHash
+
+string_hash = [(fnv1a_64(s), i) for i, s in enumerate(corpus[0])]
+string_hash.sort(key=lambda x: x[0])
+string_hash = list(sum(string_hash, ()))
+string_hash = [pack('<Q', x) for x in string_hash]
+string_hash = b''.join(string_hash)
+
 ### write PlainString variable container for Tokens
 
 f = (args.output / (str(tok_uuid) + '.zigv')).open(mode="wb")
 
 ## write header
 
-nbom = 2
-offsets = [
-    data_start(nbom),
-    align_offset(data_start(2) + len(string_data)),
-]
+nbom = 3
 
-extra_padding = []
+offsets = [data_start(nbom)]
+offsets.append(align_offset(offsets[0] + len(string_data)))
+offsets.append(align_offset(offsets[1] + len(offset_stream)))
+
+print('offset table:')
+for i, o in enumerate(offsets):
+    print(f'\tcomponent {i+1}\t{hex(o)}')
 
 write_container_header(f,
     'ZVc',
@@ -226,6 +241,15 @@ write_container_header(f,
         len(offset_stream),
         clen + 1,
         1
+    ),
+    bom_entry(
+        0x06,
+        'StringHash',
+        0x00,
+        offsets[2],
+        len(string_hash),
+        clen,
+        2
     )
 )
 
@@ -240,6 +264,9 @@ f.write(string_data)
 f.write(bytes(offsets[1] - f.tell())) # extra padding for alignment
 f.write(offset_stream)
 
-# "StringHash" Index:comp
+# "StringHash" Index (TODO add compression)
+
+f.write(bytes(offsets[2] - f.tell())) # extra padding for alignment
+f.write(string_hash)
 
 f.close()
