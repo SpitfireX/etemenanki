@@ -5,6 +5,7 @@ import argparse
 from pathlib import Path
 from uuid import UUID
 from struct import pack
+from itertools import chain, accumulate
 
 from fnvhash import fnv1a_64
 
@@ -54,6 +55,9 @@ print(f'Found input file with {clen} corpus positions')
 
 BOM_START = 160
 LEN_BOM_ENTRY = 48
+
+def align_offset(o):
+    return o + (8 - (o % 8))
 
 def data_start(clen):
     return BOM_START + (clen * LEN_BOM_ENTRY)
@@ -148,4 +152,94 @@ f.write(pack('<q', clen))
 
 f.close()
 
-### Process VRT into variable containers
+### Process VRT
+
+## gather data
+
+corpus = []
+
+with args.input.open() as f:
+    # find number of p attrs
+    for line in f:
+        if not line.startswith("<"):
+            if line.strip():
+                pcount = len(line.split())
+                break
+    
+    print(f'Corpus has {pcount} p-attrs')
+    corpus = [[] for _ in range(pcount)]
+    f.seek(0) # reset file to beginning
+
+    for line in f:
+        if not line.startswith("<"):
+            if line.strip():
+                pattrs = line.split()
+                for i, attr in enumerate(pattrs):
+                    corpus[i].append((attr + '\0').encode('utf-8'))
+
+# double check dimensions
+for attr in corpus:
+    assert len(attr) == clen
+
+# build StringData
+string_data = b''.join(corpus[0])
+
+# build OffsetStream
+offset_stream = list(accumulate(chain([0], corpus[0]), lambda x, y: x + len(y)))
+offset_stream = [pack('<q', o) for o in offset_stream]
+offset_stream = b''.join(offset_stream)
+
+### write PlainString variable container for Tokens
+
+f = (args.output / (str(tok_uuid) + '.zigv')).open(mode="wb")
+
+## write header
+
+nbom = 2
+offsets = [
+    data_start(nbom),
+    align_offset(data_start(2) + len(string_data)),
+]
+
+extra_padding = []
+
+write_container_header(f,
+    'ZVc',
+    tok_uuid,
+    (clen, 0),
+    base_uuid,
+    None,
+    bom_entry(
+        0x02,
+        'StringData',
+        0x00,
+        offsets[0],
+        len(string_data),
+        clen,
+        0
+    ),
+    bom_entry(
+        0x04,
+        'OffsetStream',
+        0x00,
+        offsets[1],
+        len(offset_stream),
+        clen + 1,
+        1
+    )
+)
+
+## write components
+
+# "StringData" StringList
+
+f.write(string_data)
+
+# "OffsetStream" Vector (TODO add compression)
+
+f.write(bytes(offsets[1] - f.tell())) # extra padding for alignment
+f.write(offset_stream)
+
+# "StringHash" Index:comp
+
+f.close()
