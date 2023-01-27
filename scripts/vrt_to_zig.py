@@ -196,9 +196,13 @@ offset_stream = b''.join(offset_stream)
 
 # build StringHash
 
-string_hash = [(fnv1a_64(s), i) for i, s in enumerate(corpus[0])]
-string_hash.sort(key=lambda x: x[0])
-string_hash = list(sum(string_hash, ()))
+string_pairs = [(fnv1a_64(s), i) for i, s in enumerate(corpus[0])]
+string_pairs.sort(key=lambda x: x[0])
+
+string_hash = []
+for pair in string_pairs:
+    string_hash.extend(pair)
+
 string_hash = [pack('<Q', x) for x in string_hash]
 string_hash = b''.join(string_hash)
 
