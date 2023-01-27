@@ -8,7 +8,7 @@ from varint import encode_varint
 from pathlib import Path
 from uuid import UUID
 from struct import pack
-from itertools import chain, accumulate, islice
+from itertools import chain, accumulate, islice, groupby
 
 from fnvhash import fnv1a_64
 
@@ -225,12 +225,62 @@ else:
 string_pairs = [(fnv1a_64(s), i) for i, s in enumerate(corpus[0])]
 string_pairs.sort(key=lambda x: x[0])
 
-string_hash = []
-for pair in string_pairs:
-    string_hash.extend(pair)
+if args.uncompressed:
+    string_hash = []
+    for pair in string_pairs:
+        string_hash.extend(pair)
 
-string_hash = [pack('<Q', x) for x in string_hash]
-string_hash = b''.join(string_hash)
+    string_hash = [pack('<Q', x) for x in string_hash]
+    string_hash = b''.join(string_hash)
+else:
+    blocks = []
+    newblk = []
+    for key, values in groupby(string_pairs, key=lambda x: x[0]):
+        if len(newblk) < 16:
+            newblk.extend(values)
+        else:
+            blocks.append(newblk)
+            newblk = list(values)
+
+    o = len(string_pairs) - (len(blocks) * 16)
+    r = len(blocks) * 16
+    mr = int((r - 1) / 16) + 1
+    delta_start = mr*8+8
+
+    assert mr == len(blocks)
+    
+    print(f'Compressed Index:')
+    print(f'\t{len(string_pairs)} total items')
+    print(f'\t{r} regular items, {o} overflow items')
+    print(f'\t{len(blocks)} sync blocks')
+
+    packed_blocks = []
+    block_keys = []
+
+    for b in blocks:
+        bo = encode_varint(len(b) - 16)
+
+        keys = [k for k, _ in (groupby(b, key=lambda x: x[0]))]
+        block_keys.append(keys[0])
+        keys = chain((keys[0],), (x2 - x1 for x1, x2 in zip(keys[:-1], keys[1:])))
+        keys = b''.join(encode_varint(x) for x in keys)
+
+        pos = [v for _, v in b]
+        pos = chain((pos[0],), (x2 - x1 for x1, x2 in zip(pos[:-1], pos[1:])))
+        pos = b''.join(encode_varint(x) for x in pos)
+        
+        packed_blocks.append(bo + keys + pos)
+
+    assert mr == len(packed_blocks)
+    assert mr == len(block_keys)
+    
+    blk_offsets = accumulate(chain((delta_start,), packed_blocks[:-1]), lambda x, y: x + len(y))
+    sync_stream = []
+    for bk, o in zip(block_keys, blk_offsets):
+        sync_stream.append(pack('<Q', bk)) # Q because hash value
+        sync_stream.append(pack('<q', o))
+
+    string_hash = pack('<q', r) + b''.join(sync_stream) + b''.join(packed_blocks)
 
 ### write PlainString variable container for Tokens
 
@@ -275,7 +325,7 @@ write_container_header(f,
     bom_entry(
         0x06,
         'StringHash',
-        0x00,
+        0x00 if args.uncompressed else 0x01,
         offsets[2],
         len(string_hash),
         clen,
@@ -289,12 +339,12 @@ write_container_header(f,
 
 f.write(string_data)
 
-# "OffsetStream" Vector
+# "OffsetStream" Vector:delta
 
 f.write(bytes(offsets[1] - f.tell())) # extra padding for alignment
 f.write(offset_stream)
 
-# "StringHash" Index (TODO add compression)
+# "StringHash" Index:comp
 
 f.write(bytes(offsets[2] - f.tell())) # extra padding for alignment
 f.write(string_hash)
