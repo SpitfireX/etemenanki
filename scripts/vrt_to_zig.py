@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
 
 import argparse
+import operator
 
 from varint import encode_varint
 
 from pathlib import Path
 from uuid import UUID
 from struct import pack
-from itertools import chain, accumulate
+from itertools import chain, accumulate, islice
 
 from fnvhash import fnv1a_64
+
+def batched(iterable, n):
+    "Batch data into tuples of length n. The last batch may be shorter."
+    # batched('ABCDEFG', 3) --> ABC DEF G
+    if n < 1:
+        raise ValueError('n must be at least one')
+    it = iter(iterable)
+    while (batch := tuple(islice(it, n))):
+        yield batch
 
 parser = argparse.ArgumentParser(description='Script to convert a VRT file to a ziggurat basic layer')
 parser.add_argument('input', type=Path,
@@ -18,6 +28,8 @@ parser.add_argument('-o', type=Path, required=False, dest="output",
                     help='The output directory for the Ziggurat data store. Default is input filename without extension')
 parser.add_argument('-f', '--force', action='store_true',
                     help='Force overwrite output if directory already exists')
+parser.add_argument('-u', '--uncompressed', action='store_true',
+                    help='Write all components uncompressed (storage mode 0x00)')
 
 args = parser.parse_args()
 
@@ -186,16 +198,30 @@ with args.input.open() as f:
 for attr in corpus:
     assert len(attr) == clen
 
-# build StringData
+# build StringData [string]
 string_data = b''.join(corpus[0])
 
-# build OffsetStream
+# build OffsetStream [offset_to_next_string]
 offset_stream = list(accumulate(chain([0], corpus[0]), lambda x, y: x + len(y)))
-offset_stream = [pack('<q', o) for o in offset_stream]
-offset_stream = b''.join(offset_stream)
+if args.uncompressed:
+    offset_stream = [pack('<q', o) for o in offset_stream]
+    offset_stream = b''.join(offset_stream)
+else:
+    m = int((len(offset_stream) - 1) / 16) + 1
+    delta_start = m*8
 
-# build StringHash
+    delta_stream = batched(offset_stream, 16)
+    delta_stream = (chain((block[0],), (x2 - x1 for x1, x2 in zip(block[:-1], block[1:]))) for block in delta_stream)
+    delta_stream = [b''.join(encode_varint(i) for i in block) for block in delta_stream]
+    assert m == len(delta_stream)
 
+    sync_stream = accumulate(chain((delta_start,), delta_stream[:-1]), lambda x, y: x + len(y))
+    sync_stream = [pack('<q', o) for o in sync_stream]
+    assert m == len(sync_stream)
+
+    offset_stream = b''.join(sync_stream) + b''.join(delta_stream)
+
+# build StringHash [(hash, cpos)]
 string_pairs = [(fnv1a_64(s), i) for i, s in enumerate(corpus[0])]
 string_pairs.sort(key=lambda x: x[0])
 
@@ -240,7 +266,7 @@ write_container_header(f,
     bom_entry(
         0x04,
         'OffsetStream',
-        0x00,
+        0x00 if args.uncompressed else 0x02,
         offsets[1],
         len(offset_stream),
         clen + 1,
@@ -263,7 +289,7 @@ write_container_header(f,
 
 f.write(string_data)
 
-# "OffsetStream" Vector (TODO add compression)
+# "OffsetStream" Vector
 
 f.write(bytes(offsets[1] - f.tell())) # extra padding for alignment
 f.write(offset_stream)
