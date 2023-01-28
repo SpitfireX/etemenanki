@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import argparse
-import operator
 
 from varint import encode_varint
 
@@ -58,6 +57,7 @@ tok_uuid = UUID('b7887880-e234-4dd0-8d6a-b8b99397b030') # uuid of first P-attr (
 pos_uuid = UUID('634575cf-43c2-4a7e-b239-4e0ce2ecb394') # uuid of second P-attr (pos tags)
 
 ### Scan VRT file for number of tokens
+print('Scanning VRT file...')
 clen = 0 # length of corpus, first to be determined by scanning the VRT file
 
 with args.input.open() as f:
@@ -136,8 +136,9 @@ def write_container_header(f, ctype, uuid, dimensions,
         f.write(entry)
 
 ### Write Base Layer container
-
-f = (args.output / (str(base_uuid) + '.zigl')).open(mode="wb")
+p = args.output / (str(base_uuid) + '.zigl')
+print(f'Writing Base Layer file {p}')
+f = p.open(mode="wb")
 
 ## write header
 write_container_header(f,
@@ -171,6 +172,8 @@ f.close()
 
 ### Process VRT
 
+print('Processing VRT...')
+
 ## gather data
 
 corpus = []
@@ -199,9 +202,11 @@ for attr in corpus:
     assert len(attr) == clen
 
 # build StringData [string]
+print('Building StringData')
 string_data = b''.join(corpus[0])
 
 # build OffsetStream [offset_to_next_string]
+print('Building OffsetStream')
 offset_stream = list(accumulate(chain([0], corpus[0]), lambda x, y: x + len(y)))
 if args.uncompressed:
     offset_stream = [pack('<q', o) for o in offset_stream]
@@ -222,6 +227,7 @@ else:
     offset_stream = b''.join(sync_stream) + b''.join(delta_stream)
 
 # build StringHash [(hash, cpos)]
+print('Building StringHash')
 string_pairs = [(fnv1a_64(s), i) for i, s in enumerate(corpus[0])]
 string_pairs.sort(key=lambda x: x[0])
 
@@ -283,8 +289,9 @@ else:
     string_hash = pack('<q', r) + b''.join(sync_stream) + b''.join(packed_blocks)
 
 ### write PlainString variable container for Tokens
-
-f = (args.output / (str(tok_uuid) + '.zigv')).open(mode="wb")
+p = args.output / (str(tok_uuid) + '.zigv')
+print(f'Writing Plain String Layer file {p}')
+f = p.open(mode="wb")
 
 ## write header
 
