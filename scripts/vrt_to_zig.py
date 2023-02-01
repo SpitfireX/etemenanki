@@ -177,6 +177,7 @@ print('Processing VRT...')
 ## gather data
 
 corpus = []
+pcount = 0
 
 with args.input.open() as f:
     # find number of p attrs
@@ -200,6 +201,8 @@ with args.input.open() as f:
 # double check dimensions
 for attr in corpus:
     assert len(attr) == clen
+
+## data structures for Plain String Variable for tokens
 
 # build StringData [string]
 print('Building StringData')
@@ -287,6 +290,12 @@ else:
         sync_stream.append(pack('<q', o))
 
     string_hash = pack('<q', r) + b''.join(sync_stream) + b''.join(packed_blocks)
+
+
+## data structures for Indexed String Variable for POS tags
+
+pos_lex = set(corpus[1])
+
 
 ### write PlainString variable container for Tokens
 p = args.output / (str(tok_uuid) + '.zigv')
