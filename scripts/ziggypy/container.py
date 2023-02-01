@@ -133,14 +133,16 @@ class Container():
 
         # file offsets
         self.offsets = [data_start(len(self.components))]
-        for i, c in enumerate(self.components[1:], start=1):
-            self.offsets[i] = align_offset(self.offsets[i-1] + c.bytelen())
+        for i, c in enumerate(self.components[:-1], start=1):
+            self.offsets.append(align_offset(self.offsets[i-1] + c.bytelen()))
 
-        sizes = [c.bytelen() for c in self.components]
+        print(f'offset table for container {self.uuid}:')
+        for i, (o, c) in enumerate(zip(self.offsets, self.components)):
+            print(f'\tcomponent {i+1} "{c.name}"\t{hex(o)}\tlen({c.bytelen()})')
 
         # write BOM entries
-        for c, o, s in zip(self.components, self.offsets, sizes):
-            c.write_bom(f, o, s)
+        for c, o in zip(self.components, self.offsets):
+            c.write_bom(f, o, c.bytelen())
 
 
     def write(self, f: RawIOBase) -> None:

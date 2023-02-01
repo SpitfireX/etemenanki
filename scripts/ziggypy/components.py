@@ -171,3 +171,31 @@ class VectorDelta(Component):
     
     def write(self, f):
         f.write(self.encoded)
+
+
+class StringList(Component):
+
+    def __init__(self, strings: Iterable[bytes], name: str):
+        """strings: series of utf-8 encoded null terminated strings"""
+
+        self.encoded = b''
+        n = 0
+
+        for s in strings:
+            self.encoded += s
+            n += 1
+        
+        super().__init__(
+            0x02,
+            0x00,
+            name,
+            (n, 0)
+        )
+
+
+    def bytelen(self):
+        return len(self.encoded)
+
+
+    def write(self, f):
+        f.write(self.encoded)
