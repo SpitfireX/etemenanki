@@ -2,9 +2,9 @@
 
 import argparse
 
-from varint import encode_varint
+from ziggypy.varint import encode_varint
 from ziggypy.container import Container
-from ziggypy.components import Vector
+from ziggypy.components import *
 
 from pathlib import Path
 from uuid import UUID
