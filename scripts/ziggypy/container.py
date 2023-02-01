@@ -158,5 +158,6 @@ class Container():
         """
 
         self.write_header(f)
-        for component in self.components:
+        for component, offset in zip(self.components, self.offsets):
+            f.write(bytes(offset - f.tell())) # extra padding for alignment
             component.write(f)
