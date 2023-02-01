@@ -1,4 +1,4 @@
-from components import Component
+from .components import Component
 
 from typing import Tuple, Optional
 from collections.abc import Sequence
