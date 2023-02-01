@@ -2,7 +2,9 @@
 
 import argparse
 
-from varint import encode_varint
+from ziggypy.varint import encode_varint
+from ziggypy.container import Container
+from ziggypy.components import *
 
 from pathlib import Path
 from uuid import UUID
@@ -138,35 +140,23 @@ def write_container_header(f, ctype, uuid, dimensions,
 ### Write Base Layer container
 p = args.output / (str(base_uuid) + '.zigl')
 print(f'Writing Base Layer file {p}')
-f = p.open(mode="wb")
+f = p.open(mode='wb')
 
-## write header
-write_container_header(f,
-    'ZLp',
-    base_uuid,
-    (clen, 0),
-    None,
-    None,
-    bom_entry(
-        0x4,
-        'Partition',
-        0x0,
-        data_start(1), # offset
-        16, # size
-        clen,
-        1
-    )
-)
-
-## write components
-
-# Partition vector (min size 2)
-
+# partition vector:
 # no partition = 1 partition spanning the entire corpus
 # with boundaries (0, clen)
+partitions = [0, clen]
 
-f.write(pack('<q', 0))
-f.write(pack('<q', clen))
+p_vec = Vector(partitions, 'Partition', len(partitions))
+
+primary_layer = Container(
+    (p_vec,),
+    'ZLp',
+    (clen, 0),
+    base_uuid
+)
+
+primary_layer.write(f)
 
 f.close()
 
@@ -177,6 +167,7 @@ print('Processing VRT...')
 ## gather data
 
 corpus = []
+pcount = 0
 
 with args.input.open() as f:
     # find number of p attrs
@@ -200,6 +191,8 @@ with args.input.open() as f:
 # double check dimensions
 for attr in corpus:
     assert len(attr) == clen
+
+## data structures for Plain String Variable for tokens
 
 # build StringData [string]
 print('Building StringData')
@@ -287,6 +280,12 @@ else:
         sync_stream.append(pack('<q', o))
 
     string_hash = pack('<q', r) + b''.join(sync_stream) + b''.join(packed_blocks)
+
+
+## data structures for Indexed String Variable for POS tags
+
+pos_lex = set(corpus[1])
+
 
 ### write PlainString variable container for Tokens
 p = args.output / (str(tok_uuid) + '.zigv')
