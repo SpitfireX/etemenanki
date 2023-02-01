@@ -3,6 +3,8 @@
 import argparse
 
 from varint import encode_varint
+from ziggypy.container import Container
+from ziggypy.components import Vector
 
 from pathlib import Path
 from uuid import UUID
@@ -138,35 +140,23 @@ def write_container_header(f, ctype, uuid, dimensions,
 ### Write Base Layer container
 p = args.output / (str(base_uuid) + '.zigl')
 print(f'Writing Base Layer file {p}')
-f = p.open(mode="wb")
+f = p.open(mode='wb')
 
-## write header
-write_container_header(f,
-    'ZLp',
-    base_uuid,
-    (clen, 0),
-    None,
-    None,
-    bom_entry(
-        0x4,
-        'Partition',
-        0x0,
-        data_start(1), # offset
-        16, # size
-        clen,
-        1
-    )
-)
-
-## write components
-
-# Partition vector (min size 2)
-
+# partition vector:
 # no partition = 1 partition spanning the entire corpus
 # with boundaries (0, clen)
+partitions = [0, clen]
 
-f.write(pack('<q', 0))
-f.write(pack('<q', clen))
+p_vec = Vector(partitions, 'Partition', len(partitions))
+
+primary_layer = Container(
+    (p_vec,),
+    'ZLp',
+    (clen, 0),
+    base_uuid
+)
+
+primary_layer.write(f)
 
 f.close()
 

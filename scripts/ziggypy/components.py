@@ -1,5 +1,7 @@
+import numpy as np
+
 from abc import ABC, abstractmethod
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Iterable, Any
 from io import RawIOBase
 from struct import pack
 
@@ -47,10 +49,11 @@ class Component(ABC):
 
         name = self.name.encode('ascii')
         assert len(name) <= 12
+        print(name)
         f.write(pack('B', 1))
         f.write(pack('B', self.component_type))
         f.write(pack('B', self.mode))
-        f.write(name.ljust(13))
+        f.write(name.ljust(13, b'\0'))
         f.write(pack('<q', offset))
         f.write(pack('<q', size))
         f.write(pack('<q', self.params[0] if self.params[0] else 0))
@@ -74,3 +77,29 @@ class Component(ABC):
             A raw binary IO stream(-like object).
         """
         pass
+
+
+class Vector(Component):
+    
+    def __init__(self, items: Iterable[Any], name:str, n: int, d: int = 1,):
+        super().__init__(
+            0x04,
+            0x00,
+            name,
+            (n, d)
+        )
+        self.n = n;
+        self.d = d;
+        self.data = np.atleast_2d(np.array(items, dtype=np.int64))
+        self.data.shape = (d, n)
+
+    
+    def bytelen(self):
+        return self.n * self.d * 8 
+
+    
+    def write(self, f):
+
+        for i in range(self.n):
+            for j in range(self.d):
+                f.write(pack('<q', self.data[j][i]))
