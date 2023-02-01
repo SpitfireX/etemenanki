@@ -20,7 +20,7 @@ struct ContainerHeader {
 
 struct String {
     char string[];
-};
+} [[inline]];
 
 struct VarInt {
     u8 b1 ;
@@ -51,8 +51,8 @@ struct VarInt {
 } [[single_color]];
 
 struct DeltaBlock {
-    VarInt data[16];
-};
+    VarInt delta_block[16];
+} [[inline]];
 
 struct BOMEntry {
     u8 family;
@@ -64,13 +64,21 @@ struct BOMEntry {
     s64 param1;
     s64 param2;
     
-    if (type == 0x02 && mode == 0x00) {
-        String string[param1] @ offset;
-    } else if (type == 0x04 && mode == 0x02) {
+    if (type == 0x02 && mode == 0x00) { // StringList
+        //String string[param1] @ offset;
+        u8 strings[size] @ offset;
+    } else if (type == 0x04 && mode == 0x00) { // Vector
+        s64 data[param1*param2] @ offset;
+    } else if (type == 0x04 && mode == 0x02) { // Vector:delta
         s64 sync[m(param1)] @ offset;
-        DeltaBlock data[m(param1)] @ offset + (8*m(param1));
-    } else if (type == 0x06 && mode == 0x01) {
-        u8 idx_comp[size] @ offset;
+        //DeltaBlock data[m(param1)] @ offset + (8*m(param1));
+        u8 data[size - (m(param1)*8)] @ offset + m(param1)*8;
+    } else if (type == 0x06 && mode == 0x00) { // Index
+        s64 pairs[param1*2] @ offset;
+    } else if (type == 0x06 && mode == 0x01) { // Index:comp
+        s64 r @ offset;
+        s64 sync[m(r) * 2] @ offset + 8;
+        u8 data[size - (m(r)*2) - 8] @ offset + 8 + (m(r) * 2);
     }
 };
 
@@ -80,6 +88,4 @@ fn m(s64 size) {
 
 ContainerHeader header @ 0x00;
 BOMEntry bom[header.used_components] @ 160;
-
-
 
