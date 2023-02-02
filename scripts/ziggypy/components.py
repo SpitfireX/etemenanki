@@ -175,13 +175,13 @@ class VectorDelta(Component):
 
 class StringList(Component):
 
-    def __init__(self, strings: Iterable[bytes], name: str):
+    def __init__(self, strings: Iterable[bytes], name: str, n: int):
         """strings: series of utf-8 encoded null terminated strings"""
 
         self.encoded = b''
         n = 0
 
-        for s in strings:
+        for _, s in enumerate(strings):
             self.encoded += s
             n += 1
         
@@ -199,3 +199,27 @@ class StringList(Component):
 
     def write(self, f):
         f.write(self.encoded)
+
+
+class Index(Component):
+
+    def __init__(self, pairs: Iterable[Tuple[int, int]], name: str, n: int):
+        
+        super().__init__(
+            0x06,
+            0x00,
+            name,
+            (n, 2)
+        )
+        
+        self.data = np.array(pairs, dtype=np.uint64)
+        self.data.shape = (n, 2)
+
+
+    def bytelen(self):
+        return len(self.data) * 2 * 8
+
+
+    def write(self, f):
+        for i in self.data.flat:
+            f.write(pack('<Q', i))
