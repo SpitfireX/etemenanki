@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Tuple, Optional, Iterable, Any
 from io import RawIOBase
 from struct import pack
+from itertools import chain
 
 BLOCKSIZE = 16
 
@@ -223,3 +224,97 @@ class Index(Component):
     def write(self, f):
         for i in self.data.flat:
             f.write(pack('<Q', i))
+
+
+class IndexCompressed(Component):
+
+    def __init__(self, pairs: Iterable[Tuple[int, int]], name: str, n: int):
+        
+        super().__init__(
+            0x06,
+            0x01,
+            name,
+            (n, 2)
+        )
+
+        data = np.array(pairs, dtype=np.uint64)
+        data.shape = (n, 2)
+
+        blocks = []
+        blen = 0
+        bstart = 0
+
+        for i in range(len(data)):
+            if blen < 16:
+                blen += 1
+            else:
+                if data[i][0] == data[i-1][0]:
+                    blen += 1
+                else:
+                    blocks.append(data[bstart:i])
+                    bstart = i
+                    blen = 1
+        if blen != 0:
+            blocks.append(data[bstart:])
+
+
+        o = len(data) - (len(blocks) * 16)  # number of overflow items
+        r = len(blocks) * 16                # number of regular items in blocks
+        mr = int((r - 1) / 16) + 1          # number of sync blocks
+        data_offset = mr*8+8                # start offset of data in compontent
+
+        assert mr == len(blocks)
+    
+        print(f'Compressed Index:')
+        print(f'\t{len(data)} total items')
+        print(f'\t{r} regular items, {o} overflow items')
+        print(f'\t{len(blocks)} sync blocks')
+
+        packed_blocks = []
+        block_keys = []
+
+        for b in blocks:
+            bo = encode_varint(len(b) - 16)
+
+            keys = b[:16,0]
+            block_keys.append(keys[0])
+            keys_delta = []
+            for i in range(1, len(keys)):
+                keys_delta.append(keys[i] - keys[i-1])
+            
+            positions = b[:,1].astype(np.int64) # cpos offsets can be negative
+            positions_delta = []
+            for i in range(1, len(positions)):
+                positions_delta.append(positions[i] - positions[i-1])
+
+            packed = bo
+            packed += b''.join(encode_varint(int(x)) for x in keys_delta)
+            packed += b''.join(encode_varint(x) for x in positions_delta)
+
+            packed_blocks.append(packed)
+        
+        assert mr == len(packed_blocks)
+        assert mr == len(block_keys)
+
+        offsets = [data_offset]
+        for i, b in enumerate(blocks[:-1], start=1):
+            offsets.append(offsets[i-1] + len(b))
+
+        assert len(offsets) == mr and len(offsets) == len(block_keys)
+
+        sync = []
+        for k, o in zip(block_keys, offsets):
+            sync.append(pack('<Q', k))
+            sync.append(pack('<q', o))
+
+        self.encoded = pack('<q', r)
+        self.encoded += b''.join(sync)
+        self.encoded += b''.join(packed_blocks)
+
+
+    def bytelen(self):
+        return len(self.encoded)
+
+
+    def write(self, f):
+        f.write(self.encoded)
