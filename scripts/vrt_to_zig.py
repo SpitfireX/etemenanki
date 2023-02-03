@@ -119,7 +119,7 @@ with args.input.open() as f:
             if line.strip():
                 pattrs = line.split()
                 for i, attr in enumerate(pattrs):
-                    corpus[i].append((attr + '\0').encode('utf-8'))
+                    corpus[i].append((attr).encode('utf-8'))
 
 # double check dimensions
 for attr in corpus:

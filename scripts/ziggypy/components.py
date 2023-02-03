@@ -183,7 +183,7 @@ class StringList(Component):
         n = 0
 
         for _, s in enumerate(strings):
-            self.encoded += s
+            self.encoded += (s + b'\0')
             n += 1
         
         super().__init__(
