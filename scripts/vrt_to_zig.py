@@ -145,7 +145,6 @@ else:
 # build StringHash [(hash, cpos)]
 print('Building StringHash')
 string_pairs = [(fnv1a_64(s), i) for i, s in enumerate(corpus[0])]
-string_pairs.sort(key=lambda x: x[0])
 
 if args.uncompressed:
     string_hash = Index(string_pairs, "StringHash", clen)
