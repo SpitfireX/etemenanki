@@ -204,8 +204,8 @@ class StringList(Component):
 
 class Index(Component):
 
-    def __init__(self, pairs: Iterable[Tuple[int, int]], name: str, n: int):
-        
+    def __init__(self, pairs: Iterable[Tuple[int, int]], name: str, n: int, sorted=False):
+
         super().__init__(
             0x06,
             0x00,
@@ -215,6 +215,10 @@ class Index(Component):
         
         self.data = np.array(pairs, dtype=np.uint64)
         self.data.shape = (n, 2)
+
+        if not sorted:
+            self.data = self.data[self.data[:,1].argsort()]
+            self.data = self.data[self.data[:,0].argsort(kind='mergesort')]
 
 
     def bytelen(self):
@@ -228,7 +232,7 @@ class Index(Component):
 
 class IndexCompressed(Component):
 
-    def __init__(self, pairs: Iterable[Tuple[int, int]], name: str, n: int):
+    def __init__(self, pairs: Iterable[Tuple[int, int]], name: str, n: int, sorted=False):
         
         super().__init__(
             0x06,
@@ -239,6 +243,10 @@ class IndexCompressed(Component):
 
         data = np.array(pairs, dtype=np.uint64)
         data.shape = (n, 2)
+
+        if not sorted:
+            data = data[data[:,1].argsort()]
+            data = data[data[:,0].argsort(kind='mergesort')]
 
         blocks = []
         blen = 0
