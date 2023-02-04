@@ -179,11 +179,12 @@ class StringList(Component):
     def __init__(self, strings: Iterable[bytes], name: str, n: int):
         """strings: series of utf-8 encoded null terminated strings"""
 
-        self.encoded = b''
+        self.encoded = bytearray()
         n = 0
 
         for _, s in enumerate(strings):
-            self.encoded += (s + b'\0')
+            self.encoded.extend(s)
+            self.encoded.extend(b'\0')
             n += 1
         
         super().__init__(
