@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Tuple, Optional, Iterable, Any
 from io import RawIOBase
 from struct import pack
-from itertools import chain
+from itertools import islice
 
 BLOCKSIZE = 16
 
@@ -86,7 +86,7 @@ class Component(ABC):
 
 class Vector(Component):
     
-    def __init__(self, items: Iterable[Any], name:str, n: int, d: int = 1,):
+    def __init__(self, items: Iterable[Any], name: str, n: int, d: int = 1):
         super().__init__(
             0x04,
             0x00,
@@ -108,6 +108,63 @@ class Vector(Component):
         for i in range(self.n):
             for j in range(self.d):
                 f.write(pack('<q', self.data[j][i]))
+
+
+class VectorComp(Component):
+
+    def __init__(self, items: Iterable[Any], name: str, n: int, d: int = 1):
+        super().__init__(
+            0x04,
+            0x01,
+            name,
+            (n, d)
+        )        
+        self.n = n
+        self.d = d
+        data = np.atleast_2d(np.array(items, dtype=np.int64))
+        data.shape = (n, d)
+
+        # compress data
+
+        m = int((n - 1) / BLOCKSIZE) + 1
+        comp_start = m*8
+
+        # VarInt encoded blocks
+        blocks = []
+
+        for i in range(0, n, BLOCKSIZE):
+            block = data[i : i+BLOCKSIZE]
+            
+            cols = []
+
+            for j in range(d):
+                row = block[:, j]
+                varints = []
+                for l in row:
+                    varints.append(encode_varint(l))
+                cols.append(b''.join(varints))
+
+            blocks.append(b''.join(cols))
+
+        assert len(blocks) == m
+
+        # Sync offsets
+        sync = [comp_start]
+        for i, b in enumerate(blocks[:-1], start=1):
+            sync.append(sync[i-1] + len(b))
+        
+        assert len(sync) == m
+
+        self.encoded = b''.join(pack('<q', s) for s in sync) +\
+            b''.join(blocks)
+
+
+    def bytelen(self):
+        return len(self.encoded)
+
+    
+    def write(self, f):
+        f.write(self.encoded)          
 
 
 class VectorDelta(Component):
@@ -146,8 +203,8 @@ class VectorDelta(Component):
 
                 row = delta[:, j]
                 varints = []
-                for i in row:
-                    varints.append(encode_varint(i))
+                for l in row:
+                    varints.append(encode_varint(l))
 
                 cols.append(b''.join(varints))
 
@@ -180,12 +237,10 @@ class StringList(Component):
         """strings: series of utf-8 encoded null terminated strings"""
 
         self.encoded = bytearray()
-        n = 0
 
-        for _, s in enumerate(strings):
+        for s in islice(strings, n):
             self.encoded.extend(s)
             self.encoded.extend(b'\0')
-            n += 1
         
         super().__init__(
             0x02,
@@ -200,6 +255,38 @@ class StringList(Component):
 
 
     def write(self, f):
+        f.write(self.encoded)
+
+
+class StringVector(Component):
+
+    def __init__(self, strings: Iterable[bytes], name: str, n: int):
+        """strings: series of utf-8 encoded null terminated strings"""
+
+        self.encoded = bytearray()
+        self.offsets = []
+        
+        offset = 0
+        for s in islice(strings, n):
+            self.encoded.extend(s)
+            self.encoded.extend(b'\0')
+            self.offsets.append(offset)
+            offset += len(s)+1
+
+        super().__init__(
+            0x03,
+            0x00,
+            name,
+            (n, 0)
+        )
+
+
+    def bytelen(self):
+        return len(self.offsets)*8 + len(self.encoded)
+
+
+    def write(self, f):
+        f.write(b''.join(pack('<q', o) for o in self.offsets))
         f.write(self.encoded)
 
 

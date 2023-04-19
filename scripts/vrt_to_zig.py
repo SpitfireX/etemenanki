@@ -10,6 +10,7 @@ from pathlib import Path
 from uuid import UUID
 from struct import pack
 from itertools import chain, accumulate, islice, groupby
+from collections import Counter
 
 from fnvhash import fnv1a_64
 
@@ -151,10 +152,6 @@ if args.uncompressed:
 else:
     string_hash = IndexCompressed(string_pairs, "StringHash", clen)
 
-## data structures for Indexed String Variable for POS tags
-
-pos_lex = set(corpus[1])
-
 
 ### write PlainString variable container for Tokens
 p = args.output / (str(tok_uuid) + '.zigv')
@@ -164,6 +161,49 @@ token_layer = Container((string_data, offset_stream, string_hash),
     'ZVc',
     (clen, 0),
     tok_uuid,
+    (base_uuid, None)
+)
+
+with p.open(mode="wb") as f:
+    token_layer.write(f)
+
+
+## build data structures for Indexed String Variable for POS tags
+
+pos_lex = Counter(corpus[1])
+pos_lex = [x[0] for x in pos_lex.most_common()]
+
+lsize = len(pos_lex)
+
+lexicon = StringVector(pos_lex, "Lexicon", lsize)
+
+pos_lexhash = [(fnv1a_64(l), i) for i, l in enumerate(pos_lex)]
+
+lexhash = Index(pos_lexhash, "LexHash", lsize)
+
+pos_lexidstream = [pos_lex.index(pos) for pos in corpus[1]]
+
+if args.uncompressed:
+    lexidstream = Vector(pos_lexidstream, "LexIDStream", len(pos_lexidstream))
+else:
+    lexidstream = VectorComp(pos_lexidstream, "LexIDStream", len(pos_lexidstream))
+
+pos_invidx = [[] for _ in range(lsize)]
+for p, li in enumerate(pos_lexidstream):
+    pos_invidx[li].append(p)
+
+print(pos_invidx)
+
+### write IndexedString variable container for Tokens
+p = args.output / (str(tok_uuid) + '.zigv')
+print(f'Writing Indexed String Layer file {p}')
+print("lexicon size:", lsize)
+
+token_layer = Container(
+    (lexicon, lexhash, p_vec, lexidstream),
+    'ZVx',
+    (clen, lsize),
+    pos_uuid,
     (base_uuid, None)
 )
 
