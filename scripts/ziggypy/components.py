@@ -3,7 +3,7 @@ import numpy as np
 from .varint import encode_varint
 
 from abc import ABC, abstractmethod
-from typing import Tuple, Optional, Iterable, Any
+from typing import Tuple, Optional, Iterable, Any, Sequence
 from io import RawIOBase
 from struct import pack
 from itertools import islice
@@ -226,7 +226,7 @@ class VectorDelta(Component):
     def bytelen(self):
         return len(self.encoded)
 
-    
+
     def write(self, f):
         f.write(self.encoded)
 
@@ -406,6 +406,57 @@ class IndexCompressed(Component):
         self.encoded = pack('<q', r)
         self.encoded += b''.join(sync)
         self.encoded += b''.join(packed_blocks)
+
+
+    def bytelen(self):
+        return len(self.encoded)
+
+
+    def write(self, f):
+        f.write(self.encoded)
+
+
+class InvertedIndex(Component):
+
+    def __init__(self, types: Sequence[Any], positions: Iterable[int], name: str, k: int, p: int):
+        """positions: list of lexicon positions for each corpus position"""
+
+        assert p == 0, "jump tables for inverted index are not implemented yet"
+
+        super().__init__(
+            0x07,
+            0x01,
+            name,
+            (k, p)
+        )
+
+        postings = [[] for _ in types]
+        for i, t in enumerate(positions):
+            postings[t].append(i)
+
+        postings_delta = [[] for _ in types]
+        for j in range(len(postings)):
+            postings_delta[j].append(postings[j][0])
+            for i in range(1, len(postings[j])):
+                postings_delta[j].append(postings[j][i] - postings[j][i-1])
+
+        postings_encoded = []
+        for pd in postings_delta:
+            block = encode_varint(0) # jump table offset for now always zero TODO
+            for d in pd:
+                block += encode_varint(d)
+            
+            postings_encoded.append(block)
+
+        self.encoded = b''
+
+        offset = k * 16
+        for t, e in zip(postings, postings_encoded):
+            self.encoded += pack('<q', len(t)) # type frequency
+            self.encoded += pack('<q', offset) # offset for postings list
+            offset += len(e)
+
+        self.encoded += b''.join(postings_encoded)
 
 
     def bytelen(self):

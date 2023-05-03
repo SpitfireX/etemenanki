@@ -188,19 +188,15 @@ if args.uncompressed:
 else:
     lexidstream = VectorComp(pos_lexidstream, "LexIDStream", len(pos_lexidstream))
 
-pos_invidx = [[] for _ in range(lsize)]
-for p, li in enumerate(pos_lexidstream):
-    pos_invidx[li].append(p)
-
-print(pos_invidx)
+invidx = InvertedIndex(pos_lex, pos_lexidstream, "LexIDIndex", lsize, 0)
 
 ### write IndexedString variable container for Tokens
-p = args.output / (str(tok_uuid) + '.zigv')
+p = args.output / (str(pos_uuid) + '.zigv')
 print(f'Writing Indexed String Layer file {p}')
 print("lexicon size:", lsize)
 
 token_layer = Container(
-    (lexicon, lexhash, p_vec, lexidstream),
+    (lexicon, lexhash, p_vec, lexidstream, invidx),
     'ZVx',
     (clen, lsize),
     pos_uuid,
