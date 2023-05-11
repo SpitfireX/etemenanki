@@ -3,7 +3,7 @@ from .components import Component
 from typing import Tuple, Optional
 from collections.abc import Sequence
 from io import RawIOBase
-from uuid import UUID, uuid4
+from uuid import UUID
 from struct import pack
 
 
@@ -52,7 +52,7 @@ def align_offset(o: int) -> int:
 class Container():
     """Instances of the Container class represent a Ziggurat container file."""
 
-    def __init__(self, components: Sequence[Component], container_type: str, dimensions: Tuple[int, int], uuid: Optional[UUID] = None, base_uuids: Tuple[Optional[UUID], Optional[UUID]] = (None, None)) -> None:
+    def __init__(self, components: Sequence[Component], container_type: str, dimensions: Tuple[int, int], uuid: UUID = None, base_uuids: Tuple[Optional[UUID], Optional[UUID]] = (None, None)) -> None:
         """
         Instantiates a new Container object with all necessary data.
 
@@ -79,7 +79,7 @@ class Container():
         self.components = components
         self.container_type = container_type
         self.dimensions = dimensions
-        self.uuid = uuid if uuid else uuid4()
+        self.uuid = uuid
         self.base_uuids = base_uuids
 
 

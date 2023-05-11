@@ -5,6 +5,7 @@ import argparse
 from ziggypy.varint import encode_varint
 from ziggypy.container import Container
 from ziggypy.components import *
+from ziggypy.layers import *
 
 from pathlib import Path
 from uuid import UUID
@@ -81,14 +82,7 @@ print(f'Writing Base Layer file {p}')
 # with boundaries (0, clen)
 partitions = [0, clen]
 
-p_vec = Vector(partitions, 'Partition', len(partitions))
-
-primary_layer = Container(
-    (p_vec,),
-    'ZLp',
-    (clen, 0),
-    base_uuid
-)
+primary_layer = PrimaryLayer(clen, partitions, base_uuid)
 
 with p.open(mode="wb") as f:
     primary_layer.write(f)
