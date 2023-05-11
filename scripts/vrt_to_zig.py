@@ -2,27 +2,12 @@
 
 import argparse
 
-from ziggypy.varint import encode_varint
-from ziggypy.container import Container
 from ziggypy.components import *
 from ziggypy.layers import *
+from ziggypy.variables import *
 
 from pathlib import Path
 from uuid import UUID
-from struct import pack
-from itertools import chain, accumulate, islice, groupby
-from collections import Counter
-
-from fnvhash import fnv1a_64
-
-def batched(iterable, n):
-    "Batch data into tuples of length n. The last batch may be shorter."
-    # batched('ABCDEFG', 3) --> ABC DEF G
-    if n < 1:
-        raise ValueError('n must be at least one')
-    it = iter(iterable)
-    while (batch := tuple(islice(it, n))):
-        yield batch
 
 parser = argparse.ArgumentParser(description='Script to convert a VRT file to a ziggurat basic layer')
 parser.add_argument('input', type=Path,
@@ -48,51 +33,10 @@ else:
     if not args.output.exists():
         args.output.mkdir()
 
-# A datastore consists of container files, which all have a UUID v4.
-# Container files can be layer files and variables assigned to them.
-# A datastore is built up from the bottom beginning with a primary layer that
-# provides a global index of corpus positions (cpos), its variables, and additional
-# layers that can reference layers below them.
-# All these containers are linked via UUIDs.
 
-# static uuids for now to make testing easier
-base_uuid = UUID('b764b867-cac4-4329-beda-9c021c5184d7') # uuid of base layer container
-tok_uuid = UUID('b7887880-e234-4dd0-8d6a-b8b99397b030') # uuid of first P-attr (token stream)
-pos_uuid = UUID('634575cf-43c2-4a7e-b239-4e0ce2ecb394') # uuid of second P-attr (pos tags)
-
-
-### Scan VRT file for number of tokens
-print('Scanning VRT file...')
-clen = 0 # length of corpus, first to be determined by scanning the VRT file
-
-with args.input.open() as f:
-    for line in f:
-        if not line.startswith("<"):
-            if line.strip():
-                clen += 1
-print(f'Found input file with {clen} corpus positions')
-
-
-### Write Base Layer container
-p = args.output / (str(base_uuid) + '.zigl')
-print(f'Writing Base Layer file {p}')
-
-# partition vector:
-# no partition = 1 partition spanning the entire corpus
-# with boundaries (0, clen)
-partitions = [0, clen]
-
-primary_layer = PrimaryLayer(clen, partitions, base_uuid)
-
-with p.open(mode="wb") as f:
-    primary_layer.write(f)
-
-
-### Process VRT
+### VRT processing
 
 print('Processing VRT...')
-
-## gather data
 
 corpus = []
 pcount = 0
@@ -117,85 +61,51 @@ with args.input.open() as f:
                     corpus[i].append((attr).encode('utf-8'))
 
 # double check dimensions
-for attr in corpus:
-    assert len(attr) == clen
+assert all(len(p) == len(corpus[0]) for p in corpus), "P attributes of supplied VRT don't have the same dimensions"
+clen = len(corpus[0])
 
-## data structures for Plain String Variable for tokens
-
-# build StringData [string]
-print('Building StringData')
-
-string_data = StringList(corpus[0], 'StringData', clen)
-
-# build OffsetStream [offset_to_next_string]
-print('Building OffsetStream')
-offset_stream = list(accumulate(chain([0], corpus[0]), lambda x, y: x + len(y)))
-
-if args.uncompressed:
-    offset_stream = Vector(offset_stream, 'OffsetStream', len(offset_stream))
-else:
-    offset_stream = VectorDelta(offset_stream, 'OffsetStream', len(offset_stream))
+print(f'Found input file with {clen} corpus positions')
 
 
-# build StringHash [(hash, cpos)]
-print('Building StringHash')
-string_pairs = [(fnv1a_64(s), i) for i, s in enumerate(corpus[0])]
+### Datastore creation
 
-if args.uncompressed:
-    string_hash = Index(string_pairs, "StringHash", clen)
-else:
-    string_hash = IndexCompressed(string_pairs, "StringHash", clen)
+# A datastore consists of container files, which all have a UUID v4.
+# Container files can be layer files and variables assigned to them.
+# A datastore is built up from the bottom beginning with a primary layer that
+# provides a global index of corpus positions (cpos), its variables, and additional
+# layers that can reference layers below them.
+# All these containers are linked via UUIDs.
 
-
-### write PlainString variable container for Tokens
-p = args.output / (str(tok_uuid) + '.zigv')
-print(f'Writing Plain String Layer file {p}')
-
-token_layer = Container((string_data, offset_stream, string_hash),
-    'ZVc',
-    (clen, 0),
-    tok_uuid,
-    (base_uuid, None)
-)
-
-with p.open(mode="wb") as f:
-    token_layer.write(f)
+# static uuids for now to make testing easier
+base_uuid = UUID('b764b867-cac4-4329-beda-9c021c5184d7') # uuid of base layer container
+token_uuid = UUID('b7887880-e234-4dd0-8d6a-b8b99397b030') # uuid of first P-attr (token stream)
+pos_uuid = UUID('634575cf-43c2-4a7e-b239-4e0ce2ecb394') # uuid of second P-attr (pos tags)
 
 
-## build data structures for Indexed String Variable for POS tags
+# partition vector:
+# no partition = 1 partition spanning the entire corpus
+# with boundaries (0, clen)
+partitions = [0, clen]
 
-pos_lex = Counter(corpus[1])
-pos_lex = [x[0] for x in pos_lex.most_common()]
 
-lsize = len(pos_lex)
+## Datastore Objects
 
-lexicon = StringVector(pos_lex, "Lexicon", lsize)
+datastore = dict()
 
-pos_lexhash = [(fnv1a_64(l), i) for i, l in enumerate(pos_lex)]
+# Primary Layer with corpus dimensions
+datastore["primary_layer"] = PrimaryLayer(clen, partitions, base_uuid)
 
-lexhash = Index(pos_lexhash, "LexHash", lsize)
+# Plain String Variable for tokens
+datastore["p_token"] = PlainStringVariable(datastore["primary_layer"], corpus[0], uuid = token_uuid, compressed = not args.uncompressed)
 
-pos_lexidstream = [pos_lex.index(pos) for pos in corpus[1]]
+# Indexed String Variable for POS tags
+datastore["p_pos"] = IndexedStringVariable(datastore["primary_layer"], corpus[1], uuid = pos_uuid, compressed= not args.uncompressed)
 
-if args.uncompressed:
-    lexidstream = Vector(pos_lexidstream, "LexIDStream", len(pos_lexidstream))
-else:
-    lexidstream = VectorComp(pos_lexidstream, "LexIDStream", len(pos_lexidstream))
+for name, obj in datastore.items():
+    ztype = obj.__class__.__name__
+    ext = ".zigl" if isinstance(obj, Layer) else ".zigv"
+    p = args.output / (str(obj.uuid) + ext)
 
-invidx = InvertedIndex(pos_lex, pos_lexidstream, "LexIDIndex", lsize, 0)
-
-### write IndexedString variable container for Tokens
-p = args.output / (str(pos_uuid) + '.zigv')
-print(f'Writing Indexed String Layer file {p}')
-print("lexicon size:", lsize)
-
-token_layer = Container(
-    (lexicon, lexhash, p_vec, lexidstream, invidx),
-    'ZVx',
-    (clen, lsize),
-    pos_uuid,
-    (base_uuid, None)
-)
-
-with p.open(mode="wb") as f:
-    token_layer.write(f)
+    print(f"Writing {ztype} '{name}' to file {p}")
+    with p.open(mode = "wb") as f:
+        obj.write(f)
