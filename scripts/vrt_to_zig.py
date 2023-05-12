@@ -39,6 +39,9 @@ else:
 print('Processing VRT...')
 
 corpus = []
+stack = []
+spans = dict()
+cpos = 0
 pcount = 0
 
 with args.input.open() as f:
@@ -54,15 +57,36 @@ with args.input.open() as f:
     f.seek(0) # reset file to beginning
 
     for line in f:
+        # p attrs``
         if not line.startswith("<"):
             if line.strip():
                 pattrs = line.split()
                 for i, attr in enumerate(pattrs):
                     corpus[i].append((attr).encode('utf-8'))
+                cpos += 1
+        # s attrs
+        else:
+            line = line.strip()
+            if line.startswith("</"):
+                c = line[2:-1].split(maxsplit=1)
+                tag = c[0]
+
+                if cpos > stack[-1][0] and tag == stack[-1][1]:
+                    ot = stack.pop()
+                    if tag not in spans.keys():
+                        spans[tag] = []
+                    spans[tag].append(((ot[0], cpos), ot[2]))
+            else:
+                c = line[1:-1].split(maxsplit=1)
+                tag = c[0]
+                attrs = c[1] if len(c) > 1 else ""
+                stack.append((cpos, tag, attrs))
+
+print(spans)
+clen = cpos
 
 # double check dimensions
-assert all(len(p) == len(corpus[0]) for p in corpus), "P attributes of supplied VRT don't have the same dimensions"
-clen = len(corpus[0])
+assert all(len(p) == clen for p in corpus), "P attributes of supplied VRT don't have the same dimensions"
 
 print(f'Found input file with {clen} corpus positions')
 
