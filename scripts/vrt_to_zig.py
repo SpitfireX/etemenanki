@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import xml.parsers.expat as expat
 
 from ziggypy.components import *
 from ziggypy.layers import *
@@ -30,6 +31,7 @@ if args.output.exists() and not args.force:
     print(f"Output directory {args.output} exists, aborting.")
     exit()
 else:
+    print(f"Using output directory {args.output}")
     if not args.output.exists():
         args.output.mkdir()
 
@@ -38,11 +40,27 @@ else:
 
 print('Processing VRT...')
 
-corpus = []
-stack = []
-spans = dict()
+corpus = [] # list of lists for utf-8 encoded strings indexed by [attr_i][cpos]
+stack = [] # parsing stack for s attrs, list of openend tags (startpos, tagname, attrs)
+spans = dict() # keys are the different s attrs, values list of spans (startpos, endpos, attrs) 
 cpos = 0
 pcount = 0
+
+# XML parser to parse s attrs
+parser_state = (False, "", None) # (is_closing_tag, tagname, attributes)
+
+def start_element(name, attrs):
+    global parser_state
+    parser_state = (False, name, attrs)
+
+def end_element(name):
+    global parser_state
+    parser_state = (True, name, None)
+
+parser = expat.ParserCreate()
+parser.Parse("<start>") # init with one global start tag to keep parser happy
+parser.StartElementHandler = start_element
+parser.EndElementHandler = end_element
 
 with args.input.open() as f:
     # find number of p attrs
@@ -52,46 +70,45 @@ with args.input.open() as f:
                 pcount = len(line.split())
                 break
     
-    print(f'Corpus has {pcount} p-attrs')
+    print(f'\t found {pcount} p-attrs')
     corpus = [[] for _ in range(pcount)]
     f.seek(0) # reset file to beginning
 
     for line in f:
-        # p attrs``
+        # p attrs
         if not line.startswith("<"):
             if line.strip():
                 pattrs = line.split()
                 for i, attr in enumerate(pattrs):
                     corpus[i].append((attr).encode('utf-8'))
                 cpos += 1
+
         # s attrs
         else:
-            line = line.strip()
-            if line.startswith("</"):
-                c = line[2:-1].split(maxsplit=1)
-                tag = c[0]
+            parser.Parse(line)
+            is_closing_tag, tagname, attrs = parser_state
 
-                if cpos > stack[-1][0] and tag == stack[-1][1]:
-                    ot = stack.pop()
-                    if tag not in spans.keys():
-                        spans[tag] = []
-                    spans[tag].append(((ot[0], cpos), ot[2]))
+            if not is_closing_tag:
+                stack.append((cpos, tagname, attrs))
             else:
-                c = line[1:-1].split(maxsplit=1)
-                tag = c[0]
-                attrs = c[1] if len(c) > 1 else ""
-                stack.append((cpos, tag, attrs))
+                startpos, start_tagname, attrs = stack.pop()
+                if tagname == start_tagname:
+                    if tagname not in spans.keys():
+                        spans[tagname] = []
+                    spans[tagname].append((startpos, cpos, attrs))
 
-print(spans)
+print(f"\t found {len(spans.keys())} s-attrs: {tuple(spans.keys())}")
+
 clen = cpos
 
 # double check dimensions
 assert all(len(p) == clen for p in corpus), "P attributes of supplied VRT don't have the same dimensions"
 
-print(f'Found input file with {clen} corpus positions')
+print(f'Input corpus has {clen} corpus positions')
 
 
 ### Datastore creation
+print('Building Ziggurat datastore...')
 
 # A datastore consists of container files, which all have a UUID v4.
 # Container files can be layer files and variables assigned to them.
