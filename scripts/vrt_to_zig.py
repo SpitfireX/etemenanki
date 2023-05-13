@@ -120,12 +120,6 @@ print('Building Ziggurat datastore...')
 # layers that can reference layers below them.
 # All these containers are linked via UUIDs.
 
-# static uuids for now to make testing easier
-base_uuid = UUID('b764b867-cac4-4329-beda-9c021c5184d7') # uuid of base layer container
-token_uuid = UUID('b7887880-e234-4dd0-8d6a-b8b99397b030') # uuid of first P-attr (token stream)
-pos_uuid = UUID('634575cf-43c2-4a7e-b239-4e0ce2ecb394') # uuid of second P-attr (pos tags)
-
-
 # partition vector:
 # no partition = 1 partition spanning the entire corpus
 # with boundaries (0, clen)
@@ -137,13 +131,13 @@ partitions = [0, clen]
 datastore = dict()
 
 # Primary Layer with corpus dimensions
-datastore["primary_layer"] = PrimaryLayer(clen, partitions, base_uuid)
+datastore["primary_layer"] = PrimaryLayer(clen, partitions)
 
 # Plain String Variable for tokens
-datastore["p_token"] = PlainStringVariable(datastore["primary_layer"], corpus[0], uuid = token_uuid, compressed = not args.uncompressed)
+datastore["p_token"] = PlainStringVariable(datastore["primary_layer"], corpus[0], compressed = not args.uncompressed)
 
 # Indexed String Variable for POS tags
-datastore["p_pos"] = IndexedStringVariable(datastore["primary_layer"], corpus[1], uuid = pos_uuid, compressed= not args.uncompressed)
+datastore["p_pos"] = IndexedStringVariable(datastore["primary_layer"], corpus[1], compressed= not args.uncompressed)
 
 # Segmentation Layers for s attributes
 for attr in spans.keys():
@@ -153,7 +147,7 @@ for attr in spans.keys():
 for name, obj in datastore.items():
     ztype = obj.__class__.__name__
     ext = ".zigl" if isinstance(obj, Layer) else ".zigv"
-    p = args.output / (str(obj.uuid) + ext)
+    p = args.output / (name + ext)
 
     print(f"Writing {ztype} '{name}' to file {p}")
     with p.open(mode = "wb") as f:
