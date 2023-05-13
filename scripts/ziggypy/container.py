@@ -52,7 +52,7 @@ def align_offset(o: int) -> int:
 class Container():
     """Instances of the Container class represent a Ziggurat container file."""
 
-    def __init__(self, components: Sequence[Component], container_type: str, dimensions: Tuple[int, int], uuid: UUID = None, base_uuids: Tuple[Optional[UUID], Optional[UUID]] = (None, None)) -> None:
+    def __init__(self, components: Sequence[Component], container_type: str, dimensions: Tuple[int, int], uuid: UUID, base_uuids: Tuple[Optional[UUID], Optional[UUID]] = (None, None)) -> None:
         """
         Instantiates a new Container object with all necessary data.
 
@@ -65,7 +65,7 @@ class Container():
         dimensions : Tuple[int, int]
             Two integers describing the dimensions of the Container.
         uuid : Optional[UUID] = None
-            UUID4 for the container. If empty a new UUID will be generated.
+            UUID4 for the container.
         base_uuids : Tuple[Optional[UUID]
             UUID4s of the base layers referenced by this container.
 
@@ -153,7 +153,7 @@ class Container():
         ----------
         f : RawIOBase
             A raw binary IO stream(-like object).
-           
+        
         See Also
         --------
         write_header : Writes only the file header, used by this method.

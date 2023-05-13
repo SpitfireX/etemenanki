@@ -42,7 +42,8 @@ print('Processing VRT...')
 
 corpus = [] # list of lists for utf-8 encoded strings indexed by [attr_i][cpos]
 stack = [] # parsing stack for s attrs, list of openend tags (startpos, tagname, attrs)
-spans = dict() # keys are the different s attrs, values list of spans (startpos, endpos, attrs) 
+spans = dict() # keys are the different s attrs, values list of spans (startpos, endpos)
+span_attrs = dict() # same as above, but values are the associated attributes for each span 
 cpos = 0
 pcount = 0
 
@@ -95,7 +96,9 @@ with args.input.open() as f:
                 if tagname == start_tagname:
                     if tagname not in spans.keys():
                         spans[tagname] = []
-                    spans[tagname].append((startpos, cpos, attrs))
+                        span_attrs[tagname] = []
+                    spans[tagname].append((startpos, cpos))
+                    span_attrs[tagname].append(attrs)
 
 print(f"\t found {len(spans.keys())} s-attrs: {tuple(spans.keys())}")
 
@@ -141,6 +144,11 @@ datastore["p_token"] = PlainStringVariable(datastore["primary_layer"], corpus[0]
 
 # Indexed String Variable for POS tags
 datastore["p_pos"] = IndexedStringVariable(datastore["primary_layer"], corpus[1], uuid = pos_uuid, compressed= not args.uncompressed)
+
+# Segmentation Layers for s attributes
+for attr in spans.keys():
+    slen = len(spans[attr])
+    datastore["s_" + attr] = SegmentationLayer(slen, (0, slen), spans[attr])
 
 for name, obj in datastore.items():
     ztype = obj.__class__.__name__
