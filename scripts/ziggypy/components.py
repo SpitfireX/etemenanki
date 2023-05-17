@@ -133,7 +133,12 @@ class VectorComp(Component):
         blocks = []
 
         for i in range(0, n, BLOCKSIZE):
-            block = data[i : i+BLOCKSIZE]
+            remaining = data.shape[0] - i
+            if remaining >= 16:
+                block = data[i : i+BLOCKSIZE]
+            else:
+                block = np.full((16, d), -1, dtype=np.int64)
+                block[:remaining] = data[i:]
             
             cols = []
 
@@ -191,7 +196,13 @@ class VectorDelta(Component):
         blocks = []
 
         for i in range(0, n, BLOCKSIZE):
-            block = data[i : i+BLOCKSIZE]
+            remaining = data.shape[0] - i
+            if remaining >= 16:
+                block = data[i : i+BLOCKSIZE]
+            else:
+                block = np.full((16, d), -1, dtype=np.int64)
+                block[:remaining] = data[i:]
+            
             delta = np.empty(block.shape, dtype=np.int64)
             delta[0] = np.copy(block[0])
 
