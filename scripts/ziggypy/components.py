@@ -339,6 +339,7 @@ class IndexCompressed(Component):
         blocks = []
         blen = 0
         bstart = 0
+        block_padding = 0
 
         for i in range(len(data)):
             if blen < 16:
@@ -351,13 +352,19 @@ class IndexCompressed(Component):
                     bstart = i
                     blen = 1
         if blen != 0:
-            blocks.append(data[bstart:])
+            if blen < 16: # padding to a full block
+                block_padding = 16 - blen
+                block = np.full((16, 2), -1, dtype=np.uint64)
+                block[:blen] = data[bstart:]
+                blocks.append(block)
+            else:
+                blocks.append(data[bstart:])
 
 
-        o = len(data) - (len(blocks) * 16)  # number of overflow items
-        r = len(blocks) * 16                # number of regular items in blocks
-        mr = int((r - 1) / 16) + 1          # number of sync blocks
-        data_offset = mr*8+8                # start offset of data in compontent
+        r = len(blocks) * 16 - block_padding   # number of regular items in blocks
+        o = len(data) - r                      # number of overflow items
+        mr = int((r - 1) / 16) + 1             # number of sync blocks
+        data_offset = mr*8+8                   # start offset of data in compontent
 
         assert mr == len(blocks)
     
