@@ -8,17 +8,16 @@ from ziggypy.layers import *
 from ziggypy.variables import *
 
 from pathlib import Path
-from uuid import UUID
 
-parser = argparse.ArgumentParser(description='Script to convert a VRT file to a ziggurat basic layer')
-parser.add_argument('input', type=Path,
-                    help='The VRT file to convert')
-parser.add_argument('-o', type=Path, required=False, dest="output",
-                    help='The output directory for the Ziggurat data store. Default is input filename without extension')
-parser.add_argument('-f', '--force', action='store_true',
-                    help='Force overwrite output if directory already exists')
-parser.add_argument('-u', '--uncompressed', action='store_true',
-                    help='Write all components uncompressed (storage mode 0x00)')
+parser = argparse.ArgumentParser(description="Script to convert a VRT file to a ziggurat basic layer")
+parser.add_argument("input", type=Path,
+                    help="The VRT file to convert")
+parser.add_argument("-o", type=Path, required=False, dest="output",
+                    help="The output directory for the Ziggurat data store. Default is input filename without extension")
+parser.add_argument("-f", "--force", action="store_true",
+                    help="Force overwrite output if directory already exists")
+parser.add_argument("-u", "--uncompressed", action="store_true",
+                    help="Write all components uncompressed (storage mode 0x00)")
 
 args = parser.parse_args()
 
@@ -38,7 +37,7 @@ else:
 
 ### VRT processing
 
-print('Processing VRT...')
+print("Processing VRT...")
 
 corpus = [] # list of lists for utf-8 encoded strings indexed by [attr_i][cpos]
 stack = [] # parsing stack for s attrs, list of openend tags (startpos, tagname, attrs)
@@ -71,7 +70,7 @@ with args.input.open() as f:
                 pcount = len(line.split())
                 break
     
-    print(f'\t found {pcount} p-attrs')
+    print(f"\t found {pcount} p-attrs")
     corpus = [[] for _ in range(pcount)]
     f.seek(0) # reset file to beginning
 
@@ -81,7 +80,7 @@ with args.input.open() as f:
             if line.strip():
                 pattrs = line.split()
                 for i, attr in enumerate(pattrs):
-                    corpus[i].append((attr).encode('utf-8'))
+                    corpus[i].append((attr).encode("utf-8"))
                 cpos += 1
 
         # s attrs
@@ -107,11 +106,11 @@ clen = cpos
 # double check dimensions
 assert all(len(p) == clen for p in corpus), "P attributes of supplied VRT don't have the same dimensions"
 
-print(f'Input corpus has {clen} corpus positions')
+print(f"Input corpus has {clen} corpus positions")
 
 
 ### Datastore creation
-print('Building Ziggurat datastore...')
+print("Building Ziggurat datastore...")
 
 # A datastore consists of container files, which all have a UUID v4.
 # Container files can be layer files and variables assigned to them.
