@@ -18,8 +18,56 @@ parser.add_argument("-f", "--force", action="store_true",
                     help="Force overwrite output if directory already exists")
 parser.add_argument("-u", "--uncompressed", action="store_true",
                     help="Write all components uncompressed (storage mode 0x00)")
+parser.add_argument("-p", action="append", metavar="p_attribute_name", default=[],
+                    help="""Declares and names a p-attribute. Order of declaration must correspond to order of columns in input.
+                    P-attributes are encoded as variables on the primary layer of the corpus.
+                    Variable type can be specified with a colon after the name, i.e. 'pos:indexed'.
+                    Valid variable types are: indexed, plain. Per default all p-attributes in the input are encoded with type
+                    'indexed' and a simple numeric name, e.g. 'p1'.""")
+parser.add_argument("-s", action="append", metavar="s_attribute_name", default=[],
+                    help="""Declares an s-attribute. The attribute name must correspond to the attribute's XML tag in the input.
+                    S-attributes are encoded as segmentation layers and thus only store the start and end positions of the spans
+                    enclosed by the XML tags.
+                    e.g. '-s text'.
+                    For encoding of the tag's attributes see '-a'.""")
+parser.add_argument("-a", action="append", metavar="s_annotation_spec", default=[],
+                    help="""Declares an annotation spec for an s-attribute annotation. In the input these annotations correspond
+                    with the attributes of the s-attribute's XML tags. Annotations consist of three parts: The s-attribute's name,
+                    the annotation's name, and a Ziggurat variable type. This takes the form 's_attr+name:type',
+                    e.g. '-a text+url:plain'.
+                    Valid variable types are: indexed, plain, int, set.
+                    """)
 
 args = parser.parse_args()
+
+p_attrs = []
+for p in args.p:
+    p = p.split(":", 1)
+    if len(p) == 1:
+        name, type = p[0], "indexed"
+    else:
+        name, type = p
+    assert type in ("indexed", "plain"), f"Invalid variable type '{type}' for p-attribute '{name}'"
+    p_attrs.append((name, type))
+
+
+s_attrs = args.s
+
+
+s_annos = dict()
+for a in args.a:
+    try:
+        attr, anno = a.split("+")
+        anno, type = anno.split(":")
+        assert type in ("indexed", "plain", "int", "set")
+        if attr not in s_annos.keys():
+            s_annos[attr] = []
+        s_annos[attr].append((anno, type))
+    except:
+        print(f"Invalid s-attribute annotation spec '{a}'")
+        exit()
+
+print(p_attrs, s_attrs, s_annos)
 
 # output file handling
 
@@ -39,7 +87,7 @@ else:
 
 print("Processing VRT...")
 
-corpus = [] # list of lists for utf-8 encoded strings indexed by [attr_i][cpos]
+corpus = [] # list of lists for utf-8 encoded strings indexed by [p_attr_i][cpos]
 stack = [] # parsing stack for s attrs, list of openend tags (startpos, tagname, attrs)
 spans = dict() # keys are the different s attrs, values list of spans (startpos, endpos)
 span_attrs = dict() # same as above, but values are the associated attributes for each span 
@@ -100,6 +148,21 @@ with args.input.open() as f:
                     span_attrs[tagname].append(attrs)
 
 print(f"\t found {len(spans.keys())} s-attrs: {tuple(spans.keys())}")
+
+# padding p_attrs with default values (numeric name and type indexed)
+p_attrs.extend([(f"p{n+1}", "indexed") for n in range(len(corpus))][len(p_attrs):])
+
+print("Encoding the following attributes:")
+for name, type in p_attrs:
+    print(f"\tp-attribute '{name}' of type '{type}'")
+for name in s_attrs:
+    print(f"\ts-attribute '{name}'", end="")
+    if name in s_annos.keys() and len(s_annos[name]) > 0:
+        print(f"with annotation{'s' if len(s_annos[name]) > 1 else ''}")
+    else:
+        print()
+    for annotation, type in s_annos[name]:
+        print(f"\t\t'{annotation}' of type '{type}'")
 
 clen = cpos
 
