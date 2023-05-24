@@ -67,7 +67,6 @@ for a in args.a:
         print(f"Invalid s-attribute annotation spec '{a}'")
         exit()
 
-print(p_attrs, s_attrs, s_annos)
 
 # output file handling
 
@@ -150,7 +149,7 @@ with args.input.open() as f:
 print(f"\t found {len(spans.keys())} s-attrs: {tuple(spans.keys())}")
 
 # padding p_attrs with default values (numeric name and type indexed)
-p_attrs.extend([(f"p{n+1}", "indexed") for n in range(len(corpus))][len(p_attrs):])
+p_attrs.extend([(str(n+1), "indexed") for n in range(len(corpus))][len(p_attrs):])
 
 print("Encoding the following attributes:")
 for name, type in p_attrs:
@@ -161,8 +160,9 @@ for name in s_attrs:
         print(f"with annotation{'s' if len(s_annos[name]) > 1 else ''}")
     else:
         print()
-    for annotation, type in s_annos[name]:
-        print(f"\t\t'{annotation}' of type '{type}'")
+    if name in s_annos.keys():
+        for annotation, type in s_annos[name]:
+            print(f"\t\t'{annotation}' of type '{type}'")
 
 clen = cpos
 
@@ -188,29 +188,68 @@ print("Building Ziggurat datastore...")
 partitions = [0, clen]
 
 
-## Datastore Objects
-
-datastore = dict()
-
-# Primary Layer with corpus dimensions
-datastore["primary_layer"] = PrimaryLayer(clen, partitions)
-
-# Plain String Variable for tokens
-datastore["p_token"] = PlainStringVariable(datastore["primary_layer"], corpus[0], compressed = not args.uncompressed)
-
-# Indexed String Variable for POS tags
-datastore["p_pos"] = IndexedStringVariable(datastore["primary_layer"], corpus[1], compressed= not args.uncompressed)
-
-# Segmentation Layers for s attributes
-for attr in spans.keys():
-    slen = len(spans[attr])
-    datastore["s_" + attr] = SegmentationLayer(slen, (0, slen), spans[attr])
-
-for name, obj in datastore.items():
+def write_datastore_object(obj, filename):
     ztype = obj.__class__.__name__
     ext = ".zigl" if isinstance(obj, Layer) else ".zigv"
-    p = args.output / (name + ext)
+    p = args.output / (filename + ext)
 
-    print(f"Writing {ztype} '{name}' to file {p}")
+    print(f"Writing {ztype} '{filename}' to file {p}")
     with p.open(mode = "wb") as f:
         obj.write(f)
+
+
+## Primary Layer with corpus dimensions
+primary_layer = PrimaryLayer(clen, partitions)
+write_datastore_object(primary_layer, "primary_layer")
+
+
+## Primary Layer Variables for p attributes
+
+for i, (name, type) in enumerate(p_attrs):
+    if type == "indexed":
+        variable = IndexedStringVariable(primary_layer, corpus[i], compressed = not args.uncompressed)
+    elif type == "plain":
+        variable = PlainStringVariable(primary_layer, corpus[i], compressed = not args.uncompressed)
+    else:
+        print(f"Invalid type '{type}' for p attribute '{name}'")
+        continue
+    
+    write_datastore_object(variable, "pattr_" + name)
+
+
+s_attr_layers = dict()
+
+## Segmentation Layers for s attributes
+for attr in s_attrs:
+    slen = len(spans[attr])
+    layer = SegmentationLayer(slen, (0, slen), spans[attr])
+
+    s_attr_layers[attr] = layer
+    write_datastore_object(layer, "sattr_" + attr)
+
+
+## Variables for s attribute annotations
+
+for attr, annos in s_annos.items():
+    base_layer = s_attr_layers[attr]
+
+    for anno, type in annos:
+
+        data = [attrs[anno] for attrs in span_attrs[attr]]
+        assert len(data) == base_layer.n, f"Inconsistend number of annotations for annotation '{anno}' for s attribute '{attr}'"
+
+        if type == "indexed":
+            variable = IndexedStringVariable(base_layer, [s.encode("utf-8") for s in data], compressed = not args.uncompressed)
+        elif type == "plain":
+            variable = PlainStringVariable(base_layer, [s.encode("utf-8") for s in data], compressed = not args.uncompressed)
+        elif type == "int":
+            print("Int variable type not yet implemented")
+            continue
+        elif type == "set":
+            print("Set variable type not yet implemented")
+            continue
+        else:
+            print(f"Invalid type '{type}' for annotation '{anno}' of s attribute '{attr}'")
+            continue
+
+        write_datastore_object(variable, f"sattr_{attr}_{anno}")
