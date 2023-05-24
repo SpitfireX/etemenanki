@@ -243,8 +243,7 @@ for attr, annos in s_annos.items():
         elif type == "plain":
             variable = PlainStringVariable(base_layer, [s.encode("utf-8") for s in data], compressed = not args.uncompressed)
         elif type == "int":
-            print("Int variable type not yet implemented")
-            continue
+            variable = IntegerVariable(base_layer, [int(s) for s in data], compressed = not args.uncompressed)
         elif type == "set":
             print("Set variable type not yet implemented")
             continue

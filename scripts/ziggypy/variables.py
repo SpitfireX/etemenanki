@@ -98,3 +98,39 @@ class IndexedStringVariable(Variable):
             self.uuid,
             (base_layer.uuid, None)
         )
+
+
+class IntegerVariable(Variable):
+
+    def __init__(self, base_layer: Layer, ints: Sequence[int], b: int = 1, uuid: Optional[UUID] = None, compressed: bool = True, delta: bool = False):
+    
+        super().__init__(base_layer, uuid if uuid else uuid4())
+
+        # stream of integers
+
+        if compressed:
+            if delta:
+                int_stream = VectorDelta(ints, "IntStream", len(ints))
+            else:
+                int_stream = VectorComp(ints, "IntStream", len(ints))
+        else:
+            int_stream = Vector(ints, "IntStream", len(ints))
+
+        # sort index
+
+        pairs = [(n, i) for i, n in enumerate(ints)]
+        pairs.sort(key = lambda x: x[0])
+
+        if compressed:
+            int_sort = IndexCompressed(pairs, "IntSort", len(ints))
+        else:
+            int_sort = Index(pairs, "IntSort", len(ints))
+            
+
+        self.container = Container(
+            (int_stream, int_sort),
+            'ZVi',
+            (self.base_layer.n, b),
+            self.uuid,
+            (base_layer.uuid, None)
+        )
