@@ -79,7 +79,7 @@ class IndexedStringVariable(Variable):
 
         lexindex = Index(hashes, "LexHash", lsize)
 
-        lexids = [lex.index(pos) for pos in strings]
+        lexids = [(lex.index(pos),) for pos in strings]
 
         if compressed:
             lexidstream = VectorComp(lexids, "LexIDStream", len(lexids))
@@ -89,7 +89,7 @@ class IndexedStringVariable(Variable):
         # inverted lookup index associating each lexicon ID with its positionso of occurence
         invidx = InvertedIndex(lex, lexids, "LexIDIndex", lsize, 0)
 
-        p_vec = Vector(self.base_layer.partition, 'Partition', len(self.base_layer.partition))
+        p_vec = Vector(self.base_layer.partition, "Partition", len(self.base_layer.partition))
 
         self.container = Container(
             (lexicon, lexindex, p_vec, lexidstream, invidx),
@@ -131,6 +131,53 @@ class IntegerVariable(Variable):
             (int_stream, int_sort),
             'ZVi',
             (self.base_layer.n, b),
+            self.uuid,
+            (base_layer.uuid, None)
+        )
+
+
+class SetVariable(Variable):
+    def __init__(self, base_layer: Layer, sets: Sequence[set[bytes]], uuid: Optional[UUID] = None):
+
+        super().__init__(base_layer, uuid if uuid else uuid4())
+
+        # global lexicon of types 
+        types = Counter()
+        for set in sets:
+            types.update(set)
+        types = {x[0]: i for i, x in enumerate(types.most_common())}
+
+        n = len(sets) # number of sets
+        assert n == base_layer.n, "Mismatch between number of sets in Set Variable and positions in the base layer"
+        v = len(types.keys()) # number of unique types
+        lexicon = StringVector(types.keys(), "Lexicon", v)
+        
+        # sort index of types
+        types_hash = [(fnv1a_64(t), i) for t, i in types.items()]
+
+        lexhash = Index(types_hash, "LexHash", len(types_hash))
+
+        # sets of type ids
+        id_sets = [ sorted([types[i] for i in s]) for s in sets ]
+        
+        id_set_stream = Set(id_sets, "IDSetStream", n)
+
+        # index of type occurrences in sets, associates types with set IDs/layer positions
+        id_set_index = InvertedIndex(list(types), id_sets, "IDSetIndex", v, 0)
+
+        # partition
+        p_vec = Vector(self.base_layer.partition, "Partition", len(self.base_layer.partition))
+
+        self.container = Container(
+            (
+                lexicon,
+                lexhash,
+                p_vec,
+                id_set_stream,
+                id_set_index,
+            ),
+            'ZVs',
+            (n, v),
             self.uuid,
             (base_layer.uuid, None)
         )

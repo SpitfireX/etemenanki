@@ -245,8 +245,7 @@ for attr, annos in s_annos.items():
         elif type == "int":
             variable = IntegerVariable(base_layer, [int(s) for s in data], compressed = not args.uncompressed)
         elif type == "set":
-            print("Set variable type not yet implemented")
-            continue
+            variable = SetVariable(base_layer, [set(x.encode("utf-8") for x in s.split("|") if x) for s in data])
         else:
             print(f"Invalid type '{type}' for annotation '{anno}' of s attribute '{attr}'")
             continue

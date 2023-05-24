@@ -1,6 +1,7 @@
 import numpy as np
 
 from .varint import encode_varint
+from .util import batched
 
 from abc import ABC, abstractmethod
 from typing import Tuple, Optional, Iterable, Any, Sequence
@@ -301,6 +302,80 @@ class StringVector(Component):
         f.write(self.encoded)
 
 
+class Set(Component):
+
+    def __init__(self, sets: Iterable[Sequence[int]], name: str, n: int):
+
+        super().__init__(
+            0x05,
+            0x01,
+            name,
+            (n, 2)
+        )
+
+        blocks = []
+
+        # group sets into blocks of 16
+        for batch in batched(sets, 16):
+            offsets = []
+            lengths = []
+            encoded_items = b""
+
+            # delta encode each set
+            itemoffset = 0
+            for set in batch:
+                set = list(set)
+                delta = [set[0]]
+                for i in range(1, len(set)):
+                    delta.append(set[i] - set[i-1])
+                
+                encoded = b"".join(encode_varint(n) for n in delta)
+                
+                offsets.append(itemoffset)
+                lengths.append(len(encoded))
+                encoded_items += encoded
+
+                itemoffset += len(encoded)
+
+            # pad arrays
+            if len(offsets) < 16:
+                padding = 16 - len(offsets)
+                offsets.extend([-1] * padding)
+                lengths.extend([0] * padding)
+
+            # delta compress offset array
+
+            offsets_delta = [offsets[0]]
+            for i in range(1, len(offsets)):
+                offsets_delta.append(offsets[i] - offsets[i-1])
+
+            # assemble block
+            block = b"".join(encode_varint(o) for o in offsets_delta)
+            block += b"".join(encode_varint(l) for l in lengths)
+            block += encoded_items
+
+            blocks.append(block)
+        
+        # synchronisation vector with offsets for each block
+        sync = [0]
+        for i, b in enumerate(blocks[:-1], start=1):
+            sync.append(sync[i-1] + len(b))
+
+        self.sync = sync
+        self.blocks = blocks        
+
+    
+    def bytelen(self):
+        return len(self.sync)*8 + sum(len(b) for b in self.blocks)
+
+    
+    def write(self, f):
+        for o in self.sync:
+            f.write(pack('<q', o))
+        for b in self.blocks:
+            f.write(b)
+
+
 class Index(Component):
 
     def __init__(self, pairs: Iterable[Tuple[int, int]], name: str, n: int, sorted=False):
@@ -436,8 +511,8 @@ class IndexCompressed(Component):
 
 class InvertedIndex(Component):
 
-    def __init__(self, types: Sequence[Any], positions: Iterable[int], name: str, k: int, p: int):
-        """positions: list of lexicon positions for each corpus position"""
+    def __init__(self, types: Sequence[Any], positions: Iterable[Iterable[int]], name: str, k: int, p: int):
+        """positions: sequence of lists of lexicon positions for each corpus position"""
 
         assert p == 0, "jump tables for inverted index are not implemented yet"
 
@@ -449,8 +524,9 @@ class InvertedIndex(Component):
         )
 
         postings = [[] for _ in types]
-        for i, t in enumerate(positions):
-            postings[t].append(i)
+        for i, occurences in enumerate(positions):
+            for t in occurences:
+                postings[t].append(i)
 
         postings_delta = [[] for _ in types]
         for j in range(len(postings)):

@@ -1,7 +1,8 @@
 from itertools import islice
+from typing import Iterable, Any
 
 
-def batched(iterable, n):
+def batched(iterable: Iterable[Any], n: int):
     "Batch data into tuples of length n. The last batch may be shorter."
     # batched('ABCDEFG', 3) --> ABC DEF G
     if n < 1:
