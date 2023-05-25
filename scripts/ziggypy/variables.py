@@ -67,19 +67,20 @@ class IndexedStringVariable(Variable):
 
         # lexicon of unique strings, sorted by total occurence
         lex = Counter(strings)
-        lex = [x[0] for x in lex.most_common()]
+        lex = {x[0]: i for i, x in enumerate(lex.most_common())}
+
 
         lsize = len(lex)
         print("lexicon size:", lsize)
 
-        lexicon = StringVector(lex, "Lexicon", lsize)
+        lexicon = StringVector(lex.keys(), "Lexicon", lsize)
 
         # lexicon hashes
-        hashes = [(fnv1a_64(l), i) for i, l in enumerate(lex)]
+        hashes = [(fnv1a_64(l), i) for l, i in lex.items()]
 
         lexindex = Index(hashes, "LexHash", lsize)
 
-        lexids = [(lex.index(pos),) for pos in strings]
+        lexids = [(lex[pos],) for pos in strings]
 
         if compressed:
             lexidstream = VectorComp(lexids, "LexIDStream", len(lexids))
@@ -87,7 +88,7 @@ class IndexedStringVariable(Variable):
             lexidstream = Vector(lexids, "LexIDStream", len(lexids))
 
         # inverted lookup index associating each lexicon ID with its positionso of occurence
-        invidx = InvertedIndex(lex, lexids, "LexIDIndex", lsize, 0)
+        invidx = InvertedIndex(list(lex), lexids, "LexIDIndex", lsize, 0)
 
         p_vec = Vector(self.base_layer.partition, "Partition", len(self.base_layer.partition))
 

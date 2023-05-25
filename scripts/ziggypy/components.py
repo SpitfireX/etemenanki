@@ -325,7 +325,7 @@ class Set(Component):
             itemoffset = 0
             for set in batch:
                 set = list(set)
-                delta = [set[0]]
+                delta = [set[0]] if len(set) > 0 else []
                 for i in range(1, len(set)):
                     delta.append(set[i] - set[i-1])
                 
