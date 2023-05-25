@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-#[repr(C)]
+#[repr(C, packed)]
 struct Header {
     magic: [u8; 8],
     version: [u8;4],
@@ -42,7 +42,7 @@ struct Header {
     base2_uuid: [u8; 36],
 }
 
-#[repr(C)]
+#[repr(C, packed)]
 struct BOMEntry {
     family: u8,
     ctype: u8,

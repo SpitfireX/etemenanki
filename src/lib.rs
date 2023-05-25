@@ -3,18 +3,18 @@ use num_derive::FromPrimitive;
 #[cfg(test)]
 mod tests;
 
-struct Container {
-    version: &'static str,
+struct Container<'a> {
+    version: &'a str,
     family: ContainerFamily,
     class: ContainerClass,
-    ctype: &'static u8,
-    uuid: &'static str,
-    allocated_components: &'static u8,
-    used_components: &'static u8,
-    dim1: &'static i32,
-    dim2: &'static i32,
-    base1_uuid: &'static str,
-    base2_uuid: &'static str,
+    ctype: &'a u8,
+    uuid: &'a str,
+    allocated_components: &'a u8,
+    used_components: &'a u8,
+    dim1: &'a i32,
+    dim2: &'a i32,
+    base1_uuid: &'a str,
+    base2_uuid: &'a str,
     components: Vec<Component>, 
 }
 
