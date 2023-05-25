@@ -157,7 +157,7 @@ for name, type in p_attrs:
 for name in s_attrs:
     print(f"\ts-attribute '{name}'", end="")
     if name in s_annos.keys() and len(s_annos[name]) > 0:
-        print(f"with annotation{'s' if len(s_annos[name]) > 1 else ''}")
+        print(f"with annotation {'s' if len(s_annos[name]) > 1 else ''}")
     else:
         print()
     if name in s_annos.keys():
@@ -220,6 +220,7 @@ for i, (name, type) in enumerate(p_attrs):
 s_attr_layers = dict()
 
 ## Segmentation Layers for s attributes
+
 for attr in s_attrs:
     slen = len(spans[attr])
     layer = SegmentationLayer(slen, (0, slen), spans[attr])
