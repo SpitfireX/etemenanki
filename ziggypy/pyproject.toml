@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling", "numpy"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ziggypy"
+version = "0.0.1"
+description = "A library for interacting with Ziggurat datastores"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+requires-python = ">=3.8"
+authors = [
+  { name="Timm Weber", email="timm.weber@me.com" },
+]
+keywords = ["cwb", "ziggurat", "corpus"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+    "Topic :: Text Processing :: Linguistic",
+    "Topic :: File Formats",
+    "Topic :: Database",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/SpitfireX/ziggypy"
+"Bug Tracker" = "https://github.com/SpitfireX/ziggypy/issues"
