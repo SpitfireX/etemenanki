@@ -1,8 +1,13 @@
-use std::fs::File;
+use std::{fs::File, process::exit};
 use std::io::Result;
 use std::str;
+use std::time::Instant;
 
 use memmap2::Mmap;
+
+use rand::{prelude::*, Fill, distributions::Uniform};
+
+use ziggurat_varint::{VarInt};
 
 fn main() -> Result<()> {
     let file = File::open("scripts/recipes4000/b764b867-cac4-4329-beda-9c021c5184d7.zigl")?;

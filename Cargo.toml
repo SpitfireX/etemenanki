@@ -1,11 +1,6 @@
-[package]
-name = "etemenanki"
-version = "0.1.0"
-edition = "2021"
+[workspace]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-memmap2 = "0.5.8"
-num-derive = "0.3.3"
-num-traits = "0.2.15"
+members = [
+    "etemenanki",
+    "ziggurat-varint",
+];

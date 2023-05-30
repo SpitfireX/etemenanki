@@ -1,6 +1,14 @@
 import numpy as np
 
-from .varint import encode_varint
+try:
+    from ziggurat_varint import *
+except ImportError:
+    print("Warning: Using slow VarInt implementation, consider installing the faster ziggurat_varint module")
+    from .varint import encode_varint
+    encode_varint_unsigned = encode_varint
+    encode_varint_block = lambda block: b"".join(encode_varint(i) for i in block)
+    encode_varint_block_unsigned = encode_varint_block
+
 from .util import batched
 
 from abc import ABC, abstractmethod
@@ -145,10 +153,7 @@ class VectorComp(Component):
 
             for j in range(d):
                 row = block[:, j]
-                varints = []
-                for l in row:
-                    varints.append(encode_varint(l))
-                cols.append(b''.join(varints))
+                cols.append(encode_varint_block(row))
 
             blocks.append(b''.join(cols))
 
@@ -214,11 +219,7 @@ class VectorDelta(Component):
                     delta[i][j] = block[i][j] - block[i-1][j]
 
                 row = delta[:, j]
-                varints = []
-                for l in row:
-                    varints.append(encode_varint(l))
-
-                cols.append(b''.join(varints))
+                cols.append(encode_varint_block(row))
 
             blocks.append(b''.join(cols))
 
@@ -329,7 +330,7 @@ class Set(Component):
                 for i in range(1, len(set)):
                     delta.append(set[i] - set[i-1])
                 
-                encoded = b"".join(encode_varint(n) for n in delta)
+                encoded = encode_varint_block(delta)
                 
                 offsets.append(itemoffset)
                 lengths.append(len(encoded))
@@ -350,8 +351,8 @@ class Set(Component):
                 offsets_delta.append(offsets[i] - offsets[i-1])
 
             # assemble block
-            block = b"".join(encode_varint(o) for o in offsets_delta)
-            block += b"".join(encode_varint(l) for l in lengths)
+            block = encode_varint_block(offsets_delta)
+            block += encode_varint_block(lengths)
             block += encoded_items
 
             blocks.append(block)
@@ -463,22 +464,21 @@ class IndexCompressed(Component):
         block_keys = []
 
         for b in blocks:
-            bo = encode_varint(len(b) - 16)
 
             keys = b[:16,0]
             block_keys.append(keys[0])
-            keys_delta = []
+            keys_delta = [int(keys[0])]
             for i in range(1, len(keys)):
-                keys_delta.append(keys[i] - keys[i-1])
+                keys_delta.append(int(keys[i] - keys[i-1]))
             
             positions = b[:,1].astype(np.int64) # cpos offsets can be negative
-            positions_delta = []
+            positions_delta = [positions[0]]
             for i in range(1, len(positions)):
                 positions_delta.append(positions[i] - positions[i-1])
 
-            packed = bo
-            packed += b''.join(encode_varint(int(x)) for x in keys_delta)
-            packed += b''.join(encode_varint(x) for x in positions_delta)
+            packed = encode_varint(len(b) - 16)
+            packed += encode_varint_block_unsigned(keys_delta)
+            packed += encode_varint_block(positions_delta)
 
             packed_blocks.append(packed)
         
@@ -528,18 +528,18 @@ class InvertedIndex(Component):
             for t in occurences:
                 postings[t].append(i)
 
-        postings_delta = [[] for _ in types]
-        for j in range(len(postings)):
-            postings_delta[j].append(postings[j][0])
-            for i in range(1, len(postings[j])):
-                postings_delta[j].append(postings[j][i] - postings[j][i-1])
 
         postings_encoded = []
-        for pd in postings_delta:
-            block = encode_varint(0) # jump table offset for now always zero TODO
-            for d in pd:
-                block += encode_varint(d)
-            
+
+        for pl in postings:
+
+            delta = np.array(pl, dtype=np.int64)
+            sub = np.append(np.array([0], dtype=np.int64), delta[1:])
+            delta -= sub
+
+            block = b"\x00" # jump table offset for now always zero TODO
+            block += encode_varint_block(delta)
+                
             postings_encoded.append(block)
 
         self.encoded = b''
