@@ -2,6 +2,7 @@
 
 import argparse
 import xml.parsers.expat as expat
+import gzip
 
 from ziggypy.components import *
 from ziggypy.layers import *
@@ -109,7 +110,7 @@ parser.Parse("<start>") # init with one global start tag to keep parser happy
 parser.StartElementHandler = start_element
 parser.EndElementHandler = end_element
 
-with args.input.open() as f:
+with gzip.open(args.input, mode = "rt") if args.input.suffix == ".gz" else args.input.open() as f:
     # find number of p attrs
     for line in f:
         if not line.startswith("<"):
@@ -125,7 +126,7 @@ with args.input.open() as f:
         # p attrs
         if not line.startswith("<"):
             if line.strip():
-                pattrs = line.split()
+                pattrs = line.split(maxsplit = pcount-1)
                 for i, attr in enumerate(pattrs):
                     corpus[i].append((attr).encode("utf-8"))
                 cpos += 1
