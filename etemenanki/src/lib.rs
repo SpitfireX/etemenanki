@@ -1,11 +1,15 @@
-#![feature(iter_next_chunk)]
+#![feature(pattern)]
 
 use std::{
+    collections::HashMap,
     error::{self, Error},
-    fmt,
+    fmt, mem,
+    num::TryFromIntError,
+    ops::Range,
     str::{self, Utf8Error},
 };
 
+use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 use uuid::Uuid;
@@ -34,7 +38,7 @@ struct RawHeader {
 }
 
 #[repr(C, packed)]
-struct RawBOMEntry {
+struct RawBomEntry {
     family: u8,
     ctype: u8,
     mode: u8,
@@ -59,24 +63,31 @@ pub struct Container<'a> {
     pub dim2: usize,
     pub base1_uuid: Option<Uuid>,
     pub base2_uuid: Option<Uuid>,
-    // pub components: Vec<Component>,
+    pub components: HashMap<&'a str, Component<'a>>,
 }
 
 impl<'a> Container<'a> {
-    pub fn from_mmap(mmap: &Mmap) -> Result<Self, ContainerFormatError> {
-        let header = unsafe { (mmap.as_ref().as_ptr() as *const RawHeader).as_ref() }
-            .ok_or(ContainerFormatError::Mmap)?;
+    pub fn from_mmap(mmap: &Mmap) -> Result<Self, ContainerError> {
+        let Range { start, end } = mmap.as_ref().as_ptr_range();
+
+        let header = unsafe {
+            if start.offset(mem::size_of::<RawHeader>().try_into()?) <= end {
+                (start as *const RawHeader)
+                    .as_ref()
+                    .ok_or(ContainerError::Memory("null pointer"))
+            } else {
+                Err(ContainerError::Memory("header out of bounds"))
+            }
+        }?;
 
         let magic = str::from_utf8(&header.magic)?;
         if !(magic == "Ziggurat") {
-            return Err(ContainerFormatError::FormatError("Invalid magic string"));
+            return Err(ContainerError::FormatError("Invalid magic string"));
         }
 
         let version = str::from_utf8(&header.version[..3])?;
         if !(version == "1.0") {
-            return Err(ContainerFormatError::FormatError(
-                "Invalid container version",
-            ));
+            return Err(ContainerError::FormatError("Invalid container version"));
         }
 
         let raw_family = header.family as char;
@@ -107,6 +118,38 @@ impl<'a> Container<'a> {
             }
         };
 
+        let bom = unsafe {
+            let bom_ptr = start.offset(160);
+            let n = header.allocated as usize;
+
+            if bom_ptr.offset((mem::size_of::<RawBomEntry>() * n).try_into()?) <= end {
+                let first_bom = bom_ptr as *const RawBomEntry;
+                Ok(std::slice::from_raw_parts(first_bom, n))
+            } else {
+                Err(ContainerError::Memory("BOM out of bounds"))
+            }
+        }?;
+
+        let mut components = HashMap::new();
+
+        for be in bom {
+            if be.family != 0x01 {
+                continue;
+            }
+
+            if unsafe {
+                start.offset(be.offset as isize) <= end
+                    && start.offset((be.offset + be.size) as isize) <= end
+            } {
+                let name = str::from_utf8(&be.name)?.trim_end_matches("\0");
+                let component = Component::from_raw_parts(be, start)?;
+
+                components.insert(name, component);
+            } else {
+                return Err(ContainerError::Memory("component out of bounds"));
+            }
+        }
+
         Ok(Container {
             version,
             raw_family,
@@ -120,56 +163,72 @@ impl<'a> Container<'a> {
             dim2: header.dim2 as usize,
             base1_uuid,
             base2_uuid,
+            components,
         })
     }
 }
 
 #[derive(Debug)]
-pub enum ContainerFormatError {
-    Mmap,
+pub enum ContainerError {
+    Memory(&'static str),
     FormatError(&'static str),
     Utf8Error(Utf8Error),
     InvalidType(u64),
     UuidError(uuid::Error),
+    ComponentError(ComponentError),
 }
 
-impl fmt::Display for ContainerFormatError {
+impl fmt::Display for ContainerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ContainerFormatError::Mmap => write!(f, "invalid memory mapping"),
-            ContainerFormatError::FormatError(s) => write!(f, "{}", s),
-            ContainerFormatError::Utf8Error(e) => write!(f, "{}", e),
-            ContainerFormatError::InvalidType(t) => write!(f, "invalid container type {}", t),
-            ContainerFormatError::UuidError(e) => write!(f, "{}", e),
+            ContainerError::Memory(s) => write!(f, "{}", s),
+            ContainerError::FormatError(s) => write!(f, "{}", s),
+            ContainerError::Utf8Error(e) => write!(f, "{}", e),
+            ContainerError::InvalidType(t) => write!(f, "invalid container type {}", t),
+            ContainerError::UuidError(e) => write!(f, "{}", e),
+            ContainerError::ComponentError(e) => write!(f, "{}", e),
         }
     }
 }
 
-impl error::Error for ContainerFormatError {
+impl error::Error for ContainerError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
-            ContainerFormatError::Utf8Error(e) => Some(e),
-            ContainerFormatError::UuidError(e) => Some(e),
+            ContainerError::Utf8Error(e) => Some(e),
+            ContainerError::UuidError(e) => Some(e),
+            ContainerError::ComponentError(e) => Some(e),
             _ => None,
         }
     }
 }
 
-impl From<Utf8Error> for ContainerFormatError {
+impl From<Utf8Error> for ContainerError {
     fn from(value: Utf8Error) -> Self {
-        ContainerFormatError::Utf8Error(value)
+        ContainerError::Utf8Error(value)
     }
 }
 
-impl From<TryFromPrimitiveError<ContainerType>> for ContainerFormatError {
+impl From<TryFromPrimitiveError<ContainerType>> for ContainerError {
     fn from(value: TryFromPrimitiveError<ContainerType>) -> Self {
-        ContainerFormatError::InvalidType(value.number)
+        ContainerError::InvalidType(value.number)
     }
 }
 
-impl From<uuid::Error> for ContainerFormatError {
+impl From<TryFromIntError> for ContainerError {
+    fn from(value: TryFromIntError) -> Self {
+        ContainerError::Memory("out of bounds")
+    }
+}
+
+impl From<uuid::Error> for ContainerError {
     fn from(value: uuid::Error) -> Self {
-        ContainerFormatError::UuidError(value)
+        ContainerError::UuidError(value)
+    }
+}
+
+impl From<ComponentError> for ContainerError {
+    fn from(value: ComponentError) -> Self {
+        ContainerError::ComponentError(value)
     }
 }
 
@@ -189,5 +248,132 @@ pub enum ContainerType {
     IndexedStringVariable = 0x5a5678,   // "ZVx"
 }
 
+#[repr(u16)]
+#[derive(Debug, TryFromPrimitive)]
+enum ComponentType {
+    Blob = 0x0100,
+    StringList = 0x0200,
+    StringVector = 0x0300,
+    Vector = 0x0400,
+    VectorComp = 0x0401,
+    VectorDelta = 0x0402,
+    Set = 0x0500,
+    Index = 0x0600,
+    IndexComp = 0x0601,
+    InvertedIndex = 0x0701,
+}
+
+#[derive(Debug, EnumAsInner)]
+pub enum Component<'a> {
+    Blob(Blob),
+    StringList(StringList),
+    StringVector(StringVector),
+    Vector(Vector<'a>),
+    VectorComp(VectorComp),
+    VectorDelta(VectorDelta),
+    Set(Set),
+    Index(Index),
+    IndexComp(IndexComp),
+    InvertedIndex(InvertedIndex),
+}
+
+impl<'a> Component<'a> {
+    fn from_raw_parts(be: &RawBomEntry, start_ptr: *const u8) -> Result<Self, ComponentError> {
+        let component_type: ComponentType =
+            (((be.ctype as u16) << 8) | be.mode as u16).try_into()?;
+
+        Ok(match component_type {
+            ComponentType::Blob => todo!(),
+            ComponentType::StringList => todo!(),
+            ComponentType::StringVector => todo!(),
+
+            ComponentType::Vector => {
+                let n = be.param1 as usize;
+                let d = be.param2 as usize;
+                let data_ptr = unsafe { start_ptr.offset(be.offset as isize) as *const i64 };
+                let data = unsafe { std::slice::from_raw_parts(data_ptr, n * d) };
+                Component::Vector(Vector::from_parts(n, d, data))
+            }
+
+            ComponentType::VectorComp => todo!(),
+            ComponentType::VectorDelta => todo!(),
+            ComponentType::Set => todo!(),
+            ComponentType::Index => todo!(),
+            ComponentType::IndexComp => todo!(),
+            ComponentType::InvertedIndex => todo!(),
+        })
+    }
+}
+
 #[derive(Debug)]
-pub enum Component {}
+pub enum ComponentError {
+    InvalidType(u16),
+    NullPtr,
+}
+
+impl From<TryFromPrimitiveError<ComponentType>> for ComponentError {
+    fn from(value: TryFromPrimitiveError<ComponentType>) -> Self {
+        ComponentError::InvalidType(value.number)
+    }
+}
+
+impl fmt::Display for ComponentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ComponentError::InvalidType(t) => write!(f, "invalid container type {}", t),
+            ComponentError::NullPtr => write!(f, "given pointer is a null pointer"),
+        }
+    }
+}
+
+impl error::Error for ComponentError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Blob {}
+
+#[derive(Debug)]
+pub struct StringList {}
+
+#[derive(Debug)]
+pub struct StringVector {}
+
+#[derive(Debug)]
+pub struct Vector<'a> {
+    length: usize,
+    width: usize,
+    data: &'a [i64],
+}
+
+impl<'a> Vector<'a> {
+    pub fn from_parts(n: usize, d: usize, data: &'a [i64]) -> Self {
+        Self {
+            length: n,
+            width: d,
+            data,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct VectorComp {}
+
+#[derive(Debug)]
+pub struct VectorDelta {}
+
+#[derive(Debug)]
+pub struct Set {}
+
+#[derive(Debug)]
+pub struct Index {}
+
+#[derive(Debug)]
+pub struct IndexComp {}
+
+#[derive(Debug)]
+pub struct InvertedIndex {}
