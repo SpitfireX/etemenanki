@@ -64,6 +64,7 @@ pub struct RawBomEntry {
 
 #[derive(Debug)]
 pub struct Container<'a> {
+    mmap: Mmap,
     pub version: &'a str,
     pub raw_family: char,
     pub raw_class: char,
@@ -80,7 +81,7 @@ pub struct Container<'a> {
 }
 
 impl<'a> Container<'a> {
-    pub fn from_mmap(mmap: &Mmap) -> Result<Self, ContainerError> {
+    pub fn from_mmap(mmap: Mmap) -> Result<Self, ContainerError> {
         let Range { start, end } = mmap.as_ref().as_ptr_range();
 
         let header = unsafe {
@@ -166,6 +167,7 @@ impl<'a> Container<'a> {
         }
 
         Ok(Container {
+            mmap,
             version,
             raw_family,
             raw_class,
