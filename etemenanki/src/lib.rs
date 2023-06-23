@@ -266,7 +266,7 @@ enum ComponentType {
 #[derive(Debug, EnumAsInner)]
 pub enum Component<'a> {
     Blob(Blob),
-    StringList(StringList),
+    StringList(StringList<'a>),
     StringVector(StringVector),
     Vector(Vector<'a>),
     VectorComp(VectorComp<'a>),
@@ -284,7 +284,12 @@ impl<'a> Component<'a> {
 
         Ok(match component_type {
             ComponentType::Blob => todo!(),
-            ComponentType::StringList => todo!(),
+
+            ComponentType::StringList => {
+                let data = unsafe { std::slice::from_raw_parts(start_ptr, be.size as usize ) };
+                Component::StringList(StringList::from_parts(data))
+            }
+            
             ComponentType::StringVector => todo!(),
 
             ComponentType::Vector => {
@@ -401,7 +406,15 @@ impl error::Error for ComponentError {
 pub struct Blob {}
 
 #[derive(Debug)]
-pub struct StringList {}
+pub struct StringList<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> StringList<'a> {
+    pub fn from_parts(data: &'a [u8]) -> Self {
+        Self { data }
+    }
+}
 
 #[derive(Debug)]
 pub struct StringVector {}
