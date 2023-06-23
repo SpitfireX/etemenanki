@@ -272,7 +272,7 @@ pub enum Component<'a> {
     VectorComp(VectorComp<'a>),
     VectorDelta(VectorDelta<'a>),
     Set(Set),
-    Index(Index),
+    Index(Index<'a>),
     IndexComp(IndexComp<'a>),
     InvertedIndex(InvertedIndex),
 }
@@ -360,8 +360,14 @@ impl<'a> Component<'a> {
             }
 
             ComponentType::Set => todo!(),
-            ComponentType::Index => todo!(),
-            
+
+            ComponentType::Index => {
+                let n = be.param1 as usize;
+                let pairs_ptr = start_ptr as *const i64;
+                let pairs = unsafe { std::slice::from_raw_parts(pairs_ptr, n * 2) };
+                Component::Index(Index::from_parts(n, pairs))
+            }
+
             ComponentType::IndexComp => {
                 let n = be.param1 as usize;
                 let r = unsafe { *(start_ptr as *const i64) } as usize;
@@ -513,7 +519,19 @@ impl<'a> VectorDelta<'a> {
 pub struct Set {}
 
 #[derive(Debug)]
-pub struct Index {}
+pub struct Index<'a> {
+    length: usize,
+    pairs: &'a [i64],
+}
+
+impl<'a> Index<'a> {
+    pub fn from_parts(n: usize, pairs: &'a [i64]) -> Self {
+        Self {
+            length: n,
+            pairs,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct IndexComp<'a> {
