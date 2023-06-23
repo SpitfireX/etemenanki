@@ -267,7 +267,7 @@ enum ComponentType {
 pub enum Component<'a> {
     Blob(Blob),
     StringList(StringList<'a>),
-    StringVector(StringVector),
+    StringVector(StringVector<'a>),
     Vector(Vector<'a>),
     VectorComp(VectorComp<'a>),
     VectorDelta(VectorDelta<'a>),
@@ -290,7 +290,24 @@ impl<'a> Component<'a> {
                 Component::StringList(StringList::from_parts(data))
             }
             
-            ComponentType::StringVector => todo!(),
+            ComponentType::StringVector => {
+                let n = be.param1 as usize;
+
+                // check if sync array is in bounds
+                let len = be.size as usize;
+                let len_offsets = (n+1)*8;
+                if len_offsets > len {
+                    Err(ComponentError::OutOfBounds)?
+                } else {
+                    unsafe {
+                        let offsets = std::slice::from_raw_parts(start_ptr as *const i64, n+1);
+                        let data_ptr = start_ptr.offset(len_offsets as isize);
+                        let data = std::slice::from_raw_parts(data_ptr, len-len_offsets);
+
+                        Component::StringVector(StringVector::from_parts(n, offsets, data))
+                    }
+                }
+            }
 
             ComponentType::Vector => {
                 let n = be.param1 as usize;
@@ -417,7 +434,21 @@ impl<'a> StringList<'a> {
 }
 
 #[derive(Debug)]
-pub struct StringVector {}
+pub struct StringVector<'a> {
+    length: usize,
+    offsets: &'a [i64],
+    data: &'a [u8],
+}
+
+impl<'a> StringVector<'a> {
+    pub fn from_parts(n: usize, offsets: &'a [i64], data: &'a [u8]) -> Self {
+        Self {
+            length: n,
+            offsets,
+            data,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Vector<'a> {
