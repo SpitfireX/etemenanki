@@ -274,7 +274,7 @@ pub enum Component<'a> {
     Set(Set),
     Index(Index<'a>),
     IndexComp(IndexComp<'a>),
-    InvertedIndex(InvertedIndex),
+    InvertedIndex(InvertedIndex<'a>),
 }
 
 impl<'a> Component<'a> {
@@ -293,7 +293,7 @@ impl<'a> Component<'a> {
             ComponentType::StringVector => {
                 let n = be.param1 as usize;
 
-                // check if sync array is in bounds
+                // check if offsets array is in bounds
                 let len = be.size as usize;
                 let len_offsets = (n+1)*8;
                 if len_offsets > len {
@@ -389,7 +389,25 @@ impl<'a> Component<'a> {
                 }
             },
 
-            ComponentType::InvertedIndex => todo!(),
+            ComponentType::InvertedIndex => {
+                let k = be.param1 as usize;
+                let p = be.param2 as usize;
+
+                // check if typeinfo array is in bounds
+                let len = be.size as usize;
+                let len_typeinfo = k*8*2;
+                if len_typeinfo > len {
+                    Err(ComponentError::OutOfBounds)?
+                } else {
+                    unsafe {
+                        let typeinfo = std::slice::from_raw_parts(start_ptr as *const i64, k*2);
+                        let data_ptr = start_ptr.offset((len_typeinfo) as isize);
+                        let data = std::slice::from_raw_parts(data_ptr, len - len_typeinfo);
+
+                        Component::InvertedIndex(InvertedIndex::from_parts(k, p, typeinfo, data))
+                    }
+                }
+            }
         })
     }
 }
@@ -553,4 +571,20 @@ impl<'a> IndexComp<'a> {
 }
 
 #[derive(Debug)]
-pub struct InvertedIndex {}
+pub struct InvertedIndex<'a> {
+    types: usize,
+    jtable_length: usize,
+    typeinfo: &'a [i64],
+    data: &'a [u8],
+}
+
+impl<'a> InvertedIndex<'a> {
+    pub fn from_parts(k: usize, p: usize, typeinfo: &'a [i64], data: &'a [u8]) -> Self {
+        Self {
+            types: k,
+            jtable_length: p,
+            typeinfo,
+            data,
+        }
+    }
+}
