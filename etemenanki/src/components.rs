@@ -1,0 +1,396 @@
+use std::{error, fmt};
+
+use enum_as_inner::EnumAsInner;
+use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
+
+use crate::container::RawBomEntry;
+
+#[repr(u16)]
+#[derive(Debug, TryFromPrimitive)]
+enum ComponentType {
+    Blob = 0x0100,
+    StringList = 0x0200,
+    StringVector = 0x0300,
+    Vector = 0x0400,
+    VectorComp = 0x0401,
+    VectorDelta = 0x0402,
+    Set = 0x0501,
+    Index = 0x0600,
+    IndexComp = 0x0601,
+    InvertedIndex = 0x0701,
+}
+
+#[derive(Debug, EnumAsInner)]
+pub enum Component<'a> {
+    Blob(Blob<'a>),
+    StringList(StringList<'a>),
+    StringVector(StringVector<'a>),
+    Vector(Vector<'a>),
+    VectorComp(VectorComp<'a>),
+    VectorDelta(VectorDelta<'a>),
+    Set(Set<'a>),
+    Index(Index<'a>),
+    IndexComp(IndexComp<'a>),
+    InvertedIndex(InvertedIndex<'a>),
+}
+
+impl<'a> Component<'a> {
+    pub fn from_raw_parts(be: &RawBomEntry, start_ptr: *const u8) -> Result<Self, ComponentError> {
+        let component_type: ComponentType =
+            (((be.ctype as u16) << 8) | be.mode as u16).try_into()?;
+
+        Ok(match component_type {
+            ComponentType::Blob => {
+                let data = unsafe { std::slice::from_raw_parts(start_ptr, be.size as usize) };
+                Component::Blob(Blob::from_parts(data))
+            }
+
+            ComponentType::StringList => {
+                let data = unsafe { std::slice::from_raw_parts(start_ptr, be.size as usize) };
+                Component::StringList(StringList::from_parts(data))
+            }
+
+            ComponentType::StringVector => {
+                let n = be.param1 as usize;
+
+                // check if offsets array is in bounds
+                let len = be.size as usize;
+                let len_offsets = (n + 1) * 8;
+                if len_offsets > len {
+                    Err(ComponentError::OutOfBounds("offsets in StringVector"))?
+                } else {
+                    unsafe {
+                        let offsets = std::slice::from_raw_parts(start_ptr as *const i64, n + 1);
+                        let data_ptr = start_ptr.offset(len_offsets as isize);
+                        let data = std::slice::from_raw_parts(data_ptr, len - len_offsets);
+
+                        Component::StringVector(StringVector::from_parts(n, offsets, data))
+                    }
+                }
+            }
+
+            ComponentType::Vector => {
+                let n = be.param1 as usize;
+                let d = be.param2 as usize;
+                let data_ptr = start_ptr as *const i64;
+                let data = unsafe { std::slice::from_raw_parts(data_ptr, n * d) };
+                Component::Vector(Vector::from_parts(n, d, data))
+            }
+
+            ComponentType::VectorComp => {
+                let n = be.param1 as usize;
+                let d = be.param2 as usize;
+                let m = ((n - 1) / 16) + 1;
+
+                // check if sync array is in bounds
+                let len = be.size as usize;
+                let len_sync = m * 8;
+                if len_sync > len {
+                    Err(ComponentError::OutOfBounds("sync in VectorComp"))?
+                } else {
+                    unsafe {
+                        let sync = std::slice::from_raw_parts(start_ptr as *const i64, m);
+                        let data_ptr = start_ptr.offset(len_sync as isize);
+                        let data = std::slice::from_raw_parts(data_ptr, len - len_sync);
+
+                        Component::VectorDelta(VectorDelta::from_parts(n, d, sync, data))
+                    }
+                }
+            }
+
+            ComponentType::VectorDelta => {
+                let n = be.param1 as usize;
+                let d = be.param2 as usize;
+                let m = ((n - 1) / 16) + 1;
+
+                // check if sync array is in bounds
+                let len = be.size as usize;
+                let len_sync = m * 8;
+                if len_sync > len {
+                    Err(ComponentError::OutOfBounds("sync in VectorDelta"))?
+                } else {
+                    unsafe {
+                        let sync = std::slice::from_raw_parts(start_ptr as *const i64, m);
+                        let data_ptr = start_ptr.offset(len_sync as isize);
+                        let data = std::slice::from_raw_parts(data_ptr, len - len_sync);
+
+                        Component::VectorDelta(VectorDelta::from_parts(n, d, sync, data))
+                    }
+                }
+            }
+
+            ComponentType::Set => {
+                let n = be.param1 as usize;
+                let m = ((n - 1) / 16) + 1;
+
+                // check if sync array is in bounds
+                let len = be.size as usize;
+                let len_sync = m * 8;
+                if len_sync > len {
+                    Err(ComponentError::OutOfBounds("sync in Set"))?
+                } else {
+                    unsafe {
+                        let sync = std::slice::from_raw_parts(start_ptr as *const i64, m);
+                        let data_ptr = start_ptr.offset(len_sync as isize);
+                        let data = std::slice::from_raw_parts(data_ptr, len - len_sync);
+
+                        Component::Set(Set::from_parts(n, sync, data))
+                    }
+                }
+            }
+
+            ComponentType::Index => {
+                let n = be.param1 as usize;
+                let pairs_ptr = start_ptr as *const i64;
+                let pairs = unsafe { std::slice::from_raw_parts(pairs_ptr, n * 2) };
+                Component::Index(Index::from_parts(n, pairs))
+            }
+
+            ComponentType::IndexComp => {
+                let n = be.param1 as usize;
+                let r = unsafe { *(start_ptr as *const i64) } as usize;
+                let mr = ((r - 1) / 16) + 1;
+
+                // check if sync array is in bounds
+                let len = be.size as usize;
+                let len_sync = mr * 8 * 2;
+                if len_sync > len {
+                    Err(ComponentError::OutOfBounds("sync in IndexComp"))?
+                } else {
+                    unsafe {
+                        let sync =
+                            std::slice::from_raw_parts(start_ptr.offset(8) as *const i64, mr * 2);
+                        let data_ptr = start_ptr.offset((8 + len_sync) as isize);
+                        let data = std::slice::from_raw_parts(data_ptr, len - len_sync - 8);
+
+                        Component::IndexComp(IndexComp::from_parts(n, r, sync, data))
+                    }
+                }
+            }
+
+            ComponentType::InvertedIndex => {
+                let k = be.param1 as usize;
+                let p = be.param2 as usize;
+
+                // check if typeinfo array is in bounds
+                let len = be.size as usize;
+                let len_typeinfo = k * 8 * 2;
+                if len_typeinfo > len {
+                    Err(ComponentError::OutOfBounds("typeinfo in InvertedIndex"))?
+                } else {
+                    unsafe {
+                        let typeinfo = std::slice::from_raw_parts(start_ptr as *const i64, k * 2);
+                        let data_ptr = start_ptr.offset((len_typeinfo) as isize);
+                        let data = std::slice::from_raw_parts(data_ptr, len - len_typeinfo);
+
+                        Component::InvertedIndex(InvertedIndex::from_parts(k, p, typeinfo, data))
+                    }
+                }
+            }
+        })
+    }
+}
+
+#[derive(Debug)]
+pub enum ComponentError {
+    InvalidType(u16),
+    NullPtr,
+    OutOfBounds(&'static str),
+}
+
+impl From<TryFromPrimitiveError<ComponentType>> for ComponentError {
+    fn from(value: TryFromPrimitiveError<ComponentType>) -> Self {
+        ComponentError::InvalidType(value.number)
+    }
+}
+
+impl fmt::Display for ComponentError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ComponentError::InvalidType(t) => write!(f, "invalid container type {}", t),
+            ComponentError::NullPtr => write!(f, "given pointer is a null pointer"),
+            ComponentError::OutOfBounds(s) => write!(f, "component is out of bounds: {}", s),
+        }
+    }
+}
+
+impl error::Error for ComponentError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Blob<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> Blob<'a> {
+    pub fn from_parts(data: &'a [u8]) -> Self {
+        Self { data }
+    }
+}
+
+impl<'a> std::ops::Deref for Blob<'a> {
+    type Target = &'a [u8];
+
+    fn deref(&self) -> &&'a [u8] {
+        &self.data
+    }
+}
+
+#[derive(Debug)]
+pub struct StringList<'a> {
+    data: &'a [u8],
+}
+
+impl<'a> StringList<'a> {
+    pub fn from_parts(data: &'a [u8]) -> Self {
+        Self { data }
+    }
+}
+
+#[derive(Debug)]
+pub struct StringVector<'a> {
+    length: usize,
+    offsets: &'a [i64],
+    data: &'a [u8],
+}
+
+impl<'a> StringVector<'a> {
+    pub fn from_parts(n: usize, offsets: &'a [i64], data: &'a [u8]) -> Self {
+        Self {
+            length: n,
+            offsets,
+            data,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Vector<'a> {
+    length: usize,
+    width: usize,
+    data: &'a [i64],
+}
+
+impl<'a> Vector<'a> {
+    pub fn from_parts(n: usize, d: usize, data: &'a [i64]) -> Self {
+        Self {
+            length: n,
+            width: d,
+            data,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct VectorComp<'a> {
+    length: usize,
+    width: usize,
+    n_blocks: usize,
+    sync: &'a [i64],
+    data: &'a [u8],
+}
+
+impl<'a> VectorComp<'a> {
+    pub fn from_parts(n: usize, d: usize, sync: &'a [i64], data: &'a [u8]) -> Self {
+        Self {
+            length: n,
+            width: d,
+            n_blocks: sync.len(),
+            sync,
+            data,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct VectorDelta<'a> {
+    length: usize,
+    width: usize,
+    n_blocks: usize,
+    sync: &'a [i64],
+    data: &'a [u8],
+}
+
+impl<'a> VectorDelta<'a> {
+    pub fn from_parts(n: usize, d: usize, sync: &'a [i64], data: &'a [u8]) -> Self {
+        Self {
+            length: n,
+            width: d,
+            n_blocks: sync.len(),
+            sync,
+            data,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Set<'a> {
+    length: usize,
+    sync: &'a [i64],
+    data: &'a [u8],
+}
+
+impl<'a> Set<'a> {
+    pub fn from_parts(n: usize, sync: &'a [i64], data: &'a [u8]) -> Self {
+        Self {
+            length: n,
+            sync,
+            data,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Index<'a> {
+    length: usize,
+    pairs: &'a [i64],
+}
+
+impl<'a> Index<'a> {
+    pub fn from_parts(n: usize, pairs: &'a [i64]) -> Self {
+        Self { length: n, pairs }
+    }
+}
+
+#[derive(Debug)]
+pub struct IndexComp<'a> {
+    length: usize,
+    r: usize,
+    sync: &'a [i64],
+    data: &'a [u8],
+}
+
+impl<'a> IndexComp<'a> {
+    pub fn from_parts(n: usize, r: usize, sync: &'a [i64], data: &'a [u8]) -> Self {
+        Self {
+            length: n,
+            r,
+            sync,
+            data,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct InvertedIndex<'a> {
+    types: usize,
+    jtable_length: usize,
+    typeinfo: &'a [i64],
+    data: &'a [u8],
+}
+
+impl<'a> InvertedIndex<'a> {
+    pub fn from_parts(k: usize, p: usize, typeinfo: &'a [i64], data: &'a [u8]) -> Self {
+        Self {
+            types: k,
+            jtable_length: p,
+            typeinfo,
+            data,
+        }
+    }
+}
