@@ -285,6 +285,7 @@ class StringVector(Component):
             self.encoded.extend(b'\0')
             self.offsets.append(offset)
             offset += len(s)+1
+        self.offsets.append(offset+1)
 
         super().__init__(
             0x03,
