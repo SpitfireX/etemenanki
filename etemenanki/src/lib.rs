@@ -16,6 +16,7 @@ use uuid::Uuid;
 mod tests;
 
 #[repr(C, packed)]
+#[derive(Debug)]
 struct RawHeader {
     magic: [u8; 8],
     version: [u8; 4],
@@ -36,6 +37,7 @@ struct RawHeader {
 }
 
 #[repr(C, packed)]
+#[derive(Debug)]
 struct RawBomEntry {
     family: u8,
     ctype: u8,
@@ -215,7 +217,7 @@ impl From<TryFromPrimitiveError<ContainerType>> for ContainerError {
 }
 
 impl From<TryFromIntError> for ContainerError {
-    fn from(value: TryFromIntError) -> Self {
+    fn from(_value: TryFromIntError) -> Self {
         ContainerError::Memory("out of bounds")
     }
 }
@@ -257,7 +259,7 @@ enum ComponentType {
     Vector = 0x0400,
     VectorComp = 0x0401,
     VectorDelta = 0x0402,
-    Set = 0x0500,
+    Set = 0x0501,
     Index = 0x0600,
     IndexComp = 0x0601,
     InvertedIndex = 0x0701,
@@ -265,13 +267,13 @@ enum ComponentType {
 
 #[derive(Debug, EnumAsInner)]
 pub enum Component<'a> {
-    Blob(Blob),
+    Blob(Blob<'a>),
     StringList(StringList<'a>),
     StringVector(StringVector<'a>),
     Vector(Vector<'a>),
     VectorComp(VectorComp<'a>),
     VectorDelta(VectorDelta<'a>),
-    Set(Set),
+    Set(Set<'a>),
     Index(Index<'a>),
     IndexComp(IndexComp<'a>),
     InvertedIndex(InvertedIndex<'a>),
@@ -283,7 +285,10 @@ impl<'a> Component<'a> {
             (((be.ctype as u16) << 8) | be.mode as u16).try_into()?;
 
         Ok(match component_type {
-            ComponentType::Blob => todo!(),
+            ComponentType::Blob => {
+                let data = unsafe { std::slice::from_raw_parts(start_ptr, be.size as usize ) };
+                Component::Blob(Blob::from_parts(data))
+            },
 
             ComponentType::StringList => {
                 let data = unsafe { std::slice::from_raw_parts(start_ptr, be.size as usize ) };
@@ -297,7 +302,7 @@ impl<'a> Component<'a> {
                 let len = be.size as usize;
                 let len_offsets = (n+1)*8;
                 if len_offsets > len {
-                    Err(ComponentError::OutOfBounds)?
+                    Err(ComponentError::OutOfBounds("offsets in StringVector"))?
                 } else {
                     unsafe {
                         let offsets = std::slice::from_raw_parts(start_ptr as *const i64, n+1);
@@ -326,7 +331,7 @@ impl<'a> Component<'a> {
                 let len = be.size as usize;
                 let len_sync = m*8;
                 if len_sync > len {
-                    Err(ComponentError::OutOfBounds)?
+                    Err(ComponentError::OutOfBounds("sync in VectorComp"))?
                 } else {
                     unsafe {
                         let sync = std::slice::from_raw_parts(start_ptr as *const i64, m);
@@ -347,7 +352,7 @@ impl<'a> Component<'a> {
                 let len = be.size as usize;
                 let len_sync = m*8;
                 if len_sync > len {
-                    Err(ComponentError::OutOfBounds)?
+                    Err(ComponentError::OutOfBounds("sync in VectorDelta"))?
                 } else {
                     unsafe {
                         let sync = std::slice::from_raw_parts(start_ptr as *const i64, m);
@@ -359,7 +364,25 @@ impl<'a> Component<'a> {
                 }
             }
 
-            ComponentType::Set => todo!(),
+            ComponentType::Set => {
+                let n = be.param1 as usize;
+                let m = ((n-1) / 16) + 1;
+                
+                // check if sync array is in bounds
+                let len = be.size as usize;
+                let len_sync = m*8;
+                if len_sync > len {
+                    Err(ComponentError::OutOfBounds("sync in Set"))?
+                } else {
+                    unsafe {
+                        let sync = std::slice::from_raw_parts(start_ptr as *const i64, m);
+                        let data_ptr = start_ptr.offset(len_sync as isize);
+                        let data = std::slice::from_raw_parts(data_ptr, len-len_sync);
+
+                        Component::Set(Set::from_parts(n, sync, data))
+                    }
+                }
+            }
 
             ComponentType::Index => {
                 let n = be.param1 as usize;
@@ -377,7 +400,7 @@ impl<'a> Component<'a> {
                 let len = be.size as usize;
                 let len_sync = mr*8*2;
                 if len_sync > len {
-                    Err(ComponentError::OutOfBounds)?
+                    Err(ComponentError::OutOfBounds("sync in IndexComp"))?
                 } else {
                     unsafe {
                         let sync = std::slice::from_raw_parts(start_ptr.offset(8) as *const i64, mr*2);
@@ -397,7 +420,7 @@ impl<'a> Component<'a> {
                 let len = be.size as usize;
                 let len_typeinfo = k*8*2;
                 if len_typeinfo > len {
-                    Err(ComponentError::OutOfBounds)?
+                    Err(ComponentError::OutOfBounds("typeinfo in InvertedIndex"))?
                 } else {
                     unsafe {
                         let typeinfo = std::slice::from_raw_parts(start_ptr as *const i64, k*2);
@@ -416,7 +439,7 @@ impl<'a> Component<'a> {
 pub enum ComponentError {
     InvalidType(u16),
     NullPtr,
-    OutOfBounds,
+    OutOfBounds(&'static str),
 }
 
 impl From<TryFromPrimitiveError<ComponentType>> for ComponentError {
@@ -430,7 +453,7 @@ impl fmt::Display for ComponentError {
         match self {
             ComponentError::InvalidType(t) => write!(f, "invalid container type {}", t),
             ComponentError::NullPtr => write!(f, "given pointer is a null pointer"),
-            ComponentError::OutOfBounds => write!(f, "component is out of bounds"),
+            ComponentError::OutOfBounds(s) => write!(f, "component is out of bounds: {}", s),
         }
     }
 }
@@ -444,7 +467,23 @@ impl error::Error for ComponentError {
 }
 
 #[derive(Debug)]
-pub struct Blob {}
+pub struct Blob<'a> {
+    data: &'a [u8]
+}
+
+impl<'a> Blob<'a> {
+    pub fn from_parts(data: &'a [u8]) -> Self {
+        Self { data }
+    }
+}
+
+impl<'a> std::ops::Deref for Blob<'a> {
+    type Target = &'a [u8];
+
+    fn deref(&self) -> &&'a[u8] {
+        &self.data
+    }
+}
 
 #[derive(Debug)]
 pub struct StringList<'a> {
@@ -534,7 +573,21 @@ impl<'a> VectorDelta<'a> {
 }
 
 #[derive(Debug)]
-pub struct Set {}
+pub struct Set<'a> {
+    length: usize,
+    sync: &'a [i64],
+    data: &'a [u8],
+}
+
+impl<'a> Set<'a> {
+    pub fn from_parts(n: usize, sync: &'a [i64], data: &'a [u8]) -> Self {
+        Self {
+            length: n,
+            sync,
+            data,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Index<'a> {

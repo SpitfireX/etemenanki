@@ -6,7 +6,7 @@ use memmap2::Mmap;
 use etemenanki::Container;
 
 fn main() -> Result<()> {
-    let file = File::open("../scripts/recipes4000/sattr_text_url.zigv")?;
+    let file = File::open("../scripts/recipes4000/sattr_text_keywords.zigv")?;
     let mmap = unsafe { dbg!(Mmap::map(&file)?) };
 
     let container =  Container::from_mmap(&mmap).unwrap();
