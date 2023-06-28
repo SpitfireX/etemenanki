@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::components::{Component, ComponentError};
 
 #[repr(u64)]
-#[derive(Debug, TryFromPrimitive)]
+#[derive(Debug, TryFromPrimitive, PartialEq)]
 pub enum ContainerType {
     GraphLayer = 0x5a4c67,              // "ZLg"
     PrimaryLayer = 0x5a4c70,            // "ZLp"
@@ -63,8 +63,7 @@ pub struct RawBomEntry {
 }
 
 #[derive(Debug)]
-pub struct Container<'a> {
-    mmap: Mmap,
+pub struct ContainerHeader<'a> {
     pub version: &'a str,
     pub raw_family: char,
     pub raw_class: char,
@@ -77,11 +76,18 @@ pub struct Container<'a> {
     pub dim2: usize,
     pub base1_uuid: Option<Uuid>,
     pub base2_uuid: Option<Uuid>,
+}
+
+#[derive(Debug)]
+pub struct Container<'a> {
+    pub mmap: Mmap,
+    pub name: String,
+    pub header: ContainerHeader<'a>,
     pub components: HashMap<&'a str, Component<'a>>,
 }
 
 impl<'a> Container<'a> {
-    pub fn from_mmap(mmap: Mmap) -> Result<Self, ContainerError> {
+    pub fn from_mmap(mmap: Mmap, name: String) -> Result<Self, ContainerError> {
         let Range { start, end } = mmap.as_ref().as_ptr_range();
 
         let header = unsafe {
@@ -168,18 +174,21 @@ impl<'a> Container<'a> {
 
         Ok(Container {
             mmap,
-            version,
-            raw_family,
-            raw_class,
-            raw_type,
-            container_type,
-            uuid,
-            allocated_components: header.allocated,
-            used_components: header.used,
-            dim1: header.dim1 as usize,
-            dim2: header.dim2 as usize,
-            base1_uuid,
-            base2_uuid,
+            name,
+            header: ContainerHeader {
+                version,
+                raw_family,
+                raw_class,
+                raw_type,
+                container_type,
+                uuid,
+                allocated_components: header.allocated,
+                used_components: header.used,
+                dim1: header.dim1 as usize,
+                dim2: header.dim2 as usize,
+                base1_uuid,
+                base2_uuid,
+            },
             components,
         })
     }
