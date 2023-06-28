@@ -39,7 +39,7 @@ class PrimaryLayer(Layer):
 
 class SegmentationLayer(Layer):
 
-    def __init__(self, n: int, partition: Sequence[int], ranges: Iterable[Tuple[int, int]], uuid: Optional[UUID] = None):
+    def __init__(self, base_layer: Layer, n: int, partition: Sequence[int], ranges: Iterable[Tuple[int, int]], uuid: Optional[UUID] = None):
 
         super().__init__(n, partition, uuid if uuid else uuid4())
 
@@ -63,5 +63,6 @@ class SegmentationLayer(Layer):
             ),
             "ZLs",
             (self.n, 0),
-            self.uuid
+            self.uuid,
+            base_uuids=(base_layer.uuid, None),
         )
