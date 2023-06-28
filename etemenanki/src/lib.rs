@@ -12,7 +12,7 @@ use std::{
     rc::Rc,
 };
 
-use components::Vector;
+use components::{IndexComp, Vector, VectorDelta};
 use container::{Container, ContainerError, ContainerHeader, ContainerType};
 use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
@@ -76,6 +76,34 @@ impl<'a> Datastore<'a> {
             layers_by_name.insert(name, layer);
         }
 
+        while containers
+            .values()
+            .any(|c| c.header.container_type == ContainerType::SegmentationLayer)
+        {
+            let has_instantiated_parent = containers.drain_filter(|_, c| {
+                c.header.container_type == ContainerType::SegmentationLayer
+                    && layers_by_uuid.contains_key(
+                        &c.header
+                            .base1_uuid
+                            .expect("SegmentationLayer without base layer"),
+                    )
+            });
+
+            let mut temp_by_uuid = Vec::new();
+            for (uuid, container) in has_instantiated_parent {
+                let name = container.name.clone();
+                let seglayer: SegmentationLayer = container.try_into()?;
+                let layer = Rc::new(Layer::Segmentation(seglayer));
+
+                temp_by_uuid.push((uuid, layer.clone()));
+                layers_by_name.insert(name, layer);
+            }
+
+            layers_by_uuid.extend(temp_by_uuid);
+
+            // TODO add parent layer to SegmentationLayer
+        }
+
         Ok(Datastore {
             path,
             layers_by_name,
@@ -132,6 +160,7 @@ impl From<TryFromContainerError> for DatastoreError {
 #[derive(Debug, EnumAsInner)]
 pub enum Layer<'a> {
     Primary(PrimaryLayer<'a>),
+    Segmentation(SegmentationLayer<'a>),
 }
 
 #[derive(Debug)]
@@ -139,6 +168,8 @@ pub enum TryFromContainerError {
     WrongContainerType,
     MissingComponent(&'static str),
     WrongComponentType(&'static str),
+    WrongComponentDimensions(&'static str),
+    ConsistencyError(&'static str),
 }
 
 impl Display for TryFromContainerError {
@@ -152,6 +183,12 @@ impl Display for TryFromContainerError {
             }
             TryFromContainerError::WrongComponentType(s) => {
                 write!(f, "component {} has wrong type", s)
+            }
+            TryFromContainerError::WrongComponentDimensions(s) => {
+                write!(f, "component {} has wrong dimensions", s)
+            }
+            TryFromContainerError::ConsistencyError(s) => {
+                write!(f, "consinstency error: {} ", s)
             }
         }
     }
@@ -191,16 +228,113 @@ impl<'a> TryFrom<Container<'a>> for PrimaryLayer<'a> {
                         .remove()
                         .into_vector()
                         .map_err(|_| TryFromContainerError::WrongComponentType("Partition"))?;
-                    Ok(Self {
-                        mmap,
-                        name,
-                        header,
-                        partition,
-                    })
+
+                    if partition.length < 2 || partition.width != 1 {
+                        Err(TryFromContainerError::WrongComponentDimensions("Partition"))
+                    } else {
+                        Ok(Self {
+                            mmap,
+                            name,
+                            header,
+                            partition,
+                        })
+                    }
                 }
 
                 Entry::Vacant(_) => Err(TryFromContainerError::MissingComponent("Partition")),
             },
+
+            _ => Err(TryFromContainerError::WrongContainerType),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct SegmentationLayer<'a> {
+    mmap: Mmap,
+    pub name: String,
+    pub header: ContainerHeader<'a>,
+    partition: Vector<'a>,
+    range_stream: VectorDelta<'a>,
+    start_sort: IndexComp<'a>,
+    end_sort: IndexComp<'a>,
+}
+
+impl<'a> TryFrom<Container<'a>> for SegmentationLayer<'a> {
+    type Error = TryFromContainerError;
+
+    fn try_from(value: Container<'a>) -> Result<Self, Self::Error> {
+        let Container {
+            mmap,
+            name,
+            header,
+            mut components,
+        } = value;
+
+        match header.container_type {
+            ContainerType::SegmentationLayer => {
+                if let None = header.base1_uuid {
+                    return Err(TryFromContainerError::ConsistencyError(
+                        "SegmentationLayer without base layer",
+                    ));
+                }
+
+                let partition = match components.entry("Partition") {
+                    Entry::Occupied(entry) => entry
+                        .remove()
+                        .into_vector()
+                        .map_err(|_| TryFromContainerError::WrongComponentType("Partition")),
+
+                    Entry::Vacant(_) => Err(TryFromContainerError::MissingComponent("Partition")),
+                }?;
+
+                if partition.length < 2 || partition.width != 1 {
+                    return Err(TryFromContainerError::WrongComponentDimensions("Partition"));
+                }
+
+                let range_stream = match components.entry("RangeStream") {
+                    Entry::Occupied(entry) => entry
+                        .remove()
+                        .into_vector_delta()
+                        .map_err(|_| TryFromContainerError::WrongComponentType("RangeStream")),
+
+                    Entry::Vacant(_) => Err(TryFromContainerError::MissingComponent("RangeStream")),
+                }?;
+
+                if range_stream.width != 2 {
+                    return Err(TryFromContainerError::WrongComponentDimensions(
+                        "RangeStream",
+                    ));
+                }
+
+                let start_sort = match components.entry("StartSort") {
+                    Entry::Occupied(entry) => entry
+                        .remove()
+                        .into_index_comp()
+                        .map_err(|_| TryFromContainerError::WrongComponentType("StartSort")),
+
+                    Entry::Vacant(_) => Err(TryFromContainerError::MissingComponent("StartSort")),
+                }?;
+
+                let end_sort = match components.entry("EndSort") {
+                    Entry::Occupied(entry) => entry
+                        .remove()
+                        .into_index_comp()
+                        .map_err(|_| TryFromContainerError::WrongComponentType("EndSort")),
+
+                    Entry::Vacant(_) => Err(TryFromContainerError::MissingComponent("EndSort")),
+                }?;
+
+                Ok(Self {
+                    mmap,
+                    name,
+                    header,
+                    partition,
+                    range_stream,
+                    start_sort,
+                    end_sort,
+                })
+            }
 
             _ => Err(TryFromContainerError::WrongContainerType),
         }

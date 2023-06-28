@@ -271,8 +271,8 @@ impl<'a> StringVector<'a> {
 
 #[derive(Debug)]
 pub struct Vector<'a> {
-    length: usize,
-    width: usize,
+    pub length: usize,
+    pub width: usize,
     data: &'a [i64],
 }
 
@@ -309,8 +309,8 @@ impl<'a> VectorComp<'a> {
 
 #[derive(Debug)]
 pub struct VectorDelta<'a> {
-    length: usize,
-    width: usize,
+    pub length: usize,
+    pub width: usize,
     n_blocks: usize,
     sync: &'a [i64],
     data: &'a [u8],
