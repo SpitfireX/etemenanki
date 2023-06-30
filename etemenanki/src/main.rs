@@ -13,7 +13,8 @@ fn main() -> Result<()> {
     // let vector = component.as_vector().unwrap();
 
     let datastore = Datastore::open("../scripts/recipes4000/").unwrap();
-    println!("{:?}", datastore.layers_by_name);
+    println!("{:?}", datastore.layers_by_uuid);
+    println!("{:?}", datastore.uuids_by_name);
 
     Ok(())
 }

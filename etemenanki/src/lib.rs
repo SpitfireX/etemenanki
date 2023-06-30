@@ -9,7 +9,6 @@ use std::{
     fs::File,
     io,
     path::{Path, PathBuf},
-    rc::Rc, cell::RefCell,
 };
 
 use components::*;
@@ -26,8 +25,8 @@ mod tests;
 #[derive(Debug)]
 pub struct Datastore<'a> {
     pub path: PathBuf,
-    pub layers_by_name: HashMap<String, Rc<RefCell<Layer<'a>>>>,
-    pub layers_by_uuid: HashMap<Uuid, Rc<RefCell<Layer<'a>>>>,
+    pub layers_by_uuid: HashMap<Uuid, Layer<'a>>,
+    pub uuids_by_name: HashMap<String, Uuid>,
 }
 
 impl<'a> Datastore<'a> {
@@ -62,18 +61,18 @@ impl<'a> Datastore<'a> {
         }
 
         let mut layers_by_uuid = HashMap::new();
-        let mut layers_by_name = HashMap::new();
+        let mut uuids_by_name = HashMap::new();
 
         let players =
             containers.drain_filter(|_, c| c.header.container_type == ContainerType::PrimaryLayer);
 
         for (uuid, container) in players {
             let name = container.name.clone();
-            let primarylayer = PrimaryLayer::try_from_container(container)?;
-            let layer = Rc::new(RefCell::new(Layer::init_primary(primarylayer)));
+            let primarylayer = container.try_into()?;
+            let layer = Layer::init_primary(primarylayer);
 
-            layers_by_uuid.insert(uuid, layer.clone());
-            layers_by_name.insert(name, layer);
+            layers_by_uuid.insert(uuid, layer);
+            uuids_by_name.insert(name, uuid);
         }
 
         while containers
@@ -86,22 +85,16 @@ impl<'a> Datastore<'a> {
             let mut temp_by_uuid = Vec::new();
             for (uuid, container) in seglayers {
                 let name = container.name.clone();
-                let base = layers_by_uuid
-                    .get(&container.header.base1_uuid.ok_or(
-                        DatastoreError::ContainerInstantiationError(
-                            TryFromContainerError::ConsistencyError(
-                                "secondary layer with no declared base layer",
-                            ),
-                        ),
-                    )?)
-                    .ok_or(DatastoreError::ConsistencyError(
-                        "secondary layer with base layer not in datastore",
-                    ))?;
-                let seglayer = SegmentationLayer::try_from_container(container, base.clone())?;
-                let layer = Rc::new(RefCell::new(Layer::init_segmentation(seglayer)));
 
-                temp_by_uuid.push((uuid, layer.clone()));
-                layers_by_name.insert(name, layer);
+                let seglayer: SegmentationLayer = container.try_into()?;
+                if !layers_by_uuid.contains_key(&seglayer.base) {
+                    return Err(DatastoreError::ConsistencyError("secondary layer with base layer not in datastore"));
+                }
+
+                let layer = Layer::init_segmentation(seglayer);
+
+                temp_by_uuid.push((uuid, layer));
+                uuids_by_name.insert(name, uuid);
             }
 
             layers_by_uuid.extend(temp_by_uuid);
@@ -111,7 +104,7 @@ impl<'a> Datastore<'a> {
 
         for (_, container) in vars {
             let base = layers_by_uuid
-                    .get(&container.header.base1_uuid.ok_or(
+                    .get_mut(&container.header.base1_uuid.ok_or(
                         DatastoreError::ContainerInstantiationError(
                             TryFromContainerError::ConsistencyError(
                                 "variable with no declared base layer",
@@ -122,16 +115,16 @@ impl<'a> Datastore<'a> {
                         "variable with base layer not in datastore",
                     ))?;
 
-            let var = Variable::try_from_container(container, base.clone())?;
-            if let Err(_) = base.borrow_mut().add_variable(var) {
+            let var = Variable::try_from_container(container)?;
+            if let Err(_) = base.add_variable(var) {
                 return Err(DatastoreError::ConsistencyError("variable inconsistent with base layer"));
             }
         }
 
         Ok(Datastore {
             path,
-            layers_by_name,
             layers_by_uuid,
+            uuids_by_name,
         })
     }
 }
@@ -148,7 +141,7 @@ pub enum Variable<'a> {
 }
 
 impl<'a> Variable<'a> {
-    pub fn try_from_container(container: Container, base: Rc<RefCell<Layer>>) -> Result<Self, TryFromContainerError> {
+    pub fn try_from_container(container: Container) -> Result<Self, TryFromContainerError> {
         todo!()
     }
 }
@@ -330,8 +323,10 @@ pub struct PrimaryLayer<'a> {
     partition: Vector<'a>,
 }
 
-impl<'a> PrimaryLayer<'a> {
-    fn try_from_container(container: Container<'a>) -> Result<Self, TryFromContainerError> {
+impl<'a> TryFrom<Container<'a>> for PrimaryLayer<'a> {
+    type Error = TryFromContainerError;
+
+    fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
         let Container {
             mmap,
             name,
@@ -369,7 +364,7 @@ impl<'a> PrimaryLayer<'a> {
 
 #[derive(Debug)]
 pub struct SegmentationLayer<'a> {
-    base: Rc<RefCell<Layer<'a>>>,
+    base: Uuid,
     mmap: Mmap,
     pub name: String,
     pub header: ContainerHeader<'a>,
@@ -379,11 +374,10 @@ pub struct SegmentationLayer<'a> {
     end_sort: IndexComp<'a>,
 }
 
-impl<'a> SegmentationLayer<'a> {
-    fn try_from_container(
-        container: Container<'a>,
-        base: Rc<RefCell<Layer<'a>>>,
-    ) -> Result<Self, TryFromContainerError> {
+impl<'a> TryFrom<Container<'a>> for SegmentationLayer<'a> {
+    type Error = TryFromContainerError;
+
+    fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
         let Container {
             mmap,
             name,
@@ -393,11 +387,14 @@ impl<'a> SegmentationLayer<'a> {
 
         match header.container_type {
             ContainerType::SegmentationLayer => {
-                if let None = header.base1_uuid {
-                    return Err(TryFromContainerError::ConsistencyError(
-                        "SegmentationLayer without base layer",
-                    ));
-                }
+                let base = match header.base1_uuid {
+                    Some(uuid) => uuid,
+                    None => {
+                        return Err(TryFromContainerError::ConsistencyError(
+                            "SegmentationLayer without base layer",
+                        ));
+                    }
+                };
 
                 let partition = match components.entry("Partition") {
                     Entry::Occupied(entry) => entry
