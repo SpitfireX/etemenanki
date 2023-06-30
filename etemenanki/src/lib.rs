@@ -64,10 +64,10 @@ impl<'a> Datastore<'a> {
         let mut layers_by_uuid = HashMap::new();
         let mut layers_by_name = HashMap::new();
 
-        let drainfilter =
-            containers.drain_filter(|_, c| ContainerType::PrimaryLayer == c.header.container_type);
+        let players =
+            containers.drain_filter(|_, c| c.header.container_type == ContainerType::PrimaryLayer);
 
-        for (uuid, container) in drainfilter {
+        for (uuid, container) in players {
             let name = container.name.clone();
             let primarylayer = PrimaryLayer::try_from_container(container)?;
             let layer = Rc::new(Layer::Primary(primarylayer));
@@ -80,17 +80,11 @@ impl<'a> Datastore<'a> {
             .values()
             .any(|c| c.header.container_type == ContainerType::SegmentationLayer)
         {
-            let has_instantiated_parent = containers.drain_filter(|_, c| {
-                c.header.container_type == ContainerType::SegmentationLayer
-                    && layers_by_uuid.contains_key(
-                        &c.header
-                            .base1_uuid
-                            .expect("SegmentationLayer without base layer"),
-                    )
-            });
+            let seglayers = containers
+                .drain_filter(|_, c| c.header.container_type == ContainerType::SegmentationLayer);
 
             let mut temp_by_uuid = Vec::new();
-            for (uuid, container) in has_instantiated_parent {
+            for (uuid, container) in seglayers {
                 let name = container.name.clone();
                 let base = layers_by_uuid
                     .get(&container.header.base1_uuid.ok_or(
@@ -111,8 +105,6 @@ impl<'a> Datastore<'a> {
             }
 
             layers_by_uuid.extend(temp_by_uuid);
-
-            // TODO add parent layer to SegmentationLayer
         }
 
         Ok(Datastore {
