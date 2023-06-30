@@ -69,7 +69,7 @@ impl<'a> Datastore<'a> {
 
         for (uuid, container) in drainfilter {
             let name = container.name.clone();
-            let primarylayer: PrimaryLayer = container.try_into()?;
+            let primarylayer = PrimaryLayer::try_from_container(container)?;
             let layer = Rc::new(Layer::Primary(primarylayer));
 
             layers_by_uuid.insert(uuid, layer.clone());
@@ -92,7 +92,18 @@ impl<'a> Datastore<'a> {
             let mut temp_by_uuid = Vec::new();
             for (uuid, container) in has_instantiated_parent {
                 let name = container.name.clone();
-                let seglayer: SegmentationLayer = container.try_into()?;
+                let base = layers_by_uuid
+                    .get(&container.header.base1_uuid.ok_or(
+                        DatastoreError::ContainerInstantiationError(
+                            TryFromContainerError::ConsistencyError(
+                                "secondary layer with no declared base layer",
+                            ),
+                        ),
+                    )?)
+                    .ok_or(DatastoreError::ConsistencyError(
+                        "secondary layer with base layer not in datastore",
+                    ))?;
+                let seglayer = SegmentationLayer::try_from_container(container, base.clone())?;
                 let layer = Rc::new(Layer::Segmentation(seglayer));
 
                 temp_by_uuid.push((uuid, layer.clone()));
@@ -117,6 +128,7 @@ pub enum DatastoreError {
     IoError(io::Error),
     RawContainerError(ContainerError),
     ContainerInstantiationError(TryFromContainerError),
+    ConsistencyError(&'static str),
 }
 
 impl fmt::Display for DatastoreError {
@@ -125,6 +137,7 @@ impl fmt::Display for DatastoreError {
             DatastoreError::IoError(e) => write!(f, "{}", e),
             DatastoreError::RawContainerError(e) => write!(f, "{}", e),
             DatastoreError::ContainerInstantiationError(e) => write!(f, "{}", e),
+            DatastoreError::ConsistencyError(e) => write!(f, "consistency error: {}", e),
         }
     }
 }
@@ -135,6 +148,7 @@ impl error::Error for DatastoreError {
             DatastoreError::IoError(e) => Some(e),
             DatastoreError::RawContainerError(e) => Some(e),
             DatastoreError::ContainerInstantiationError(e) => Some(e),
+            _ => None,
         }
     }
 }
@@ -210,16 +224,14 @@ pub struct PrimaryLayer<'a> {
     partition: Vector<'a>,
 }
 
-impl<'a> TryFrom<Container<'a>> for PrimaryLayer<'a> {
-    type Error = TryFromContainerError;
-
-    fn try_from(value: Container<'a>) -> Result<Self, Self::Error> {
+impl<'a> PrimaryLayer<'a> {
+    fn try_from_container(container: Container<'a>) -> Result<Self, TryFromContainerError> {
         let Container {
             mmap,
             name,
             header,
             mut components,
-        } = value;
+        } = container;
 
         match header.container_type {
             ContainerType::PrimaryLayer => match components.entry("Partition") {
@@ -251,6 +263,7 @@ impl<'a> TryFrom<Container<'a>> for PrimaryLayer<'a> {
 
 #[derive(Debug)]
 pub struct SegmentationLayer<'a> {
+    base: Rc<Layer<'a>>,
     mmap: Mmap,
     pub name: String,
     pub header: ContainerHeader<'a>,
@@ -260,16 +273,17 @@ pub struct SegmentationLayer<'a> {
     end_sort: IndexComp<'a>,
 }
 
-impl<'a> TryFrom<Container<'a>> for SegmentationLayer<'a> {
-    type Error = TryFromContainerError;
-
-    fn try_from(value: Container<'a>) -> Result<Self, Self::Error> {
+impl<'a> SegmentationLayer<'a> {
+    fn try_from_container(
+        container: Container<'a>,
+        base: Rc<Layer<'a>>,
+    ) -> Result<Self, TryFromContainerError> {
         let Container {
             mmap,
             name,
             header,
             mut components,
-        } = value;
+        } = container;
 
         match header.container_type {
             ContainerType::SegmentationLayer => {
@@ -326,6 +340,7 @@ impl<'a> TryFrom<Container<'a>> for SegmentationLayer<'a> {
                 }?;
 
                 Ok(Self {
+                    base,
                     mmap,
                     name,
                     header,
