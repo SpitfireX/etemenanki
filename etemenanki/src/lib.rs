@@ -9,10 +9,10 @@ use std::{
     fs::File,
     io,
     path::{Path, PathBuf},
-    rc::Rc,
+    rc::Rc, cell::RefCell,
 };
 
-use components::{IndexComp, Vector, VectorDelta};
+use components::*;
 use container::{Container, ContainerError, ContainerHeader, ContainerType};
 use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
@@ -26,8 +26,8 @@ mod tests;
 #[derive(Debug)]
 pub struct Datastore<'a> {
     pub path: PathBuf,
-    pub layers_by_name: HashMap<String, Rc<Layer<'a>>>,
-    pub layers_by_uuid: HashMap<Uuid, Rc<Layer<'a>>>,
+    pub layers_by_name: HashMap<String, Rc<RefCell<Layer<'a>>>>,
+    pub layers_by_uuid: HashMap<Uuid, Rc<RefCell<Layer<'a>>>>,
 }
 
 impl<'a> Datastore<'a> {
@@ -70,7 +70,7 @@ impl<'a> Datastore<'a> {
         for (uuid, container) in players {
             let name = container.name.clone();
             let primarylayer = PrimaryLayer::try_from_container(container)?;
-            let layer = Rc::new(Layer::Primary(primarylayer));
+            let layer = Rc::new(RefCell::new(Layer::init_primary(primarylayer)));
 
             layers_by_uuid.insert(uuid, layer.clone());
             layers_by_name.insert(name, layer);
@@ -98,7 +98,7 @@ impl<'a> Datastore<'a> {
                         "secondary layer with base layer not in datastore",
                     ))?;
                 let seglayer = SegmentationLayer::try_from_container(container, base.clone())?;
-                let layer = Rc::new(Layer::Segmentation(seglayer));
+                let layer = Rc::new(RefCell::new(Layer::init_segmentation(seglayer)));
 
                 temp_by_uuid.push((uuid, layer.clone()));
                 layers_by_name.insert(name, layer);
@@ -107,12 +107,93 @@ impl<'a> Datastore<'a> {
             layers_by_uuid.extend(temp_by_uuid);
         }
 
+        let vars = containers.drain_filter(|_, c| c.header.raw_class == 'V' );
+
+        for (_, container) in vars {
+            let base = layers_by_uuid
+                    .get(&container.header.base1_uuid.ok_or(
+                        DatastoreError::ContainerInstantiationError(
+                            TryFromContainerError::ConsistencyError(
+                                "variable with no declared base layer",
+                            ),
+                        ),
+                    )?)
+                    .ok_or(DatastoreError::ConsistencyError(
+                        "variable with base layer not in datastore",
+                    ))?;
+
+            let var = Variable::try_from_container(container, base.clone())?;
+            if let Err(_) = base.borrow_mut().add_variable(var) {
+                return Err(DatastoreError::ConsistencyError("variable inconsistent with base layer"));
+            }
+        }
+
         Ok(Datastore {
             path,
             layers_by_name,
             layers_by_uuid,
         })
     }
+}
+
+#[derive(Debug)]
+pub enum Variable<'a> {
+    IndexedString(IndexedStringVariable<'a>),
+    PlainString(PlainStringVariable<'a>),
+    Integer(IntegerVariable<'a>),
+    Pointer,
+    ExternalPointer,
+    Set(SetVariabe<'a>),
+    Hash,
+}
+
+impl<'a> Variable<'a> {
+    pub fn try_from_container(container: Container, base: Rc<RefCell<Layer>>) -> Result<Self, TryFromContainerError> {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
+pub struct IndexedStringVariable<'a> {
+    mmap: Mmap,
+    pub name: String,
+    pub header: ContainerHeader<'a>,
+    lexicon: StringVector<'a>,
+    lex_hash: Index<'a>,
+    partition: Vector<'a>,
+    lex_id_stream: VectorComp<'a>,
+    lex_id_index: InvertedIndex<'a>,
+}
+
+#[derive(Debug)]
+pub struct PlainStringVariable<'a> {
+    mmap: Mmap,
+    pub name: String,
+    pub header: ContainerHeader<'a>,
+    string_data: StringList<'a>,
+    offset_stream: VectorDelta<'a>,
+    string_hash: IndexComp<'a>,
+}
+
+#[derive(Debug)]
+pub struct IntegerVariable<'a> {
+    mmap: Mmap,
+    pub name: String,
+    pub header: ContainerHeader<'a>,
+    int_stream: VectorComp<'a>,
+    int_sort: IndexComp<'a>,
+}
+
+#[derive(Debug)]
+pub struct SetVariabe<'a> {
+    mmap: Mmap,
+    pub name: String,
+    pub header: ContainerHeader<'a>,
+    lexicon: StringVector<'a>,
+    lex_hash: Index<'a>,
+    partition: Vector<'a>,
+    id_set_stream: Set<'a>,
+    id_set_index: InvertedIndex<'a>,
 }
 
 #[derive(Debug)]
@@ -165,8 +246,41 @@ impl From<TryFromContainerError> for DatastoreError {
 
 #[derive(Debug, EnumAsInner)]
 pub enum Layer<'a> {
-    Primary(PrimaryLayer<'a>),
-    Segmentation(SegmentationLayer<'a>),
+    Primary(PrimaryLayer<'a>, LayerVariables<'a>),
+    Segmentation(SegmentationLayer<'a>, LayerVariables<'a>),
+}
+
+impl<'a> Layer<'a> {
+
+    pub fn init_primary(layer: PrimaryLayer<'a>) -> Self {
+        Self::Primary(layer, LayerVariables::new())
+    }
+
+    pub fn init_segmentation(layer: SegmentationLayer<'a>) -> Self {
+        Self::Segmentation(layer, LayerVariables::new())
+    }
+
+    pub fn add_variable(&mut self, var: Variable<'a>) -> Result<(), Variable> {
+        match self {
+            Layer::Primary(_, v) => v.add_variable(var),
+            Layer::Segmentation(_, v) => v.add_variable(var),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct LayerVariables<'a> {
+    variables: HashMap<String, Variable<'a>>,
+}
+
+impl<'a> LayerVariables<'a> {
+    pub fn add_variable(&mut self, var: Variable<'a>) -> Result<(), Variable> {
+        Err(var)
+    }
+
+    pub fn new() -> Self {
+        Self { variables: HashMap::new() }
+    }
 }
 
 #[derive(Debug)]
@@ -255,7 +369,7 @@ impl<'a> PrimaryLayer<'a> {
 
 #[derive(Debug)]
 pub struct SegmentationLayer<'a> {
-    base: Rc<Layer<'a>>,
+    base: Rc<RefCell<Layer<'a>>>,
     mmap: Mmap,
     pub name: String,
     pub header: ContainerHeader<'a>,
@@ -268,7 +382,7 @@ pub struct SegmentationLayer<'a> {
 impl<'a> SegmentationLayer<'a> {
     fn try_from_container(
         container: Container<'a>,
-        base: Rc<Layer<'a>>,
+        base: Rc<RefCell<Layer<'a>>>,
     ) -> Result<Self, TryFromContainerError> {
         let Container {
             mmap,
