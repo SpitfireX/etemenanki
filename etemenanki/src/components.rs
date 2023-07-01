@@ -46,8 +46,9 @@ impl<'a> Component<'a> {
             }
 
             ComponentType::StringList => {
+                let n = be.param1 as usize;
                 let data = unsafe { std::slice::from_raw_parts(start_ptr, be.size as usize) };
-                Component::StringList(StringList::from_parts(data))
+                Component::StringList(StringList::from_parts(n, data))
             }
 
             ComponentType::StringVector => {
@@ -243,12 +244,17 @@ impl<'a> std::ops::Deref for Blob<'a> {
 
 #[derive(Debug)]
 pub struct StringList<'a> {
+    length: usize,
     data: &'a [u8],
 }
 
 impl<'a> StringList<'a> {
-    pub fn from_parts(data: &'a [u8]) -> Self {
-        Self { data }
+    pub fn from_parts(n: usize, data: &'a [u8]) -> Self {
+        Self { length: n, data }
+    }
+
+    pub fn len(&self) -> usize {
+        self.length
     }
 }
 
@@ -267,6 +273,10 @@ impl<'a> StringVector<'a> {
             data,
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.length
+    }
 }
 
 #[derive(Debug)]
@@ -283,6 +293,14 @@ impl<'a> Vector<'a> {
             width: d,
             data,
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.length
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
     }
 }
 
@@ -305,6 +323,14 @@ impl<'a> VectorComp<'a> {
             data,
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.length
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
+    }
 }
 
 #[derive(Debug)]
@@ -326,6 +352,14 @@ impl<'a> VectorDelta<'a> {
             data,
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.length
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
+    }
 }
 
 #[derive(Debug)]
@@ -343,6 +377,10 @@ impl<'a> Set<'a> {
             data,
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.length
+    }
 }
 
 #[derive(Debug)]
@@ -354,6 +392,10 @@ pub struct Index<'a> {
 impl<'a> Index<'a> {
     pub fn from_parts(n: usize, pairs: &'a [i64]) -> Self {
         Self { length: n, pairs }
+    }
+
+    pub fn len(&self) -> usize {
+        self.length
     }
 }
 
@@ -374,6 +416,10 @@ impl<'a> IndexComp<'a> {
             data,
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.length
+    }
 }
 
 #[derive(Debug)]
@@ -392,5 +438,9 @@ impl<'a> InvertedIndex<'a> {
             typeinfo,
             data,
         }
+    }
+
+    pub fn n_types(&self) -> usize {
+        self.types
     }
 }

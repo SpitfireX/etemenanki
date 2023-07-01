@@ -117,9 +117,10 @@ impl<'a> Datastore<'a> {
                 .ok_or(DatastoreError::ConsistencyError(
                     "variable with base layer not in datastore",
                 ))?;
+            let name = container.name.clone();
 
-            let var = container.try_into()?;
-            if let Err(_) = base.add_variable(var) {
+            let var: Variable = container.try_into()?;
+            if let Err(_) = base.add_variable(name, var) {
                 return Err(DatastoreError::ConsistencyError(
                     "variable inconsistent with base layer",
                 ));
@@ -132,6 +133,35 @@ impl<'a> Datastore<'a> {
             uuids_by_name,
         })
     }
+}
+
+macro_rules! check_and_return_component {
+    ($components:expr, $name:literal, $type:ident) => {
+        match $components.entry($name) {
+            std::collections::hash_map::Entry::Occupied(entry) => paste! {
+                entry.remove()
+                    .[<into_ $type:snake>]()
+                    .map_err(|_| TryFromContainerError::WrongComponentType($name))
+            },
+
+            std::collections::hash_map::Entry::Vacant(_) => {
+                Err(TryFromContainerError::MissingComponent($name))
+            }
+        }
+    };
+}
+
+macro_rules! get_container_base {
+    ($header:expr, $selftype:ident) => {
+        match $header.base1_uuid {
+            Some(uuid) => uuid,
+            None => {
+                return Err(TryFromContainerError::ConsistencyError(
+                    concat!(stringify!($selftype), " without base layer")
+                ));
+            }
+        }
+    };
 }
 
 #[derive(Debug)]
@@ -188,11 +218,71 @@ pub struct IndexedStringVariable<'a> {
     lex_id_index: InvertedIndex<'a>,
 }
 
+impl<'a> IndexedStringVariable<'a> {
+    pub fn len(&self) -> usize {
+        self.header.dim1
+    }
+
+    pub fn n_types(&self) -> usize {
+        self.header.dim2
+    }
+}
+
 impl<'a> TryFrom<Container<'a>> for IndexedStringVariable<'a> {
     type Error = TryFromContainerError;
 
     fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
-        todo!()
+        let Container {
+            mmap,
+            name,
+            header,
+            mut components,
+        } = container;
+
+        match header.container_type {
+            ContainerType::IndexedStringVariable => {
+                let base = get_container_base!(header, PlainStringVariable);
+                let n = header.dim1;
+                let v = header.dim2;
+                
+                let lexicon = check_and_return_component!(components, "Lexicon", StringVector)?;
+                if lexicon.len() != v {
+                    return Err(TryFromContainerError::WrongComponentDimensions("Lexicon"));
+                }
+
+                let lex_hash = check_and_return_component!(components, "LexHash", Index)?;
+                if lex_hash.len() != v {
+                    return Err(TryFromContainerError::WrongComponentDimensions("LexHash"));
+                }
+
+                let partition = check_and_return_component!(components, "Partition", Vector)?;
+                // consistency gets checked at datastore creation
+
+                let lex_id_stream = check_and_return_component!(components, "LexIDStream", VectorComp)?;
+                if lex_id_stream.len() != n || lex_id_stream.width() != 1 {
+                    return Err(TryFromContainerError::WrongComponentDimensions("LexIDStream"));
+                }
+
+                let lex_id_index = check_and_return_component!(components, "LexIDIndex", InvertedIndex)?;
+                if lex_id_index.n_types() != v {
+                    return Err(TryFromContainerError::WrongComponentDimensions("LexIDIndex"));
+                }
+
+                Ok(Self {
+                    base,
+                    mmap,
+                    name,
+                    header,
+                    lexicon,
+                    lex_hash,
+                    partition,
+                    lex_id_stream,
+                    lex_id_index,
+                })
+            }
+
+            _ => Err(TryFromContainerError::WrongContainerType),
+        }
     }
 }
 
@@ -207,11 +297,56 @@ pub struct PlainStringVariable<'a> {
     string_hash: IndexComp<'a>,
 }
 
+impl<'a> PlainStringVariable<'a> {
+    pub fn len(&self) -> usize {
+        self.header.dim1
+    }
+}
+
 impl<'a> TryFrom<Container<'a>> for PlainStringVariable<'a> {
     type Error = TryFromContainerError;
 
     fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
-        todo!()
+        let Container {
+            mmap,
+            name,
+            header,
+            mut components,
+        } = container;
+
+        match header.container_type {
+            ContainerType::PlainStringVariable => {
+                let base = get_container_base!(header, PlainStringVariable);
+                let n = header.dim1;
+
+                let string_data = check_and_return_component!(components, "StringData", StringList)?;
+                if string_data.len() != n {
+                    return Err(TryFromContainerError::WrongComponentDimensions("StringData"));
+                }
+
+                let offset_stream = check_and_return_component!(components, "OffsetStream", VectorDelta)?;
+                if offset_stream.len() != n+1 || offset_stream.width != 1 {
+                    return Err(TryFromContainerError::WrongComponentDimensions("OffsetStream"));
+                }
+                
+                let string_hash = check_and_return_component!(components, "StringHash", IndexComp)?;
+                if string_hash.len() != n {
+                    return Err(TryFromContainerError::WrongComponentDimensions("StringHash"))
+                }
+                
+                Ok(Self {
+                    base,
+                    mmap,
+                    name,
+                    header,
+                    string_data,
+                    offset_stream,
+                    string_hash
+                })
+            }
+
+            _ => Err(TryFromContainerError::WrongContainerType),
+        }
     }
 }
 
@@ -225,11 +360,54 @@ pub struct IntegerVariable<'a> {
     int_sort: IndexComp<'a>,
 }
 
+impl<'a> IntegerVariable<'a> {
+    pub fn len(&self) -> usize {
+        self.header.dim1
+    }
+
+    pub fn b(&self) -> usize {
+        self.header.dim2
+    }
+}
+
 impl<'a> TryFrom<Container<'a>> for IntegerVariable<'a> {
     type Error = TryFromContainerError;
 
     fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
-        todo!()
+        let Container {
+            mmap,
+            name,
+            header,
+            mut components,
+        } = container;
+
+        match header.container_type {
+            ContainerType::IntegerVariable => {
+                let base = get_container_base!(header, PlainStringVariable);
+                let n = header.dim1;
+
+                let int_stream = check_and_return_component!(components, "IntStream", VectorComp)?;
+                if int_stream.len() != n || int_stream.width() != 1 {
+                    return Err(TryFromContainerError::WrongComponentDimensions("IntStream"))
+                }
+
+                let int_sort = check_and_return_component!(components, "IntSort", IndexComp)?;
+                if int_sort.len() != n {
+                    return Err(TryFromContainerError::WrongComponentDimensions("IntSort"));
+                }
+
+                Ok(Self {
+                    base,
+                    mmap,
+                    name,
+                    header,
+                    int_stream,
+                    int_sort,
+                })
+            }
+
+            _ => Err(TryFromContainerError::WrongContainerType),
+        }
     }
 }
 
@@ -246,11 +424,71 @@ pub struct SetVariable<'a> {
     id_set_index: InvertedIndex<'a>,
 }
 
+impl<'a> SetVariable<'a> {
+    pub fn len(&self) -> usize {
+        self.header.dim1
+    }
+
+    pub fn n_types(&self) -> usize {
+        self.header.dim2
+    }
+}
+
 impl<'a> TryFrom<Container<'a>> for SetVariable<'a> {
     type Error = TryFromContainerError;
 
     fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
-        todo!()
+        let Container {
+            mmap,
+            name,
+            header,
+            mut components,
+        } = container;
+
+        match header.container_type {
+            ContainerType::SetVariable => {
+                let base = get_container_base!(header, PlainStringVariable);
+                let n = header.dim1;
+                let v = header.dim2;
+
+                let lexicon = check_and_return_component!(components, "Lexicon", StringVector)?;
+                if lexicon.len() != v {
+                    return Err(TryFromContainerError::WrongComponentDimensions("Lexicon"));
+                }
+
+                let lex_hash = check_and_return_component!(components, "LexHash", Index)?;
+                if lex_hash.len() != v {
+                    return Err(TryFromContainerError::WrongComponentDimensions("LexHash"));
+                }
+
+                let partition = check_and_return_component!(components, "Partition", Vector)?;
+                // consistency gets checked at datastore creation
+                
+                let id_set_stream = check_and_return_component!(components, "IDSetStream", Set)?;
+                if id_set_stream.len() != n {
+                    return Err(TryFromContainerError::WrongComponentDimensions("IDSetStream"));
+                }
+                
+                let id_set_index = check_and_return_component!(components, "IDSetIndex", InvertedIndex)?;
+                if id_set_index.n_types() != v {
+                    return Err(TryFromContainerError::WrongComponentDimensions("IDSetIndex"));
+                }
+                
+                Ok(Self {
+                    base,
+                    mmap,
+                    name,
+                    header,
+                    lexicon,
+                    lex_hash,
+                    partition,
+                    id_set_stream,
+                    id_set_index,
+                })
+            }
+
+            _ => Err(TryFromContainerError::WrongContainerType),
+        }
     }
 }
 
@@ -309,6 +547,28 @@ pub enum Layer<'a> {
 }
 
 impl<'a> Layer<'a> {
+    pub fn add_variable(&mut self, name: String, var: Variable<'a>) -> Result<(), Variable> {
+        let baselen = self.len();
+        let varlen = match &var {
+            Variable::IndexedString(v) => v.len(),
+            Variable::PlainString(v) => v.len(),
+            Variable::Integer(v) => v.len(),
+            Variable::Pointer => todo!(),
+            Variable::ExternalPointer => todo!(),
+            Variable::Set(v) => v.len(),
+            Variable::Hash => todo!(),
+        };
+
+        if varlen != baselen {
+            Err(var)
+        } else {
+            match self {
+                Layer::Primary(_, vars) => vars.add_variable(name, var),
+                Layer::Segmentation(_, vars) => vars.add_variable(name, var),
+            }
+        }
+    }
+
     pub fn init_primary(layer: PrimaryLayer<'a>) -> Self {
         Self::Primary(layer, LayerVariables::new())
     }
@@ -317,10 +577,10 @@ impl<'a> Layer<'a> {
         Self::Segmentation(layer, LayerVariables::new())
     }
 
-    pub fn add_variable(&mut self, var: Variable<'a>) -> Result<(), Variable> {
-        match self {
-            Layer::Primary(_, v) => v.add_variable(var),
-            Layer::Segmentation(_, v) => v.add_variable(var),
+    pub fn len(&self) -> usize {
+        match &self {
+            Layer::Primary(l, _) => l.len(),
+            Layer::Segmentation(l, _) => l.len(),
         }
     }
 }
@@ -331,8 +591,13 @@ pub struct LayerVariables<'a> {
 }
 
 impl<'a> LayerVariables<'a> {
-    pub fn add_variable(&mut self, var: Variable<'a>) -> Result<(), Variable> {
-        Err(var)
+    pub fn add_variable(&mut self, name: String, var: Variable<'a>) -> Result<(), Variable> {
+        if self.variables.contains_key(&name) {
+            Err(var)
+        } else {
+            self.variables.insert(name, var);
+            Ok(())
+        }
     }
 
     pub fn new() -> Self {
@@ -381,28 +646,18 @@ impl error::Error for TryFromContainerError {
     }
 }
 
-macro_rules! check_and_return_component {
-    ($components:expr, $name:literal, $type:ident) => {
-        match $components.entry($name) {
-            std::collections::hash_map::Entry::Occupied(entry) => paste! {
-                entry.remove()
-                    .[<into_ $type:snake>]()
-                    .map_err(|_| TryFromContainerError::WrongComponentType($name))
-            },
-
-            std::collections::hash_map::Entry::Vacant(_) => {
-                Err(TryFromContainerError::MissingComponent($name))
-            }
-        }
-    };
-}
-
 #[derive(Debug)]
 pub struct PrimaryLayer<'a> {
     mmap: Mmap,
     pub name: String,
     pub header: ContainerHeader<'a>,
     partition: Vector<'a>,
+}
+
+impl<'a> PrimaryLayer<'a> {
+    pub fn len(&self) -> usize {
+        self.header.dim1
+    }
 }
 
 impl<'a> TryFrom<Container<'a>> for PrimaryLayer<'a> {
@@ -449,6 +704,12 @@ pub struct SegmentationLayer<'a> {
     end_sort: IndexComp<'a>,
 }
 
+impl<'a> SegmentationLayer<'a> {
+    pub fn len(&self) -> usize {
+        self.header.dim1
+    }
+}
+
 impl<'a> TryFrom<Container<'a>> for SegmentationLayer<'a> {
     type Error = TryFromContainerError;
 
@@ -462,14 +723,7 @@ impl<'a> TryFrom<Container<'a>> for SegmentationLayer<'a> {
 
         match header.container_type {
             ContainerType::SegmentationLayer => {
-                let base = match header.base1_uuid {
-                    Some(uuid) => uuid,
-                    None => {
-                        return Err(TryFromContainerError::ConsistencyError(
-                            "SegmentationLayer without base layer",
-                        ));
-                    }
-                };
+                let base = get_container_base!(header, SegmentationLayer);
 
                 let partition = check_and_return_component!(components, "Partition", Vector)?;
                 if partition.length < 2 || partition.width != 1 {
