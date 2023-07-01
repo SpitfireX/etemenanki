@@ -93,7 +93,7 @@ impl<'a> Component<'a> {
                         let data_ptr = start_ptr.offset(len_sync as isize);
                         let data = std::slice::from_raw_parts(data_ptr, len - len_sync);
 
-                        Component::VectorDelta(VectorDelta::from_parts(n, d, sync, data))
+                        Component::VectorComp(VectorComp::from_parts(n, d, sync, data))
                     }
                 }
             }
