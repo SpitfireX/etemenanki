@@ -88,7 +88,9 @@ impl<'a> Datastore<'a> {
 
                 let seglayer: SegmentationLayer = container.try_into()?;
                 if !layers_by_uuid.contains_key(&seglayer.base) {
-                    return Err(DatastoreError::ConsistencyError("secondary layer with base layer not in datastore"));
+                    return Err(DatastoreError::ConsistencyError(
+                        "secondary layer with base layer not in datastore",
+                    ));
                 }
 
                 let layer = Layer::init_segmentation(seglayer);
@@ -100,24 +102,26 @@ impl<'a> Datastore<'a> {
             layers_by_uuid.extend(temp_by_uuid);
         }
 
-        let vars = containers.drain_filter(|_, c| c.header.raw_class == 'V' );
+        let vars = containers.drain_filter(|_, c| c.header.raw_class == 'V');
 
         for (_, container) in vars {
             let base = layers_by_uuid
-                    .get_mut(&container.header.base1_uuid.ok_or(
-                        DatastoreError::ContainerInstantiationError(
-                            TryFromContainerError::ConsistencyError(
-                                "variable with no declared base layer",
-                            ),
+                .get_mut(&container.header.base1_uuid.ok_or(
+                    DatastoreError::ContainerInstantiationError(
+                        TryFromContainerError::ConsistencyError(
+                            "variable with no declared base layer",
                         ),
-                    )?)
-                    .ok_or(DatastoreError::ConsistencyError(
-                        "variable with base layer not in datastore",
-                    ))?;
+                    ),
+                )?)
+                .ok_or(DatastoreError::ConsistencyError(
+                    "variable with base layer not in datastore",
+                ))?;
 
-            let var = Variable::try_from_container(container)?;
+            let var = container.try_into()?;
             if let Err(_) = base.add_variable(var) {
-                return Err(DatastoreError::ConsistencyError("variable inconsistent with base layer"));
+                return Err(DatastoreError::ConsistencyError(
+                    "variable inconsistent with base layer",
+                ));
             }
         }
 
@@ -136,18 +140,43 @@ pub enum Variable<'a> {
     Integer(IntegerVariable<'a>),
     Pointer,
     ExternalPointer,
-    Set(SetVariabe<'a>),
+    Set(SetVariable<'a>),
     Hash,
 }
 
-impl<'a> Variable<'a> {
-    pub fn try_from_container(container: Container) -> Result<Self, TryFromContainerError> {
-        todo!()
+impl<'a> TryFrom<Container<'a>> for Variable<'a> {
+    type Error = TryFromContainerError;
+
+    fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
+        match container.header.container_type {
+            ContainerType::IndexedStringVariable => Ok(Self::IndexedString(
+                IndexedStringVariable::try_from(container)?,
+            )),
+
+            ContainerType::PlainStringVariable => {
+                Ok(Self::PlainString(PlainStringVariable::try_from(container)?))
+            }
+
+            ContainerType::IntegerVariable => {
+                Ok(Self::Integer(IntegerVariable::try_from(container)?))
+            }
+
+            ContainerType::PointerVariable => todo!(),
+            
+            ContainerType::ExternalPointerVariable => todo!(),
+            
+            ContainerType::SetVariable => Ok(Self::Set(SetVariable::try_from(container)?)),
+            
+            ContainerType::HashVariable => todo!(),
+            
+            _ => Err(TryFromContainerError::WrongContainerType),
+        }
     }
 }
 
 #[derive(Debug)]
 pub struct IndexedStringVariable<'a> {
+    base: Uuid,
     mmap: Mmap,
     pub name: String,
     pub header: ContainerHeader<'a>,
@@ -158,8 +187,17 @@ pub struct IndexedStringVariable<'a> {
     lex_id_index: InvertedIndex<'a>,
 }
 
+impl<'a> TryFrom<Container<'a>> for IndexedStringVariable<'a> {
+    type Error = TryFromContainerError;
+
+    fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
+        todo!()
+    }
+}
+
 #[derive(Debug)]
 pub struct PlainStringVariable<'a> {
+    base: Uuid,
     mmap: Mmap,
     pub name: String,
     pub header: ContainerHeader<'a>,
@@ -168,8 +206,17 @@ pub struct PlainStringVariable<'a> {
     string_hash: IndexComp<'a>,
 }
 
+impl<'a> TryFrom<Container<'a>> for PlainStringVariable<'a> {
+    type Error = TryFromContainerError;
+
+    fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
+        todo!()
+    }
+}
+
 #[derive(Debug)]
 pub struct IntegerVariable<'a> {
+    base: Uuid,
     mmap: Mmap,
     pub name: String,
     pub header: ContainerHeader<'a>,
@@ -177,8 +224,17 @@ pub struct IntegerVariable<'a> {
     int_sort: IndexComp<'a>,
 }
 
+impl<'a> TryFrom<Container<'a>> for IntegerVariable<'a> {
+    type Error = TryFromContainerError;
+
+    fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
+        todo!()
+    }
+}
+
 #[derive(Debug)]
-pub struct SetVariabe<'a> {
+pub struct SetVariable<'a> {
+    base: Uuid,
     mmap: Mmap,
     pub name: String,
     pub header: ContainerHeader<'a>,
@@ -187,6 +243,14 @@ pub struct SetVariabe<'a> {
     partition: Vector<'a>,
     id_set_stream: Set<'a>,
     id_set_index: InvertedIndex<'a>,
+}
+
+impl<'a> TryFrom<Container<'a>> for SetVariable<'a> {
+    type Error = TryFromContainerError;
+
+    fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
+        todo!()
+    }
 }
 
 #[derive(Debug)]
@@ -244,7 +308,6 @@ pub enum Layer<'a> {
 }
 
 impl<'a> Layer<'a> {
-
     pub fn init_primary(layer: PrimaryLayer<'a>) -> Self {
         Self::Primary(layer, LayerVariables::new())
     }
@@ -272,7 +335,9 @@ impl<'a> LayerVariables<'a> {
     }
 
     pub fn new() -> Self {
-        Self { variables: HashMap::new() }
+        Self {
+            variables: HashMap::new(),
+        }
     }
 }
 
