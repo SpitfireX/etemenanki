@@ -2,7 +2,7 @@
 #![feature(hash_drain_filter)]
 
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::HashMap,
     error,
     ffi::OsStr,
     fmt::{self, Display},
@@ -15,6 +15,7 @@ use components::*;
 use container::{Container, ContainerError, ContainerHeader, ContainerType};
 use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
+use paste::paste;
 use uuid::Uuid;
 
 pub mod components;
@@ -380,6 +381,22 @@ impl error::Error for TryFromContainerError {
     }
 }
 
+macro_rules! check_and_return_component {
+    ($components:expr, $name:literal, $type:ident) => {
+        match $components.entry($name) {
+            std::collections::hash_map::Entry::Occupied(entry) => paste! {
+                entry.remove()
+                    .[<into_ $type:snake>]()
+                    .map_err(|_| TryFromContainerError::WrongComponentType($name))
+            },
+
+            std::collections::hash_map::Entry::Vacant(_) => {
+                Err(TryFromContainerError::MissingComponent($name))
+            }
+        }
+    };
+}
+
 #[derive(Debug)]
 pub struct PrimaryLayer<'a> {
     mmap: Mmap,
@@ -400,27 +417,20 @@ impl<'a> TryFrom<Container<'a>> for PrimaryLayer<'a> {
         } = container;
 
         match header.container_type {
-            ContainerType::PrimaryLayer => match components.entry("Partition") {
-                Entry::Occupied(entry) => {
-                    let partition = entry
-                        .remove()
-                        .into_vector()
-                        .map_err(|_| TryFromContainerError::WrongComponentType("Partition"))?;
+            ContainerType::PrimaryLayer => {
+                let partition = check_and_return_component!(components, "Partition", Vector)?;
 
-                    if partition.length < 2 || partition.width != 1 {
-                        Err(TryFromContainerError::WrongComponentDimensions("Partition"))
-                    } else {
-                        Ok(Self {
-                            mmap,
-                            name,
-                            header,
-                            partition,
-                        })
-                    }
+                if partition.length < 2 || partition.width != 1 {
+                    Err(TryFromContainerError::WrongComponentDimensions("Partition"))
+                } else {
+                    Ok(Self {
+                        mmap,
+                        name,
+                        header,
+                        partition,
+                    })
                 }
-
-                Entry::Vacant(_) => Err(TryFromContainerError::MissingComponent("Partition")),
-            },
+            }
 
             _ => Err(TryFromContainerError::WrongContainerType),
         }
@@ -461,51 +471,22 @@ impl<'a> TryFrom<Container<'a>> for SegmentationLayer<'a> {
                     }
                 };
 
-                let partition = match components.entry("Partition") {
-                    Entry::Occupied(entry) => entry
-                        .remove()
-                        .into_vector()
-                        .map_err(|_| TryFromContainerError::WrongComponentType("Partition")),
-
-                    Entry::Vacant(_) => Err(TryFromContainerError::MissingComponent("Partition")),
-                }?;
-
+                let partition = check_and_return_component!(components, "Partition", Vector)?;
                 if partition.length < 2 || partition.width != 1 {
                     return Err(TryFromContainerError::WrongComponentDimensions("Partition"));
                 }
 
-                let range_stream = match components.entry("RangeStream") {
-                    Entry::Occupied(entry) => entry
-                        .remove()
-                        .into_vector_delta()
-                        .map_err(|_| TryFromContainerError::WrongComponentType("RangeStream")),
-
-                    Entry::Vacant(_) => Err(TryFromContainerError::MissingComponent("RangeStream")),
-                }?;
-
+                let range_stream =
+                    check_and_return_component!(components, "RangeStream", VectorDelta)?;
                 if range_stream.width != 2 {
                     return Err(TryFromContainerError::WrongComponentDimensions(
                         "RangeStream",
                     ));
                 }
 
-                let start_sort = match components.entry("StartSort") {
-                    Entry::Occupied(entry) => entry
-                        .remove()
-                        .into_index_comp()
-                        .map_err(|_| TryFromContainerError::WrongComponentType("StartSort")),
+                let start_sort = check_and_return_component!(components, "StartSort", IndexComp)?;
 
-                    Entry::Vacant(_) => Err(TryFromContainerError::MissingComponent("StartSort")),
-                }?;
-
-                let end_sort = match components.entry("EndSort") {
-                    Entry::Occupied(entry) => entry
-                        .remove()
-                        .into_index_comp()
-                        .map_err(|_| TryFromContainerError::WrongComponentType("EndSort")),
-
-                    Entry::Vacant(_) => Err(TryFromContainerError::MissingComponent("EndSort")),
-                }?;
+                let end_sort = check_and_return_component!(components, "EndSort", IndexComp)?;
 
                 Ok(Self {
                     base,
