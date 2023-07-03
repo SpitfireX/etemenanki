@@ -1,6 +1,7 @@
-use std::io::Result;
+use std::{io::Result, str::FromStr};
 
 use etemenanki::Datastore;
+use uuid::Uuid;
 
 fn main() -> Result<()> {
     // let file = File::open("../scripts/recipes4000/sattr_text_keywords.zigv")?;
@@ -13,8 +14,14 @@ fn main() -> Result<()> {
     // let vector = component.as_vector().unwrap();
 
     let datastore = Datastore::open("../scripts/recipes4000/").unwrap();
-    println!("{:?}", datastore.layers_by_uuid);
-    println!("{:?}", datastore.uuids_by_name);
+
+    println!("{:?}", datastore.layer_uuids());
+    println!("{:?}", datastore.layer_names());
+
+    let layer = datastore.layer_by_name("primary_layer").unwrap();
+    println!("{:?}", layer.variable_names());
+    let var = layer.variable_by_name("pattr_pos").unwrap().as_indexed_string();
+    println!("{:?}", var);
 
     Ok(())
 }

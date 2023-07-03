@@ -2,12 +2,13 @@ use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use uuid::Uuid;
 
-use std::collections::HashMap;
+use std::collections::{hash_map, HashMap};
+use std::ops;
 
-use crate::components;
 use crate::container::{self, Container};
 use crate::macros::{check_and_return_component, get_container_base};
 use crate::variables::Variable;
+use crate::{components, variables};
 
 #[derive(Debug, EnumAsInner)]
 pub enum Layer<'a> {
@@ -38,6 +39,13 @@ impl<'a> Layer<'a> {
         }
     }
 
+    pub fn variable_by_name<S: AsRef<str>>(&self, name: S) -> Option<&variables::Variable> {
+        match self {
+            Layer::Primary(_, vars) => vars.variables.get(name.as_ref()),
+            Layer::Segmentation(_, vars) => vars.variables.get(name.as_ref()),
+        }
+    }
+
     pub fn init_primary(layer: PrimaryLayer<'a>) -> Self {
         Self::Primary(layer, LayerVariables::default())
     }
@@ -50,6 +58,24 @@ impl<'a> Layer<'a> {
         match &self {
             Self::Primary(l, _) => l.len(),
             Self::Segmentation(l, _) => l.len(),
+        }
+    }
+
+    pub fn variable_names(&self) -> hash_map::Keys<String, variables::Variable> {
+        match self {
+            Layer::Primary(_, vars) => vars.variables.keys(),
+            Layer::Segmentation(_, vars) => vars.variables.keys(),
+        }
+    }
+}
+
+impl<'a, S: AsRef<str>> ops::Index<S> for Layer<'a> {
+    type Output = variables::Variable<'a>;
+
+    fn index(&self, index: S) -> &Self::Output {
+        match self {
+            Layer::Primary(_, vars) => &vars.variables[index.as_ref()],
+            Layer::Segmentation(_, vars) => &vars.variables[index.as_ref()],
         }
     }
 }
@@ -72,10 +98,10 @@ impl<'a> LayerVariables<'a> {
 
 #[derive(Debug)]
 pub struct PrimaryLayer<'a> {
-    pub(crate) mmap: Mmap,
+    mmap: Mmap,
     pub name: String,
     pub header: container::Header<'a>,
-    pub(crate) partition: components::Vector<'a>,
+    partition: components::Vector<'a>,
 }
 
 impl<'a> PrimaryLayer<'a> {
@@ -118,14 +144,14 @@ impl<'a> TryFrom<Container<'a>> for PrimaryLayer<'a> {
 
 #[derive(Debug)]
 pub struct SegmentationLayer<'a> {
-    pub(crate) base: Uuid,
-    pub(crate) mmap: Mmap,
+    pub base: Uuid,
+    mmap: Mmap,
     pub name: String,
     pub header: container::Header<'a>,
-    pub(crate) partition: components::Vector<'a>,
-    pub(crate) range_stream: components::VectorDelta<'a>,
-    pub(crate) start_sort: components::IndexComp<'a>,
-    pub(crate) end_sort: components::IndexComp<'a>,
+    partition: components::Vector<'a>,
+    range_stream: components::VectorDelta<'a>,
+    start_sort: components::IndexComp<'a>,
+    end_sort: components::IndexComp<'a>,
 }
 
 impl<'a> SegmentationLayer<'a> {

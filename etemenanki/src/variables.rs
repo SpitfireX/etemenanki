@@ -1,3 +1,4 @@
+use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use uuid::Uuid;
 
@@ -5,7 +6,7 @@ use crate::components;
 use crate::container::{self, Container};
 use crate::macros::{check_and_return_component, get_container_base};
 
-#[derive(Debug)]
+#[derive(Debug, EnumAsInner)]
 pub enum Variable<'a> {
     IndexedString(IndexedStringVariable<'a>),
     PlainString(PlainStringVariable<'a>),

@@ -2,12 +2,12 @@
 #![feature(hash_drain_filter)]
 
 use std::{
-    collections::HashMap,
+    collections::{hash_map, HashMap},
     error,
     ffi::OsStr,
     fmt,
     fs::File,
-    io,
+    io, ops,
     path::{Path, PathBuf},
 };
 
@@ -24,12 +24,31 @@ pub mod variables;
 
 #[derive(Debug)]
 pub struct Datastore<'a> {
-    pub path: PathBuf,
-    pub layers_by_uuid: HashMap<Uuid, layers::Layer<'a>>,
-    pub uuids_by_name: HashMap<String, Uuid>,
+    path: PathBuf,
+    layers_by_uuid: HashMap<Uuid, layers::Layer<'a>>,
+    uuids_by_name: HashMap<String, Uuid>,
 }
 
 impl<'a> Datastore<'a> {
+    pub fn layer_by_name<S: AsRef<str>>(&self, name: S) -> Option<&layers::Layer> {
+        match self.uuids_by_name.get(name.as_ref()) {
+            Some(u) => self.layers_by_uuid.get(u),
+            None => None,
+        }
+    }
+
+    pub fn layer_by_uuid(&self, uuid: &Uuid) -> Option<&layers::Layer> {
+        self.layers_by_uuid.get(uuid)
+    }
+
+    pub fn layer_names(&self) -> hash_map::Keys<String, Uuid> {
+        self.uuids_by_name.keys()
+    }
+
+    pub fn layer_uuids(&self) -> hash_map::Keys<Uuid, layers::Layer> {
+        self.layers_by_uuid.keys()
+    }
+
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, DatastoreError> {
         let path = path.as_ref().to_owned();
         let mut containers = HashMap::new();
@@ -132,6 +151,34 @@ impl<'a> Datastore<'a> {
             uuids_by_name,
         })
     }
+
+    pub fn path(&self) -> &Path {
+        self.path.as_path()
+    }
+}
+
+impl<'a> ops::Index<&Uuid> for Datastore<'a> {
+    type Output = layers::Layer<'a>;
+
+    fn index(&self, index: &Uuid) -> &Self::Output {
+        &self.layers_by_uuid[index]
+    }
+}
+
+impl<'a> ops::Index<&str> for Datastore<'a> {
+    type Output = layers::Layer<'a>;
+
+    fn index(&self, index: &str) -> &Self::Output {
+        &self.layers_by_uuid[&self.uuids_by_name[index]]
+    }
+}
+
+impl<'a> ops::Index<&String> for Datastore<'a> {
+    type Output = layers::Layer<'a>;
+
+    fn index(&self, index: &String) -> &Self::Output {
+        &self.layers_by_uuid[&self.uuids_by_name[index]]
+    }
 }
 
 #[derive(Debug)]
@@ -191,14 +238,14 @@ mod macros {
                         .[<into_ $type:snake>]()
                         .map_err(|_| container::TryFromError::WrongComponentType($name))
                 },
-    
+
                 std::collections::hash_map::Entry::Vacant(_) => {
                     Err(container::TryFromError::MissingComponent($name))
                 }
             }
         };
     }
-    
+
     macro_rules! get_container_base {
         ($header:expr, $selftype:ident) => {
             match $header.base1_uuid {
@@ -212,7 +259,7 @@ mod macros {
             }
         };
     }
-    
+
     pub(crate) use check_and_return_component;
     pub(crate) use get_container_base;
 }
