@@ -208,9 +208,9 @@ impl From<TryFromPrimitiveError<ComponentType>> for ComponentError {
 impl fmt::Display for ComponentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ComponentError::InvalidType(t) => write!(f, "invalid container type {}", t),
-            ComponentError::NullPtr => write!(f, "given pointer is a null pointer"),
-            ComponentError::OutOfBounds(s) => write!(f, "component is out of bounds: {}", s),
+            Self::InvalidType(t) => write!(f, "invalid container type {}", t),
+            Self::NullPtr => write!(f, "given pointer is a null pointer"),
+            Self::OutOfBounds(s) => write!(f, "component is out of bounds: {}", s),
         }
     }
 }

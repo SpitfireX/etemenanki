@@ -14,7 +14,7 @@ use crate::components::{Component, ComponentError};
 
 #[repr(u64)]
 #[derive(Debug, TryFromPrimitive, PartialEq)]
-pub enum ContainerType {
+pub enum Type {
     GraphLayer = 0x5a4c67,              // "ZLg"
     PrimaryLayer = 0x5a4c70,            // "ZLp"
     SegmentationLayer = 0x5a4c73,       // "ZLs"
@@ -63,12 +63,12 @@ pub struct RawBomEntry {
 }
 
 #[derive(Debug)]
-pub struct ContainerHeader<'a> {
+pub struct Header<'a> {
     pub version: &'a str,
     pub raw_family: char,
     pub raw_class: char,
     pub raw_type: char,
-    pub container_type: ContainerType,
+    pub container_type: Type,
     pub uuid: Uuid,
     pub allocated_components: u8,
     pub used_components: u8,
@@ -82,39 +82,39 @@ pub struct ContainerHeader<'a> {
 pub struct Container<'a> {
     pub mmap: Mmap,
     pub name: String,
-    pub header: ContainerHeader<'a>,
+    pub header: Header<'a>,
     pub components: HashMap<&'a str, Component<'a>>,
 }
 
 impl<'a> Container<'a> {
-    pub fn from_mmap(mmap: Mmap, name: String) -> Result<Self, ContainerError> {
+    pub fn from_mmap(mmap: Mmap, name: String) -> Result<Self, Error> {
         let Range { start, end } = mmap.as_ref().as_ptr_range();
 
         let header = unsafe {
             if start.offset(mem::size_of::<RawHeader>().try_into()?) <= end {
                 (start as *const RawHeader)
                     .as_ref()
-                    .ok_or(ContainerError::Memory("null pointer"))
+                    .ok_or(Error::Memory("null pointer"))
             } else {
-                Err(ContainerError::Memory("header out of bounds"))
+                Err(Error::Memory("header out of bounds"))
             }
         }?;
 
         let magic = str::from_utf8(&header.magic)?;
         if !(magic == "Ziggurat") {
-            return Err(ContainerError::FormatError("Invalid magic string"));
+            return Err(Error::FormatError("Invalid magic string"));
         }
 
         let version = str::from_utf8(&header.version[..3])?;
         if !(version == "1.0") {
-            return Err(ContainerError::FormatError("Invalid container version"));
+            return Err(Error::FormatError("Invalid container version"));
         }
 
         let raw_family = header.family as char;
         let raw_class = header.class as char;
         let raw_type = header.ctype as char;
 
-        let container_type: ContainerType =
+        let container_type =
             (((header.family as u64) << 16) | ((header.class as u64) << 8) | header.ctype as u64)
                 .try_into()?;
 
@@ -146,7 +146,7 @@ impl<'a> Container<'a> {
                 let first_bom = bom_ptr as *const RawBomEntry;
                 Ok(std::slice::from_raw_parts(first_bom, n))
             } else {
-                Err(ContainerError::Memory("BOM out of bounds"))
+                Err(Error::Memory("BOM out of bounds"))
             }
         }?;
 
@@ -167,7 +167,7 @@ impl<'a> Container<'a> {
 
                     components.insert(name, component);
                 } else {
-                    return Err(ContainerError::Memory("component out of bounds"));
+                    return Err(Error::Memory("component out of bounds"));
                 }
             }
         }
@@ -175,7 +175,7 @@ impl<'a> Container<'a> {
         Ok(Container {
             mmap,
             name,
-            header: ContainerHeader {
+            header: Header {
                 version,
                 raw_family,
                 raw_class,
@@ -195,7 +195,7 @@ impl<'a> Container<'a> {
 }
 
 #[derive(Debug)]
-pub enum ContainerError {
+pub enum Error {
     Memory(&'static str),
     FormatError(&'static str),
     Utf8Error(Utf8Error),
@@ -204,56 +204,95 @@ pub enum ContainerError {
     ComponentError(ComponentError),
 }
 
-impl fmt::Display for ContainerError {
+impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ContainerError::Memory(s) => write!(f, "{}", s),
-            ContainerError::FormatError(s) => write!(f, "{}", s),
-            ContainerError::Utf8Error(e) => write!(f, "{}", e),
-            ContainerError::InvalidType(t) => write!(f, "invalid container type {}", t),
-            ContainerError::UuidError(e) => write!(f, "{}", e),
-            ContainerError::ComponentError(e) => write!(f, "{}", e),
+            Self::Memory(s) => write!(f, "{}", s),
+            Self::FormatError(s) => write!(f, "{}", s),
+            Self::Utf8Error(e) => write!(f, "{}", e),
+            Self::InvalidType(t) => write!(f, "invalid container type {}", t),
+            Self::UuidError(e) => write!(f, "{}", e),
+            Self::ComponentError(e) => write!(f, "{}", e),
         }
     }
 }
 
-impl error::Error for ContainerError {
+impl error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match self {
-            ContainerError::Utf8Error(e) => Some(e),
-            ContainerError::UuidError(e) => Some(e),
-            ContainerError::ComponentError(e) => Some(e),
+            Self::Utf8Error(e) => Some(e),
+            Self::UuidError(e) => Some(e),
+            Self::ComponentError(e) => Some(e),
             _ => None,
         }
     }
 }
 
-impl From<Utf8Error> for ContainerError {
+impl From<Utf8Error> for Error {
     fn from(value: Utf8Error) -> Self {
-        ContainerError::Utf8Error(value)
+        Error::Utf8Error(value)
     }
 }
 
-impl From<TryFromPrimitiveError<ContainerType>> for ContainerError {
-    fn from(value: TryFromPrimitiveError<ContainerType>) -> Self {
-        ContainerError::InvalidType(value.number)
+impl From<TryFromPrimitiveError<Type>> for Error {
+    fn from(value: TryFromPrimitiveError<Type>) -> Self {
+        Error::InvalidType(value.number)
     }
 }
 
-impl From<TryFromIntError> for ContainerError {
+impl From<TryFromIntError> for Error {
     fn from(_value: TryFromIntError) -> Self {
-        ContainerError::Memory("out of bounds")
+        Error::Memory("out of bounds")
     }
 }
 
-impl From<uuid::Error> for ContainerError {
+impl From<uuid::Error> for Error {
     fn from(value: uuid::Error) -> Self {
-        ContainerError::UuidError(value)
+        Error::UuidError(value)
     }
 }
 
-impl From<ComponentError> for ContainerError {
+impl From<ComponentError> for Error {
     fn from(value: ComponentError) -> Self {
-        ContainerError::ComponentError(value)
+        Error::ComponentError(value)
+    }
+}
+
+#[derive(Debug)]
+pub enum TryFromError {
+    WrongContainerType,
+    MissingComponent(&'static str),
+    WrongComponentType(&'static str),
+    WrongComponentDimensions(&'static str),
+    ConsistencyError(&'static str),
+}
+
+impl fmt::Display for TryFromError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::WrongContainerType => {
+                write!(f, "wrong container type for conversion")
+            }
+            Self::MissingComponent(s) => {
+                write!(f, "missing component {} in source container", s)
+            }
+            Self::WrongComponentType(s) => {
+                write!(f, "component {} has wrong type", s)
+            }
+            Self::WrongComponentDimensions(s) => {
+                write!(f, "component {} has wrong dimensions", s)
+            }
+            Self::ConsistencyError(s) => {
+                write!(f, "consinstency error: {} ", s)
+            }
+        }
+    }
+}
+
+impl error::Error for TryFromError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match self {
+            _ => None,
+        }
     }
 }
