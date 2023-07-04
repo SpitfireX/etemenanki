@@ -28,7 +28,6 @@ pub enum Component<'a> {
     Vector(Vector<'a>),
     Set(Set<'a>),
     Index(Index<'a>),
-    IndexComp(IndexComp<'a>),
     InvertedIndex(InvertedIndex<'a>),
 }
 
@@ -142,7 +141,7 @@ impl<'a> Component<'a> {
                 let n = be.param1 as usize;
                 let pairs_ptr = start_ptr as *const i64;
                 let pairs = unsafe { std::slice::from_raw_parts(pairs_ptr, n * 2) };
-                Component::Index(Index::from_parts(n, pairs))
+                Component::Index(Index::uncompressed_from_parts(n, pairs))
             }
 
             ComponentType::IndexComp => {
@@ -162,7 +161,7 @@ impl<'a> Component<'a> {
                         let data_ptr = start_ptr.offset((8 + len_sync) as isize);
                         let data = std::slice::from_raw_parts(data_ptr, len - len_sync - 8);
 
-                        Component::IndexComp(IndexComp::from_parts(n, r, sync, data))
+                        Component::Index(Index::compressed_from_parts(n, r, sync, data))
                     }
                 }
             }
@@ -370,32 +369,23 @@ impl<'a> Set<'a> {
 }
 
 #[derive(Debug)]
-pub struct Index<'a> {
-    length: usize,
-    pairs: &'a [i64],
+pub enum Index<'a> {
+    Compressed {
+        length: usize,
+        r: usize,
+        sync: &'a [i64],
+        data: &'a [u8],
+    },
+
+    Uncompressed {
+        length: usize,
+        pairs: &'a [i64],
+    }
 }
 
 impl<'a> Index<'a> {
-    pub fn from_parts(n: usize, pairs: &'a [i64]) -> Self {
-        Self { length: n, pairs }
-    }
-
-    pub fn len(&self) -> usize {
-        self.length
-    }
-}
-
-#[derive(Debug)]
-pub struct IndexComp<'a> {
-    length: usize,
-    r: usize,
-    sync: &'a [i64],
-    data: &'a [u8],
-}
-
-impl<'a> IndexComp<'a> {
-    pub fn from_parts(n: usize, r: usize, sync: &'a [i64], data: &'a [u8]) -> Self {
-        Self {
+    pub fn compressed_from_parts(n: usize, r: usize, sync: &'a [i64], data: &'a [u8]) -> Self {
+        Self::Compressed {
             length: n,
             r,
             sync,
@@ -404,7 +394,14 @@ impl<'a> IndexComp<'a> {
     }
 
     pub fn len(&self) -> usize {
-        self.length
+        match self {
+            Index::Compressed { length, .. } => *length,
+            Index::Uncompressed { length, .. } => *length,
+        }
+    }
+
+    pub fn uncompressed_from_parts(n: usize, pairs: &'a [i64]) -> Self {
+        Self::Uncompressed { length: n, pairs }
     }
 }
 

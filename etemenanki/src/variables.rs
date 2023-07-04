@@ -138,7 +138,7 @@ pub struct PlainStringVariable<'a> {
     pub header: container::Header<'a>,
      string_data: components::StringList<'a>,
      offset_stream: components::Vector<'a>,
-     string_hash: components::IndexComp<'a>,
+     string_hash: components::Index<'a>,
 }
 
 impl<'a> PlainStringVariable<'a> {
@@ -175,7 +175,7 @@ impl<'a> TryFrom<Container<'a>> for PlainStringVariable<'a> {
                     return Err(Self::Error::WrongComponentDimensions("OffsetStream"));
                 }
 
-                let string_hash = check_and_return_component!(components, "StringHash", IndexComp)?;
+                let string_hash = check_and_return_component!(components, "StringHash", Index)?;
                 if string_hash.len() != n {
                     return Err(Self::Error::WrongComponentDimensions("StringHash"));
                 }
@@ -203,7 +203,7 @@ pub struct IntegerVariable<'a> {
     pub name: String,
     pub header: container::Header<'a>,
      int_stream: components::Vector<'a>,
-     int_sort: components::IndexComp<'a>,
+     int_sort: components::Index<'a>,
 }
 
 impl<'a> IntegerVariable<'a> {
@@ -237,7 +237,7 @@ impl<'a> TryFrom<Container<'a>> for IntegerVariable<'a> {
                     return Err(Self::Error::WrongComponentDimensions("IntStream"));
                 }
 
-                let int_sort = check_and_return_component!(components, "IntSort", IndexComp)?;
+                let int_sort = check_and_return_component!(components, "IntSort", Index)?;
                 if int_sort.len() != n {
                     return Err(Self::Error::WrongComponentDimensions("IntSort"));
                 }

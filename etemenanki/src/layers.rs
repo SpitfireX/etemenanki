@@ -150,8 +150,8 @@ pub struct SegmentationLayer<'a> {
     pub header: container::Header<'a>,
     partition: components::Vector<'a>,
     range_stream: components::Vector<'a>,
-    start_sort: components::IndexComp<'a>,
-    end_sort: components::IndexComp<'a>,
+    start_sort: components::Index<'a>,
+    end_sort: components::Index<'a>,
 }
 
 impl<'a> SegmentationLayer<'a> {
@@ -186,9 +186,9 @@ impl<'a> TryFrom<Container<'a>> for SegmentationLayer<'a> {
                     return Err(Self::Error::WrongComponentDimensions("RangeStream"));
                 }
 
-                let start_sort = check_and_return_component!(components, "StartSort", IndexComp)?;
+                let start_sort = check_and_return_component!(components, "StartSort", Index)?;
 
-                let end_sort = check_and_return_component!(components, "EndSort", IndexComp)?;
+                let end_sort = check_and_return_component!(components, "EndSort", Index)?;
 
                 Ok(Self {
                     base,
