@@ -49,15 +49,15 @@ impl<'a> TryFrom<Container<'a>> for Variable<'a> {
 
 #[derive(Debug)]
 pub struct IndexedStringVariable<'a> {
-    pub(crate) base: Uuid,
-    pub(crate) mmap: Mmap,
+     base: Uuid,
+     mmap: Mmap,
     pub name: String,
     pub header: container::Header<'a>,
-    pub(crate) lexicon: components::StringVector<'a>,
-    pub(crate) lex_hash: components::Index<'a>,
-    pub(crate) partition: components::Vector<'a>,
-    pub(crate) lex_id_stream: components::VectorComp<'a>,
-    pub(crate) lex_id_index: components::InvertedIndex<'a>,
+     lexicon: components::StringVector<'a>,
+     lex_hash: components::Index<'a>,
+     partition: components::Vector<'a>,
+     lex_id_stream: components::VectorComp<'a>,
+     lex_id_index: components::InvertedIndex<'a>,
 }
 
 impl<'a> IndexedStringVariable<'a> {
@@ -132,13 +132,13 @@ impl<'a> TryFrom<Container<'a>> for IndexedStringVariable<'a> {
 
 #[derive(Debug)]
 pub struct PlainStringVariable<'a> {
-    pub(crate) base: Uuid,
-    pub(crate) mmap: Mmap,
+     base: Uuid,
+     mmap: Mmap,
     pub name: String,
     pub header: container::Header<'a>,
-    pub(crate) string_data: components::StringList<'a>,
-    pub(crate) offset_stream: components::VectorDelta<'a>,
-    pub(crate) string_hash: components::IndexComp<'a>,
+     string_data: components::StringList<'a>,
+     offset_stream: components::VectorDelta<'a>,
+     string_hash: components::IndexComp<'a>,
 }
 
 impl<'a> PlainStringVariable<'a> {
@@ -198,12 +198,12 @@ impl<'a> TryFrom<Container<'a>> for PlainStringVariable<'a> {
 
 #[derive(Debug)]
 pub struct IntegerVariable<'a> {
-    pub(crate) base: Uuid,
-    pub(crate) mmap: Mmap,
+     base: Uuid,
+     mmap: Mmap,
     pub name: String,
     pub header: container::Header<'a>,
-    pub(crate) int_stream: components::VectorComp<'a>,
-    pub(crate) int_sort: components::IndexComp<'a>,
+     int_stream: components::VectorComp<'a>,
+     int_sort: components::IndexComp<'a>,
 }
 
 impl<'a> IntegerVariable<'a> {
@@ -259,15 +259,15 @@ impl<'a> TryFrom<Container<'a>> for IntegerVariable<'a> {
 
 #[derive(Debug)]
 pub struct SetVariable<'a> {
-    pub(crate) base: Uuid,
-    pub(crate) mmap: Mmap,
+     base: Uuid,
+     mmap: Mmap,
     pub name: String,
     pub header: container::Header<'a>,
-    pub(crate) lexicon: components::StringVector<'a>,
-    pub(crate) lex_hash: components::Index<'a>,
-    pub(crate) partition: components::Vector<'a>,
-    pub(crate) id_set_stream: components::Set<'a>,
-    pub(crate) id_set_index: components::InvertedIndex<'a>,
+     lexicon: components::StringVector<'a>,
+     lex_hash: components::Index<'a>,
+     partition: components::Vector<'a>,
+     id_set_stream: components::Set<'a>,
+     id_set_index: components::InvertedIndex<'a>,
 }
 
 impl<'a> SetVariable<'a> {
