@@ -125,7 +125,7 @@ impl<'a> TryFrom<Container<'a>> for PrimaryLayer<'a> {
             container::Type::PrimaryLayer => {
                 let partition = check_and_return_component!(components, "Partition", Vector)?;
 
-                if partition.length < 2 || partition.width != 1 {
+                if partition.len() < 2 || partition.width() != 1 {
                     Err(Self::Error::WrongComponentDimensions("Partition"))
                 } else {
                     Ok(Self {
@@ -149,7 +149,7 @@ pub struct SegmentationLayer<'a> {
     pub name: String,
     pub header: container::Header<'a>,
     partition: components::Vector<'a>,
-    range_stream: components::VectorDelta<'a>,
+    range_stream: components::Vector<'a>,
     start_sort: components::IndexComp<'a>,
     end_sort: components::IndexComp<'a>,
 }
@@ -176,13 +176,13 @@ impl<'a> TryFrom<Container<'a>> for SegmentationLayer<'a> {
                 let base = get_container_base!(header, SegmentationLayer);
 
                 let partition = check_and_return_component!(components, "Partition", Vector)?;
-                if partition.length < 2 || partition.width != 1 {
+                if partition.len() < 2 || partition.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("Partition"));
                 }
 
                 let range_stream =
-                    check_and_return_component!(components, "RangeStream", VectorDelta)?;
-                if range_stream.width != 2 {
+                    check_and_return_component!(components, "RangeStream", Vector)?;
+                if range_stream.width() != 2 {
                     return Err(Self::Error::WrongComponentDimensions("RangeStream"));
                 }
 

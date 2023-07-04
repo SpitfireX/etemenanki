@@ -26,8 +26,6 @@ pub enum Component<'a> {
     StringList(StringList<'a>),
     StringVector(StringVector<'a>),
     Vector(Vector<'a>),
-    VectorComp(VectorComp<'a>),
-    VectorDelta(VectorDelta<'a>),
     Set(Set<'a>),
     Index(Index<'a>),
     IndexComp(IndexComp<'a>),
@@ -75,7 +73,7 @@ impl<'a> Component<'a> {
                 let d = be.param2 as usize;
                 let data_ptr = start_ptr as *const i64;
                 let data = unsafe { std::slice::from_raw_parts(data_ptr, n * d) };
-                Component::Vector(Vector::from_parts(n, d, data))
+                Component::Vector(Vector::uncompressed_from_parts(n, d, data))
             }
 
             ComponentType::VectorComp => {
@@ -94,7 +92,7 @@ impl<'a> Component<'a> {
                         let data_ptr = start_ptr.offset(len_sync as isize);
                         let data = std::slice::from_raw_parts(data_ptr, len - len_sync);
 
-                        Component::VectorComp(VectorComp::from_parts(n, d, sync, data))
+                        Component::Vector(Vector::compressed_from_parts(n, d, sync, data))
                     }
                 }
             }
@@ -115,7 +113,7 @@ impl<'a> Component<'a> {
                         let data_ptr = start_ptr.offset(len_sync as isize);
                         let data = std::slice::from_raw_parts(data_ptr, len - len_sync);
 
-                        Component::VectorDelta(VectorDelta::from_parts(n, d, sync, data))
+                        Component::Vector(Vector::delta_from_parts(n, d, sync, data))
                     }
                 }
             }
@@ -280,42 +278,33 @@ impl<'a> StringVector<'a> {
 }
 
 #[derive(Debug)]
-pub struct Vector<'a> {
-    pub length: usize,
-    pub width: usize,
-    data: &'a [i64],
+pub enum Vector<'a> {
+    Uncompressed {
+        length: usize,
+        width: usize,
+        data: &'a [i64],
+    },
+
+    Compressed {
+        length: usize,
+        width: usize,
+        n_blocks: usize,
+        sync: &'a [i64],
+        data: &'a [u8],
+    },
+
+    Delta {
+        length: usize,
+        width: usize,
+        n_blocks: usize,
+        sync: &'a [i64],
+        data: &'a [u8],
+    },
 }
 
 impl<'a> Vector<'a> {
-    pub fn from_parts(n: usize, d: usize, data: &'a [i64]) -> Self {
-        Self {
-            length: n,
-            width: d,
-            data,
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.length
-    }
-
-    pub fn width(&self) -> usize {
-        self.width
-    }
-}
-
-#[derive(Debug)]
-pub struct VectorComp<'a> {
-    length: usize,
-    width: usize,
-    n_blocks: usize,
-    sync: &'a [i64],
-    data: &'a [u8],
-}
-
-impl<'a> VectorComp<'a> {
-    pub fn from_parts(n: usize, d: usize, sync: &'a [i64], data: &'a [u8]) -> Self {
-        Self {
+    pub fn delta_from_parts(n: usize, d: usize, sync: &'a [i64], data: &'a [u8]) -> Self {
+        Self::Delta {
             length: n,
             width: d,
             n_blocks: sync.len(),
@@ -324,27 +313,8 @@ impl<'a> VectorComp<'a> {
         }
     }
 
-    pub fn len(&self) -> usize {
-        self.length
-    }
-
-    pub fn width(&self) -> usize {
-        self.width
-    }
-}
-
-#[derive(Debug)]
-pub struct VectorDelta<'a> {
-    pub length: usize,
-    pub width: usize,
-    n_blocks: usize,
-    sync: &'a [i64],
-    data: &'a [u8],
-}
-
-impl<'a> VectorDelta<'a> {
-    pub fn from_parts(n: usize, d: usize, sync: &'a [i64], data: &'a [u8]) -> Self {
-        Self {
+    pub fn compressed_from_parts(n: usize, d: usize, sync: &'a [i64], data: &'a [u8]) -> Self {
+        Self::Compressed {
             length: n,
             width: d,
             n_blocks: sync.len(),
@@ -353,12 +323,28 @@ impl<'a> VectorDelta<'a> {
         }
     }
 
+    pub fn uncompressed_from_parts(n: usize, d: usize, data: &'a [i64]) -> Self {
+        Self::Uncompressed {
+            length: n,
+            width: d,
+            data,
+        }
+    }
+
     pub fn len(&self) -> usize {
-        self.length
+        match self {
+            Self::Uncompressed { length, .. } => *length,
+            Self::Compressed { length, .. } => *length,
+            Self::Delta { length, .. } => *length,
+        }
     }
 
     pub fn width(&self) -> usize {
-        self.width
+        match self {
+            Self::Uncompressed { length: _, width, .. } => *width,
+            Self::Compressed { length: _, width,.. } => *width,
+            Self::Delta { length: _, width, .. } => *width,
+        }
     }
 }
 

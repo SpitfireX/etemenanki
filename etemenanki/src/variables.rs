@@ -56,7 +56,7 @@ pub struct IndexedStringVariable<'a> {
      lexicon: components::StringVector<'a>,
      lex_hash: components::Index<'a>,
      partition: components::Vector<'a>,
-     lex_id_stream: components::VectorComp<'a>,
+     lex_id_stream: components::Vector<'a>,
      lex_id_index: components::InvertedIndex<'a>,
 }
 
@@ -101,7 +101,7 @@ impl<'a> TryFrom<Container<'a>> for IndexedStringVariable<'a> {
                 // consistency gets checked at datastore creation
 
                 let lex_id_stream =
-                    check_and_return_component!(components, "LexIDStream", VectorComp)?;
+                    check_and_return_component!(components, "LexIDStream", Vector)?;
                 if lex_id_stream.len() != n || lex_id_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("LexIDStream"));
                 }
@@ -137,7 +137,7 @@ pub struct PlainStringVariable<'a> {
     pub name: String,
     pub header: container::Header<'a>,
      string_data: components::StringList<'a>,
-     offset_stream: components::VectorDelta<'a>,
+     offset_stream: components::Vector<'a>,
      string_hash: components::IndexComp<'a>,
 }
 
@@ -170,8 +170,8 @@ impl<'a> TryFrom<Container<'a>> for PlainStringVariable<'a> {
                 }
 
                 let offset_stream =
-                    check_and_return_component!(components, "OffsetStream", VectorDelta)?;
-                if offset_stream.len() != n + 1 || offset_stream.width != 1 {
+                    check_and_return_component!(components, "OffsetStream", Vector)?;
+                if offset_stream.len() != n + 1 || offset_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("OffsetStream"));
                 }
 
@@ -202,7 +202,7 @@ pub struct IntegerVariable<'a> {
      mmap: Mmap,
     pub name: String,
     pub header: container::Header<'a>,
-     int_stream: components::VectorComp<'a>,
+     int_stream: components::Vector<'a>,
      int_sort: components::IndexComp<'a>,
 }
 
@@ -232,7 +232,7 @@ impl<'a> TryFrom<Container<'a>> for IntegerVariable<'a> {
                 let base = get_container_base!(header, PlainStringVariable);
                 let n = header.dim1;
 
-                let int_stream = check_and_return_component!(components, "IntStream", VectorComp)?;
+                let int_stream = check_and_return_component!(components, "IntStream", Vector)?;
                 if int_stream.len() != n || int_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("IntStream"));
                 }
