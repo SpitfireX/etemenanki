@@ -34,7 +34,7 @@ class PlainStringVariable(Variable):
 
         # build OffsetStream [offset_to_next_string]
         print('Building OffsetStream')
-        offset_stream = list(accumulate(chain([0], strings), lambda x, y: x + len(y)))
+        offset_stream = list(accumulate(chain([0], strings), lambda x, y: x + len(y) + 1))
 
         if compressed:
             offset_stream = VectorDelta(offset_stream, 'OffsetStream', len(offset_stream))
