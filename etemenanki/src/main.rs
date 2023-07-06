@@ -12,21 +12,28 @@ fn main() -> Result<()> {
     // let component = container.components.get("Partition").unwrap();
     // let vector = component.as_vector().unwrap();
 
-
     let datastore = Datastore::open("../scripts/recipes4000/").unwrap();
 
-    println!("{:?}", datastore.layer_uuids());
-    println!("{:?}", datastore.layer_names());
+    let strings: Vec<&str> = datastore["sattr_text"]["sattr_text_url"]
+        .as_plain_string()
+        .unwrap()
+        .iter()
+        .collect();
 
-    let layer = &datastore["sattr_text"];
-    // let layer = &datastore["sattr_s"];
-    println!("{:?}", layer.variable_names());
-    let var = layer["sattr_text_url"].as_plain_string().unwrap();
-    // let var = layer["sattr_s_id"].as_plain_string().unwrap();
-    println!("{:?}", var);
-    
-    let test: Vec<&str> = var.iter().collect();
-    println!("{:?}", test);
+    dbg!(strings);
+
+    // println!("{:?}", datastore.layer_uuids());
+    // println!("{:?}", datastore.layer_names());
+
+    // let layer = &datastore["sattr_text"];
+    // // let layer = &datastore["sattr_s"];
+    // println!("{:?}", layer.variable_names());
+    // let var = layer["sattr_text_url"].as_plain_string().unwrap();
+    // // let var = layer["sattr_s_id"].as_plain_string().unwrap();
+    // println!("{:?}", var);
+
+    // let test: Vec<&str> = var.iter().collect();
+    // println!("{:?}", test);
 
     Ok(())
 }

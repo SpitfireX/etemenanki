@@ -1,0 +1,14 @@
+pattr_pos.zigv	IndexedStringVariable
+pattr_token.zigv	IndexedStringVariable
+primary_layer.zigl	PrimaryLayer
+sattr_s_id.zigv	PlainStringVariable
+sattr_s.zigl	SegmentationLayer
+sattr_text_author.zigv	IndexedStringVariable
+sattr_text_category.zigv	IndexedStringVariable
+sattr_text_id.zigv	IntegerVariable
+sattr_text_ingredients.zigv	SetVariable
+sattr_text_keywords.zigv SetVariable
+sattr_text_related.zigv	SetVariable
+sattr_text_url.zigv	PlainStringVariable
+sattr_text_year.zigv	IntegerVariable
+sattr_text.zigl	SegmentationLayer

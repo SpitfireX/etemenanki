@@ -354,6 +354,33 @@ impl<'a> Vector<'a> {
         }
     }
 
+    pub fn get(&self, index: usize) -> VecValue {
+        match *self {
+            Vector::Uncompressed { length: _, width: _, data } => {
+                VecValue::Scalar(data[index])
+            }
+
+            Vector::Compressed { length, width, n_blocks, sync, data } => todo!(),
+            
+            Vector::Delta { length: _, width, n_blocks, sync, data } => {
+                let bi = index/(16*width);
+                if bi > n_blocks {
+                    panic!("block index out of range");
+                }
+
+                let ci = (index/16) % width;
+
+                // offset in sync vector is from start of the component, so we need
+                // to compensate for that by subtracting the len of the sync vector
+                let offset = (sync[bi] as usize) - (n_blocks * 8);
+                let blockcol = Self::decode_delta_column(width, ci, &data[offset..]);
+                let i = index % 16;
+
+                VecValue::Owned(blockcol, i)
+            }
+        }
+    }
+
     pub fn get_slice(&self, index: usize) -> VecSlice {
         match *self {
             Self::Uncompressed { length: _, width, data } => {
@@ -383,6 +410,7 @@ impl<'a> Vector<'a> {
         }
     }
 
+    /// Decodes a whole delta block and returns a vector of its columns
     fn decode_delta_block(d: usize, raw_data: &[u8]) -> Vec<[i64; 16]> {
         let mut block_delta = vec![[0i64; 16]; d];
         let mut block = vec![[0i64; 16]; d];
@@ -405,6 +433,45 @@ impl<'a> Vector<'a> {
         }
 
         block
+    }
+
+    /// Returns only column `col_index` of a delta block without decoding the whole block
+    fn decode_delta_column(d: usize, col_index: usize, raw_data: &[u8]) -> [i64; 16] {
+        let mut col_delta = [0i64; 16];
+        let mut col = [0i64; 16];
+
+        let mut offset = 0;
+        for _ in 0..col_index+1 {
+            for i in 0..16 {
+                let (int, len) = ziggurat_varint::decode(&raw_data[offset..]);
+                col_delta[i] = int;
+                offset += len;
+            }
+        }
+
+        col[0] = col_delta[0];
+        for i in 1..16 {
+            col[i] = col[i-1] + col_delta[i];
+        }
+
+        col
+    }
+}
+
+#[derive(Debug)]
+pub enum VecValue {
+    Scalar(i64),
+    Owned([i64; 16], usize),
+}
+
+impl ops::Deref for VecValue {
+    type Target = i64;
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            VecValue::Scalar(v) => v,
+            VecValue::Owned(block, i) => &block[*i],
+        }
     }
 }
 
