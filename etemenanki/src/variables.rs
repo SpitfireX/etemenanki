@@ -51,15 +51,15 @@ impl<'a> TryFrom<Container<'a>> for Variable<'a> {
 
 #[derive(Debug)]
 pub struct IndexedStringVariable<'a> {
-     base: Uuid,
-     mmap: Mmap,
+    base: Uuid,
+    mmap: Mmap,
     pub name: String,
     pub header: container::Header<'a>,
-     lexicon: components::StringVector<'a>,
-     lex_hash: components::Index<'a>,
-     partition: components::Vector<'a>,
-     lex_id_stream: components::Vector<'a>,
-     lex_id_index: components::InvertedIndex<'a>,
+    lexicon: components::StringVector<'a>,
+    lex_hash: components::Index<'a>,
+    partition: components::Vector<'a>,
+    lex_id_stream: components::Vector<'a>,
+    lex_id_index: components::InvertedIndex<'a>,
 }
 
 impl<'a> IndexedStringVariable<'a> {
@@ -102,8 +102,7 @@ impl<'a> TryFrom<Container<'a>> for IndexedStringVariable<'a> {
                 let partition = check_and_return_component!(components, "Partition", Vector)?;
                 // consistency gets checked at datastore creation
 
-                let lex_id_stream =
-                    check_and_return_component!(components, "LexIDStream", Vector)?;
+                let lex_id_stream = check_and_return_component!(components, "LexIDStream", Vector)?;
                 if lex_id_stream.len() != n || lex_id_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("LexIDStream"));
                 }
@@ -134,16 +133,23 @@ impl<'a> TryFrom<Container<'a>> for IndexedStringVariable<'a> {
 
 #[derive(Debug)]
 pub struct PlainStringVariable<'a> {
-     base: Uuid,
-     mmap: Mmap,
+    base: Uuid,
+    mmap: Mmap,
     pub name: String,
     pub header: container::Header<'a>,
-     string_data: components::StringList<'a>,
-     offset_stream: components::Vector<'a>,
-     string_hash: components::Index<'a>,
+    string_data: components::StringList<'a>,
+    offset_stream: components::Vector<'a>,
+    string_hash: components::Index<'a>,
 }
 
 impl<'a> PlainStringVariable<'a> {
+    pub fn iter(&self) -> PlainStringIterator {
+        PlainStringIterator {
+            var: self,
+            index: 0,
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.header.dim1
     }
@@ -154,11 +160,9 @@ impl<'a> ops::Index<usize> for PlainStringVariable<'a> {
 
     fn index(&self, index: usize) -> &Self::Output {
         let start = self.offset_stream.get_slice(index)[0] as usize;
-        let end = self.offset_stream.get_slice(index+1)[0] as usize;
-        
-        unsafe {
-            std::str::from_utf8_unchecked(&self.string_data[start..end-1])
-        }
+        let end = self.offset_stream.get_slice(index + 1)[0] as usize;
+
+        unsafe { std::str::from_utf8_unchecked(&self.string_data[start..end - 1]) }
     }
 }
 
@@ -211,14 +215,45 @@ impl<'a> TryFrom<Container<'a>> for PlainStringVariable<'a> {
     }
 }
 
+pub struct PlainStringIterator<'a> {
+    var: &'a PlainStringVariable<'a>,
+    index: usize,
+}
+
+impl<'a> Iterator for PlainStringIterator<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.var.len() {
+            let string = &self.var[self.index];
+            self.index += 1;
+            Some(string)
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a PlainStringVariable<'a> {
+    type Item = &'a str;
+    type IntoIter = PlainStringIterator<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        PlainStringIterator {
+            var: self,
+            index: 0,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct IntegerVariable<'a> {
-     base: Uuid,
-     mmap: Mmap,
+    base: Uuid,
+    mmap: Mmap,
     pub name: String,
     pub header: container::Header<'a>,
-     int_stream: components::Vector<'a>,
-     int_sort: components::Index<'a>,
+    int_stream: components::Vector<'a>,
+    int_sort: components::Index<'a>,
 }
 
 impl<'a> IntegerVariable<'a> {
@@ -274,15 +309,15 @@ impl<'a> TryFrom<Container<'a>> for IntegerVariable<'a> {
 
 #[derive(Debug)]
 pub struct SetVariable<'a> {
-     base: Uuid,
-     mmap: Mmap,
+    base: Uuid,
+    mmap: Mmap,
     pub name: String,
     pub header: container::Header<'a>,
-     lexicon: components::StringVector<'a>,
-     lex_hash: components::Index<'a>,
-     partition: components::Vector<'a>,
-     id_set_stream: components::Set<'a>,
-     id_set_index: components::InvertedIndex<'a>,
+    lexicon: components::StringVector<'a>,
+    lex_hash: components::Index<'a>,
+    partition: components::Vector<'a>,
+    id_set_stream: components::Set<'a>,
+    id_set_index: components::InvertedIndex<'a>,
 }
 
 impl<'a> SetVariable<'a> {
