@@ -1,3 +1,5 @@
+use std::ops;
+
 use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use uuid::Uuid;
@@ -144,6 +146,19 @@ pub struct PlainStringVariable<'a> {
 impl<'a> PlainStringVariable<'a> {
     pub fn len(&self) -> usize {
         self.header.dim1
+    }
+}
+
+impl<'a> ops::Index<usize> for PlainStringVariable<'a> {
+    type Output = str;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        let start = self.offset_stream.get_slice(index)[0] as usize;
+        let end = self.offset_stream.get_slice(index+1)[0] as usize;
+        
+        unsafe {
+            std::str::from_utf8_unchecked(&self.string_data[start..end-1])
+        }
     }
 }
 

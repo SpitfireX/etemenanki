@@ -1,4 +1,4 @@
-use std::{error, fmt};
+use std::{error, fmt, ops};
 
 use enum_as_inner::EnumAsInner;
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
@@ -232,9 +232,9 @@ impl<'a> Blob<'a> {
 }
 
 impl<'a> std::ops::Deref for Blob<'a> {
-    type Target = &'a [u8];
+    type Target = [u8];
 
-    fn deref(&self) -> &&'a [u8] {
+    fn deref(&self) -> &Self::Target {
         &self.data
     }
 }
@@ -252,6 +252,14 @@ impl<'a> StringList<'a> {
 
     pub fn len(&self) -> usize {
         self.length
+    }
+}
+
+impl<'a> ops::Deref for StringList<'a> {
+    type Target = [u8];
+
+    fn deref(&self) -> &Self::Target {
+        &self.data
     }
 }
 
@@ -343,6 +351,76 @@ impl<'a> Vector<'a> {
             Self::Uncompressed { length: _, width, .. } => *width,
             Self::Compressed { length: _, width,.. } => *width,
             Self::Delta { length: _, width, .. } => *width,
+        }
+    }
+
+    pub fn get_slice(&self, index: usize) -> VecSlice {
+        match *self {
+            Self::Uncompressed { length: _, width, data } => {
+                VecSlice::Borrowed(&data[index..index+width])
+            }
+
+            Self::Compressed { length, width, n_blocks, sync, data } => todo!(),
+
+            Self::Delta { length: _, width, n_blocks, sync, data } => {
+                let bi = index/16;
+                if bi > n_blocks {
+                    panic!("block index out of range");
+                }
+
+                // offset in sync vector is from start of the component, so we need
+                // to compensate for that by subtracting the len of the sync vector
+                let offset = (sync[bi] as usize) - (n_blocks * 8);
+                let block = Self::decode_delta_block(width, &data[offset..]);
+                
+                let mut slice = vec![0i64; width];
+                for i in 0..width {
+                    slice[i] = block[i][index % 16];
+                }
+
+                VecSlice::Owned(slice)
+            },
+        }
+    }
+
+    fn decode_delta_block(d: usize, raw_data: &[u8]) -> Vec<[i64; 16]> {
+        let mut block_delta = vec![[0i64; 16]; d];
+        let mut block = vec![[0i64; 16]; d];
+
+        let mut offset = 0;
+        for i in 0..d {
+            for j in 0..16 {
+                let (int, len) = ziggurat_varint::decode(&raw_data[offset..]);
+                block_delta[i][j] = int;
+                offset += len;
+            }
+        }
+
+        for i in 0..d {
+            block[i][0] = block_delta[i][0];
+            
+            for j in 1..16 {
+                block[i][j] = block[i][j-1] + block_delta[i][j];
+            }
+        }
+
+        block
+    }
+}
+
+#[derive(Debug)]
+pub enum VecSlice<'a> {
+    Borrowed(&'a [i64]),
+    Owned(Vec<i64>),
+}
+
+impl<'a> ops::Deref for VecSlice<'a> {
+    type Target = [i64];
+
+    fn deref(&self) -> &Self::Target {
+        match self {
+            VecSlice::Borrowed(s) => *s,
+            VecSlice::Owned(v) => v,
         }
     }
 }
