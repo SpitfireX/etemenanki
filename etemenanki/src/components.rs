@@ -310,6 +310,100 @@ pub enum Vector<'a> {
 }
 
 impl<'a> Vector<'a> {
+        /// Decodes a whole delta block and returns a vector of its columns
+        fn decode_delta_block(d: usize, raw_data: &[u8]) -> Vec<[i64; 16]> {
+            let mut block_delta = vec![[0i64; 16]; d];
+            let mut block = vec![[0i64; 16]; d];
+    
+            let mut offset = 0;
+            for i in 0..d {
+                for j in 0..16 {
+                    let (int, len) = ziggurat_varint::decode(&raw_data[offset..]);
+                    block_delta[i][j] = int;
+                    offset += len;
+                }
+            }
+    
+            for i in 0..d {
+                block[i][0] = block_delta[i][0];
+                
+                for j in 1..16 {
+                    block[i][j] = block[i][j-1] + block_delta[i][j];
+                }
+            }
+    
+            block
+        }
+
+        /// Gets the value with `index` < `self.len()`*`self.width()`.
+        /// 
+        /// This always triggers a full block decode on compressed Vectors
+        /// for efficient access use `VectorReader`.
+        pub fn get(&self, index: usize) -> i64 {
+            match *self {
+                Self::Uncompressed { length: _, width: _, data } => {
+                    data[index]
+                }
+    
+                Self::Compressed { length, width, n_blocks, sync, data } => todo!(),
+                
+                Self::Delta { length: _, width, n_blocks: _, sync: _, data } => {
+                    let ci = index / width;
+                    let ri = index % width;
+                    self.get_slice(ci)[ri]
+                }
+            }
+        }
+
+        /// Gets the column with `index` < `self.len()`.
+        /// 
+        /// This always triggers a full block decode on compressed Vectors
+        /// for efficient access use `VectorReader`.
+        pub fn get_slice(&self, index: usize) -> VecSlice {
+            match *self {
+                Self::Uncompressed { length: _, width, data } => {
+                    VecSlice::Borrowed(&data[index..index+width])
+                }
+    
+                Self::Compressed { length, width, n_blocks, sync, data } => todo!(),
+    
+                Self::Delta { length: _, width, n_blocks, sync, data } => {
+                    let bi = index/16;
+                    if bi > n_blocks {
+                        panic!("block index out of range");
+                    }
+    
+                    // offset in sync vector is from start of the component, so we need
+                    // to compensate for that by subtracting the len of the sync vector
+                    let offset = (sync[bi] as usize) - (n_blocks * 8);
+                    let block = Self::decode_delta_block(width, &data[offset..]);
+                    
+                    let mut slice = vec![0i64; width];
+                    for i in 0..width {
+                        slice[i] = block[i][index % 16];
+                    }
+    
+                    VecSlice::Owned(slice)
+                },
+            }
+        }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Uncompressed { length, .. } => *length,
+            Self::Compressed { length, .. } => *length,
+            Self::Delta { length, .. } => *length,
+        }
+    }
+
+    pub fn width(&self) -> usize {
+        match self {
+            Self::Uncompressed { length: _, width, .. } => *width,
+            Self::Compressed { length: _, width,.. } => *width,
+            Self::Delta { length: _, width, .. } => *width,
+        }
+    }
+
     pub fn delta_from_parts(n: usize, d: usize, sync: &'a [i64], data: &'a [u8]) -> Self {
         Self::Delta {
             length: n,
@@ -337,141 +431,87 @@ impl<'a> Vector<'a> {
             data,
         }
     }
+}
 
-    pub fn len(&self) -> usize {
-        match self {
-            Self::Uncompressed { length, .. } => *length,
-            Self::Compressed { length, .. } => *length,
-            Self::Delta { length, .. } => *length,
+#[derive(Debug)]
+pub struct VectorReader<'a> {
+    vector: Vector<'a>,
+    last_block: Option<Vec<[i64; 16]>>,
+    last_block_index: usize,
+    slice_buffer: Vec<i64>,
+}
+
+impl<'a> VectorReader<'a> {
+    pub fn from_vector(vector: Vector<'a>) -> Self {
+        let last_block = None;
+        let last_block_index = 0;
+        let slice_buffer = vec![0; vector.width()];
+
+        Self {
+            vector,
+            last_block,
+            last_block_index,
+            slice_buffer,
         }
     }
 
-    pub fn width(&self) -> usize {
-        match self {
-            Self::Uncompressed { length: _, width, .. } => *width,
-            Self::Compressed { length: _, width,.. } => *width,
-            Self::Delta { length: _, width, .. } => *width,
-        }
-    }
-
-    pub fn get(&self, index: usize) -> VecValue {
-        match *self {
+    pub fn get(&mut self, index: usize) -> i64 {
+        match self.vector {
             Vector::Uncompressed { length: _, width: _, data } => {
-                VecValue::Scalar(data[index])
+                data[index]
             }
 
             Vector::Compressed { length, width, n_blocks, sync, data } => todo!(),
             
             Vector::Delta { length: _, width, n_blocks, sync, data } => {
-                let bi = index/(16*width);
-                if bi > n_blocks {
-                    panic!("block index out of range");
-                }
-
-                let ci = (index/16) % width;
-
-                // offset in sync vector is from start of the component, so we need
-                // to compensate for that by subtracting the len of the sync vector
-                let offset = (sync[bi] as usize) - (n_blocks * 8);
-                let blockcol = Self::decode_delta_column(width, ci, &data[offset..]);
-                let i = index % 16;
-
-                VecValue::Owned(blockcol, i)
+                let ci = index / width;
+                let ri = index % width;
+                self.get_slice(ri)[ci]
             }
         }
     }
 
-    pub fn get_slice(&self, index: usize) -> VecSlice {
-        match *self {
-            Self::Uncompressed { length: _, width, data } => {
-                VecSlice::Borrowed(&data[index..index+width])
+    pub fn get_slice(&mut self, index: usize) -> &[i64] {
+        match self.vector {
+            Vector::Uncompressed { length: _, width, data } => {
+                &data[index..index+width]
             }
 
-            Self::Compressed { length, width, n_blocks, sync, data } => todo!(),
+            Vector::Compressed { length, width, n_blocks, sync, data } => todo!(),
 
-            Self::Delta { length: _, width, n_blocks, sync, data } => {
+            Vector::Delta { length: _, width, n_blocks, sync, data } => {
                 let bi = index/16;
                 if bi > n_blocks {
                     panic!("block index out of range");
                 }
 
-                // offset in sync vector is from start of the component, so we need
-                // to compensate for that by subtracting the len of the sync vector
-                let offset = (sync[bi] as usize) - (n_blocks * 8);
-                let block = Self::decode_delta_block(width, &data[offset..]);
+                if bi != self.last_block_index || self.last_block == None {
+                    // offset in sync vector is from start of the component, so we need
+                    // to compensate for that by subtracting the len of the sync vector
+                    let offset = (sync[bi] as usize) - (n_blocks * 8);
+                    self.last_block = Some(Vector::decode_delta_block(width, &data[offset..]));
+                    self.last_block_index = bi;
+                }
                 
-                let mut slice = vec![0i64; width];
-                for i in 0..width {
-                    slice[i] = block[i][index % 16];
+                if let Some(block) = self.last_block.as_ref() {
+                    for i in 0..width {
+                        self.slice_buffer[i] = block[i][index % 16];
+                    }
+                } else {
+                    panic!("last_block should not be uninitialized");
                 }
 
-                VecSlice::Owned(slice)
+                &self.slice_buffer
             },
         }
     }
 
-    /// Decodes a whole delta block and returns a vector of its columns
-    fn decode_delta_block(d: usize, raw_data: &[u8]) -> Vec<[i64; 16]> {
-        let mut block_delta = vec![[0i64; 16]; d];
-        let mut block = vec![[0i64; 16]; d];
-
-        let mut offset = 0;
-        for i in 0..d {
-            for j in 0..16 {
-                let (int, len) = ziggurat_varint::decode(&raw_data[offset..]);
-                block_delta[i][j] = int;
-                offset += len;
-            }
-        }
-
-        for i in 0..d {
-            block[i][0] = block_delta[i][0];
-            
-            for j in 1..16 {
-                block[i][j] = block[i][j-1] + block_delta[i][j];
-            }
-        }
-
-        block
+    pub fn len(&self) -> usize {
+        self.vector.len()
     }
 
-    /// Returns only column `col_index` of a delta block without decoding the whole block
-    fn decode_delta_column(d: usize, col_index: usize, raw_data: &[u8]) -> [i64; 16] {
-        let mut col_delta = [0i64; 16];
-        let mut col = [0i64; 16];
-
-        let mut offset = 0;
-        for _ in 0..col_index+1 {
-            for i in 0..16 {
-                let (int, len) = ziggurat_varint::decode(&raw_data[offset..]);
-                col_delta[i] = int;
-                offset += len;
-            }
-        }
-
-        col[0] = col_delta[0];
-        for i in 1..16 {
-            col[i] = col[i-1] + col_delta[i];
-        }
-
-        col
-    }
-}
-
-#[derive(Debug)]
-pub enum VecValue {
-    Scalar(i64),
-    Owned([i64; 16], usize),
-}
-
-impl ops::Deref for VecValue {
-    type Target = i64;
-
-    fn deref(&self) -> &Self::Target {
-        match self {
-            VecValue::Scalar(v) => v,
-            VecValue::Owned(block, i) => &block[*i],
-        }
+    pub fn width(&self) -> usize {
+        self.vector.width()
     }
 }
 
@@ -491,6 +531,46 @@ impl<'a> ops::Deref for VecSlice<'a> {
         }
     }
 }
+
+impl<'a> ToOwned for VecSlice<'a> {
+    type Owned = VecSlice<'a>;
+
+    fn to_owned(&self) -> <VecSlice<'a> as ToOwned>::Owned {
+        match self {
+            VecSlice::Borrowed(s) => VecSlice::Owned((*s).to_owned()),
+            VecSlice::Owned(v) => VecSlice::Owned(v.clone()),
+        }
+    }
+}
+
+// pub struct VectorIterator<'a> {
+//     vec: &'a mut VectorReader<'a>,
+//     index: usize,
+// }
+
+// impl<'a> Iterator for VectorIterator<'a> {
+//     type Item = &'a [i64];
+
+//     fn next(&mut self) -> Option<Self::Item> {
+//         if self.index < self.vec.len() {
+//             Some(self.vec.get_slice(self.index))
+//         } else {
+//             None
+//         }
+//     }
+// }
+
+// impl<'a> IntoIterator for &'a mut VectorReader<'a> {
+//     type Item = &'a [i64];
+//     type IntoIter = VectorIterator<'a>;
+
+//     fn into_iter(self) -> Self::IntoIter {
+//         VectorIterator{
+//             vec: self,
+//             index: 0
+//         }
+//     }
+// }
 
 #[derive(Debug)]
 pub struct Set<'a> {

@@ -159,8 +159,8 @@ impl<'a> ops::Index<usize> for PlainStringVariable<'a> {
     type Output = str;
 
     fn index(&self, index: usize) -> &Self::Output {
-        let start = *self.offset_stream.get(index) as usize;
-        let end = *self.offset_stream.get(index + 1) as usize;
+        let start = self.offset_stream.get(index) as usize;
+        let end = self.offset_stream.get(index + 1) as usize;
 
         unsafe { std::str::from_utf8_unchecked(&self.string_data[start..end - 1]) }
     }
