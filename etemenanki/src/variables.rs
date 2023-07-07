@@ -67,6 +67,10 @@ impl<'map> IndexedStringVariable<'map> {
         self.header.dim1
     }
 
+    pub fn lexicon(&self) -> components::StringVector {
+        self.lexicon
+    }
+
     pub fn n_types(&self) -> usize {
         self.header.dim2
     }

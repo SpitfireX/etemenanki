@@ -12,13 +12,13 @@ fn main() -> Result<()> {
     // let component = container.components.get("Partition").unwrap();
     // let vector = component.as_vector().unwrap();
 
-    let datastore = Datastore::open("../scripts/recipes_web/").unwrap();
+    let datastore = Datastore::open("../scripts/recipes4000/").unwrap();
 
-    let strings = datastore["sattr_text"]["sattr_text_url"]
-        .as_plain_string()
+    let strings = datastore["primary_layer"]["pattr_token"]
+        .as_indexed_string()
         .unwrap();
 
-    for string in strings {
+    for string in strings.lexicon().iter() {
         println!("{}", string);
     }
 

@@ -1,4 +1,4 @@
-use std::{error, fmt, ops, marker::PhantomData};
+use std::{error, fmt, marker::PhantomData, ops};
 
 use enum_as_inner::EnumAsInner;
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
@@ -272,6 +272,7 @@ pub struct StringVector<'map> {
 
 impl<'map> StringVector<'map> {
     pub fn from_parts(n: usize, offsets: &'map [i64], data: &'map [u8]) -> Self {
+        assert!(n+1 == offsets.len());
         Self {
             length: n,
             offsets,
@@ -279,8 +280,62 @@ impl<'map> StringVector<'map> {
         }
     }
 
+    pub fn get(&self, index: usize) -> Option<&str> {
+        if index < self.len() {
+            Some(&self[index])
+        } else {
+            None
+        }
+    }
+
+    pub fn iter(&self) -> StringVectorIterator {
+        self.into_iter()
+    }
+
     pub fn len(&self) -> usize {
         self.length
+    }
+}
+
+impl<'map> ops::Index<usize> for StringVector<'map> {
+    type Output = str;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        let len_offsets = (self.len() + 1) * 8;
+        let start = (self.offsets[index] as usize) - len_offsets;
+        let end = (self.offsets[index + 1] as usize) - len_offsets;
+        unsafe { std::str::from_utf8_unchecked(&self.data[start..end-1]) }
+    }
+}
+
+pub struct StringVectorIterator<'map> {
+    vec: &'map StringVector<'map>,
+    index: usize,
+}
+
+impl<'map> Iterator for StringVectorIterator<'map> {
+    type Item = &'map str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.vec.get(self.index) {
+            Some(str) => {
+                self.index += 1;
+                Some(str)
+            }
+            None => None,
+        }
+    }
+}
+
+impl<'map> IntoIterator for &'map StringVector<'map> {
+    type Item = &'map str;
+    type IntoIter = StringVectorIterator<'map>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        StringVectorIterator {
+            vec: self,
+            index: 0,
+        }
     }
 }
 
