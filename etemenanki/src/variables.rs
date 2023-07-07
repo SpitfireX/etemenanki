@@ -9,20 +9,20 @@ use crate::container::{self, Container};
 use crate::macros::{check_and_return_component, get_container_base};
 
 #[derive(Debug, EnumAsInner)]
-pub enum Variable<'a> {
-    IndexedString(IndexedStringVariable<'a>),
-    PlainString(PlainStringVariable<'a>),
-    Integer(IntegerVariable<'a>),
+pub enum Variable<'map> {
+    IndexedString(IndexedStringVariable<'map>),
+    PlainString(PlainStringVariable<'map>),
+    Integer(IntegerVariable<'map>),
     Pointer,
     ExternalPointer,
-    Set(SetVariable<'a>),
+    Set(SetVariable<'map>),
     Hash,
 }
 
-impl<'a> TryFrom<Container<'a>> for Variable<'a> {
+impl<'map> TryFrom<Container<'map>> for Variable<'map> {
     type Error = container::TryFromError;
 
-    fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
+    fn try_from(container: Container<'map>) -> Result<Self, Self::Error> {
         match container.header.container_type {
             container::Type::IndexedStringVariable => Ok(Self::IndexedString(
                 IndexedStringVariable::try_from(container)?,
@@ -50,19 +50,19 @@ impl<'a> TryFrom<Container<'a>> for Variable<'a> {
 }
 
 #[derive(Debug)]
-pub struct IndexedStringVariable<'a> {
+pub struct IndexedStringVariable<'map> {
     base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: container::Header<'a>,
-    lexicon: components::StringVector<'a>,
-    lex_hash: components::Index<'a>,
-    partition: components::Vector<'a>,
-    lex_id_stream: components::Vector<'a>,
-    lex_id_index: components::InvertedIndex<'a>,
+    pub header: container::Header<'map>,
+    lexicon: components::StringVector<'map>,
+    lex_hash: components::Index<'map>,
+    partition: components::Vector<'map>,
+    lex_id_stream: components::Vector<'map>,
+    lex_id_index: components::InvertedIndex<'map>,
 }
 
-impl<'a> IndexedStringVariable<'a> {
+impl<'map> IndexedStringVariable<'map> {
     pub fn len(&self) -> usize {
         self.header.dim1
     }
@@ -72,10 +72,10 @@ impl<'a> IndexedStringVariable<'a> {
     }
 }
 
-impl<'a> TryFrom<Container<'a>> for IndexedStringVariable<'a> {
+impl<'map> TryFrom<Container<'map>> for IndexedStringVariable<'map> {
     type Error = container::TryFromError;
 
-    fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
+    fn try_from(container: Container<'map>) -> Result<Self, Self::Error> {
         let Container {
             mmap,
             name,
@@ -132,17 +132,17 @@ impl<'a> TryFrom<Container<'a>> for IndexedStringVariable<'a> {
 }
 
 #[derive(Debug)]
-pub struct PlainStringVariable<'a> {
+pub struct PlainStringVariable<'map> {
     base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: container::Header<'a>,
-    string_data: components::StringList<'a>,
-    offset_stream: components::Vector<'a>,
-    string_hash: components::Index<'a>,
+    pub header: container::Header<'map>,
+    string_data: components::StringList<'map>,
+    offset_stream: components::Vector<'map>,
+    string_hash: components::Index<'map>,
 }
 
-impl<'a> PlainStringVariable<'a> {
+impl<'map> PlainStringVariable<'map> {
     pub fn iter(&self) -> PlainStringIterator {
         PlainStringIterator {
             var: self,
@@ -155,7 +155,7 @@ impl<'a> PlainStringVariable<'a> {
     }
 }
 
-impl<'a> ops::Index<usize> for PlainStringVariable<'a> {
+impl<'map> ops::Index<usize> for PlainStringVariable<'map> {
     type Output = str;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -166,10 +166,10 @@ impl<'a> ops::Index<usize> for PlainStringVariable<'a> {
     }
 }
 
-impl<'a> TryFrom<Container<'a>> for PlainStringVariable<'a> {
+impl<'map> TryFrom<Container<'map>> for PlainStringVariable<'map> {
     type Error = container::TryFromError;
 
-    fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
+    fn try_from(container: Container<'map>) -> Result<Self, Self::Error> {
         let Container {
             mmap,
             name,
@@ -215,13 +215,13 @@ impl<'a> TryFrom<Container<'a>> for PlainStringVariable<'a> {
     }
 }
 
-pub struct PlainStringIterator<'a> {
-    var: &'a PlainStringVariable<'a>,
+pub struct PlainStringIterator<'map> {
+    var: &'map PlainStringVariable<'map>,
     index: usize,
 }
 
-impl<'a> Iterator for PlainStringIterator<'a> {
-    type Item = &'a str;
+impl<'map> Iterator for PlainStringIterator<'map> {
+    type Item = &'map str;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.var.len() {
@@ -234,9 +234,9 @@ impl<'a> Iterator for PlainStringIterator<'a> {
     }
 }
 
-impl<'a> IntoIterator for &'a PlainStringVariable<'a> {
-    type Item = &'a str;
-    type IntoIter = PlainStringIterator<'a>;
+impl<'map> IntoIterator for &'map PlainStringVariable<'map> {
+    type Item = &'map str;
+    type IntoIter = PlainStringIterator<'map>;
 
     fn into_iter(self) -> Self::IntoIter {
         PlainStringIterator {
@@ -247,16 +247,16 @@ impl<'a> IntoIterator for &'a PlainStringVariable<'a> {
 }
 
 #[derive(Debug)]
-pub struct IntegerVariable<'a> {
+pub struct IntegerVariable<'map> {
     base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: container::Header<'a>,
-    int_stream: components::Vector<'a>,
-    int_sort: components::Index<'a>,
+    pub header: container::Header<'map>,
+    int_stream: components::Vector<'map>,
+    int_sort: components::Index<'map>,
 }
 
-impl<'a> IntegerVariable<'a> {
+impl<'map> IntegerVariable<'map> {
     pub fn len(&self) -> usize {
         self.header.dim1
     }
@@ -266,10 +266,10 @@ impl<'a> IntegerVariable<'a> {
     }
 }
 
-impl<'a> TryFrom<Container<'a>> for IntegerVariable<'a> {
+impl<'map> TryFrom<Container<'map>> for IntegerVariable<'map> {
     type Error = container::TryFromError;
 
-    fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
+    fn try_from(container: Container<'map>) -> Result<Self, Self::Error> {
         let Container {
             mmap,
             name,
@@ -308,19 +308,19 @@ impl<'a> TryFrom<Container<'a>> for IntegerVariable<'a> {
 }
 
 #[derive(Debug)]
-pub struct SetVariable<'a> {
+pub struct SetVariable<'map> {
     base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: container::Header<'a>,
-    lexicon: components::StringVector<'a>,
-    lex_hash: components::Index<'a>,
-    partition: components::Vector<'a>,
-    id_set_stream: components::Set<'a>,
-    id_set_index: components::InvertedIndex<'a>,
+    pub header: container::Header<'map>,
+    lexicon: components::StringVector<'map>,
+    lex_hash: components::Index<'map>,
+    partition: components::Vector<'map>,
+    id_set_stream: components::Set<'map>,
+    id_set_index: components::InvertedIndex<'map>,
 }
 
-impl<'a> SetVariable<'a> {
+impl<'map> SetVariable<'map> {
     pub fn len(&self) -> usize {
         self.header.dim1
     }
@@ -330,10 +330,10 @@ impl<'a> SetVariable<'a> {
     }
 }
 
-impl<'a> TryFrom<Container<'a>> for SetVariable<'a> {
+impl<'map> TryFrom<Container<'map>> for SetVariable<'map> {
     type Error = container::TryFromError;
 
-    fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
+    fn try_from(container: Container<'map>) -> Result<Self, Self::Error> {
         let Container {
             mmap,
             name,

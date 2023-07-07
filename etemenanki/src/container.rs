@@ -63,8 +63,8 @@ pub struct RawBomEntry {
 }
 
 #[derive(Debug)]
-pub struct Header<'a> {
-    pub version: &'a str,
+pub struct Header<'map> {
+    pub version: &'map str,
     pub raw_family: char,
     pub raw_class: char,
     pub raw_type: char,
@@ -79,14 +79,14 @@ pub struct Header<'a> {
 }
 
 #[derive(Debug)]
-pub struct Container<'a> {
+pub struct Container<'map> {
     pub mmap: Mmap,
     pub name: String,
-    pub header: Header<'a>,
-    pub components: HashMap<&'a str, Component<'a>>,
+    pub header: Header<'map>,
+    pub components: HashMap<&'map str, Component<'map>>,
 }
 
-impl<'a> Container<'a> {
+impl<'map> Container<'map> {
     pub fn from_mmap(mmap: Mmap, name: String) -> Result<Self, Error> {
         let Range { start, end } = mmap.as_ref().as_ptr_range();
 

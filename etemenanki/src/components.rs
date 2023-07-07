@@ -21,17 +21,17 @@ enum ComponentType {
 }
 
 #[derive(Debug, EnumAsInner)]
-pub enum Component<'a> {
-    Blob(Blob<'a>),
-    StringList(StringList<'a>),
-    StringVector(StringVector<'a>),
-    Vector(Vector<'a>),
-    Set(Set<'a>),
-    Index(Index<'a>),
-    InvertedIndex(InvertedIndex<'a>),
+pub enum Component<'map> {
+    Blob(Blob<'map>),
+    StringList(StringList<'map>),
+    StringVector(StringVector<'map>),
+    Vector(Vector<'map>),
+    Set(Set<'map>),
+    Index(Index<'map>),
+    InvertedIndex(InvertedIndex<'map>),
 }
 
-impl<'a> Component<'a> {
+impl<'map> Component<'map> {
     pub fn from_raw_parts(be: &RawBomEntry, start_ptr: *const u8) -> Result<Self, ComponentError> {
         let component_type: ComponentType =
             (((be.ctype as u16) << 8) | be.mode as u16).try_into()?;
@@ -221,17 +221,17 @@ impl error::Error for ComponentError {
 }
 
 #[derive(Debug)]
-pub struct Blob<'a> {
-    data: &'a [u8],
+pub struct Blob<'map> {
+    data: &'map [u8],
 }
 
-impl<'a> Blob<'a> {
-    pub fn from_parts(data: &'a [u8]) -> Self {
+impl<'map> Blob<'map> {
+    pub fn from_parts(data: &'map [u8]) -> Self {
         Self { data }
     }
 }
 
-impl<'a> std::ops::Deref for Blob<'a> {
+impl<'map> std::ops::Deref for Blob<'map> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -240,13 +240,13 @@ impl<'a> std::ops::Deref for Blob<'a> {
 }
 
 #[derive(Debug)]
-pub struct StringList<'a> {
+pub struct StringList<'map> {
     length: usize,
-    data: &'a [u8],
+    data: &'map [u8],
 }
 
-impl<'a> StringList<'a> {
-    pub fn from_parts(n: usize, data: &'a [u8]) -> Self {
+impl<'map> StringList<'map> {
+    pub fn from_parts(n: usize, data: &'map [u8]) -> Self {
         Self { length: n, data }
     }
 
@@ -255,7 +255,7 @@ impl<'a> StringList<'a> {
     }
 }
 
-impl<'a> ops::Deref for StringList<'a> {
+impl<'map> ops::Deref for StringList<'map> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
@@ -264,14 +264,14 @@ impl<'a> ops::Deref for StringList<'a> {
 }
 
 #[derive(Debug)]
-pub struct StringVector<'a> {
+pub struct StringVector<'map> {
     length: usize,
-    offsets: &'a [i64],
-    data: &'a [u8],
+    offsets: &'map [i64],
+    data: &'map [u8],
 }
 
-impl<'a> StringVector<'a> {
-    pub fn from_parts(n: usize, offsets: &'a [i64], data: &'a [u8]) -> Self {
+impl<'map> StringVector<'map> {
+    pub fn from_parts(n: usize, offsets: &'map [i64], data: &'map [u8]) -> Self {
         Self {
             length: n,
             offsets,
@@ -285,31 +285,31 @@ impl<'a> StringVector<'a> {
 }
 
 #[derive(Debug)]
-pub enum Vector<'a> {
+pub enum Vector<'map> {
     Uncompressed {
         length: usize,
         width: usize,
-        data: &'a [i64],
+        data: &'map [i64],
     },
 
     Compressed {
         length: usize,
         width: usize,
         n_blocks: usize,
-        sync: &'a [i64],
-        data: &'a [u8],
+        sync: &'map [i64],
+        data: &'map [u8],
     },
 
     Delta {
         length: usize,
         width: usize,
         n_blocks: usize,
-        sync: &'a [i64],
-        data: &'a [u8],
+        sync: &'map [i64],
+        data: &'map [u8],
     },
 }
 
-impl<'a> Vector<'a> {
+impl<'map> Vector<'map> {
         /// Decodes a whole delta block and returns a vector of its columns
         fn decode_delta_block(d: usize, raw_data: &[u8]) -> Vec<[i64; 16]> {
             let mut block_delta = vec![[0i64; 16]; d];
@@ -404,7 +404,7 @@ impl<'a> Vector<'a> {
         }
     }
 
-    pub fn delta_from_parts(n: usize, d: usize, sync: &'a [i64], data: &'a [u8]) -> Self {
+    pub fn delta_from_parts(n: usize, d: usize, sync: &'map [i64], data: &'map [u8]) -> Self {
         Self::Delta {
             length: n,
             width: d,
@@ -414,7 +414,7 @@ impl<'a> Vector<'a> {
         }
     }
 
-    pub fn compressed_from_parts(n: usize, d: usize, sync: &'a [i64], data: &'a [u8]) -> Self {
+    pub fn compressed_from_parts(n: usize, d: usize, sync: &'map [i64], data: &'map [u8]) -> Self {
         Self::Compressed {
             length: n,
             width: d,
@@ -424,7 +424,7 @@ impl<'a> Vector<'a> {
         }
     }
 
-    pub fn uncompressed_from_parts(n: usize, d: usize, data: &'a [i64]) -> Self {
+    pub fn uncompressed_from_parts(n: usize, d: usize, data: &'map [i64]) -> Self {
         Self::Uncompressed {
             length: n,
             width: d,
@@ -434,15 +434,15 @@ impl<'a> Vector<'a> {
 }
 
 #[derive(Debug)]
-pub struct VectorReader<'a> {
-    vector: Vector<'a>,
+pub struct VectorReader<'map> {
+    vector: Vector<'map>,
     last_block: Option<Vec<[i64; 16]>>,
     last_block_index: usize,
     slice_buffer: Vec<i64>,
 }
 
-impl<'a> VectorReader<'a> {
-    pub fn from_vector(vector: Vector<'a>) -> Self {
+impl<'map> VectorReader<'map> {
+    pub fn from_vector(vector: Vector<'map>) -> Self {
         let last_block = None;
         let last_block_index = 0;
         let slice_buffer = vec![0; vector.width()];
@@ -516,12 +516,12 @@ impl<'a> VectorReader<'a> {
 }
 
 #[derive(Debug)]
-pub enum VecSlice<'a> {
-    Borrowed(&'a [i64]),
+pub enum VecSlice<'map> {
+    Borrowed(&'map [i64]),
     Owned(Vec<i64>),
 }
 
-impl<'a> ops::Deref for VecSlice<'a> {
+impl<'map> ops::Deref for VecSlice<'map> {
     type Target = [i64];
 
     fn deref(&self) -> &Self::Target {
@@ -532,10 +532,10 @@ impl<'a> ops::Deref for VecSlice<'a> {
     }
 }
 
-impl<'a> ToOwned for VecSlice<'a> {
-    type Owned = VecSlice<'a>;
+impl<'map> ToOwned for VecSlice<'map> {
+    type Owned = VecSlice<'map>;
 
-    fn to_owned(&self) -> <VecSlice<'a> as ToOwned>::Owned {
+    fn to_owned(&self) -> <VecSlice<'map> as ToOwned>::Owned {
         match self {
             VecSlice::Borrowed(s) => VecSlice::Owned((*s).to_owned()),
             VecSlice::Owned(v) => VecSlice::Owned(v.clone()),
@@ -573,14 +573,14 @@ impl<'a> ToOwned for VecSlice<'a> {
 // }
 
 #[derive(Debug)]
-pub struct Set<'a> {
+pub struct Set<'map> {
     length: usize,
-    sync: &'a [i64],
-    data: &'a [u8],
+    sync: &'map [i64],
+    data: &'map [u8],
 }
 
-impl<'a> Set<'a> {
-    pub fn from_parts(n: usize, sync: &'a [i64], data: &'a [u8]) -> Self {
+impl<'map> Set<'map> {
+    pub fn from_parts(n: usize, sync: &'map [i64], data: &'map [u8]) -> Self {
         Self {
             length: n,
             sync,
@@ -594,22 +594,22 @@ impl<'a> Set<'a> {
 }
 
 #[derive(Debug)]
-pub enum Index<'a> {
+pub enum Index<'map> {
     Compressed {
         length: usize,
         r: usize,
-        sync: &'a [i64],
-        data: &'a [u8],
+        sync: &'map [i64],
+        data: &'map [u8],
     },
 
     Uncompressed {
         length: usize,
-        pairs: &'a [i64],
+        pairs: &'map [i64],
     }
 }
 
-impl<'a> Index<'a> {
-    pub fn compressed_from_parts(n: usize, r: usize, sync: &'a [i64], data: &'a [u8]) -> Self {
+impl<'map> Index<'map> {
+    pub fn compressed_from_parts(n: usize, r: usize, sync: &'map [i64], data: &'map [u8]) -> Self {
         Self::Compressed {
             length: n,
             r,
@@ -625,21 +625,21 @@ impl<'a> Index<'a> {
         }
     }
 
-    pub fn uncompressed_from_parts(n: usize, pairs: &'a [i64]) -> Self {
+    pub fn uncompressed_from_parts(n: usize, pairs: &'map [i64]) -> Self {
         Self::Uncompressed { length: n, pairs }
     }
 }
 
 #[derive(Debug)]
-pub struct InvertedIndex<'a> {
+pub struct InvertedIndex<'map> {
     types: usize,
     jtable_length: usize,
-    typeinfo: &'a [i64],
-    data: &'a [u8],
+    typeinfo: &'map [i64],
+    data: &'map [u8],
 }
 
-impl<'a> InvertedIndex<'a> {
-    pub fn from_parts(k: usize, p: usize, typeinfo: &'a [i64], data: &'a [u8]) -> Self {
+impl<'map> InvertedIndex<'map> {
+    pub fn from_parts(k: usize, p: usize, typeinfo: &'map [i64], data: &'map [u8]) -> Self {
         Self {
             types: k,
             jtable_length: p,

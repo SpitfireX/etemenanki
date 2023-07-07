@@ -11,13 +11,13 @@ use crate::variables::Variable;
 use crate::{components, variables};
 
 #[derive(Debug, EnumAsInner)]
-pub enum Layer<'a> {
-    Primary(PrimaryLayer<'a>, LayerVariables<'a>),
-    Segmentation(SegmentationLayer<'a>, LayerVariables<'a>),
+pub enum Layer<'map> {
+    Primary(PrimaryLayer<'map>, LayerVariables<'map>),
+    Segmentation(SegmentationLayer<'map>, LayerVariables<'map>),
 }
 
-impl<'a> Layer<'a> {
-    pub fn add_variable(&mut self, name: String, var: Variable<'a>) -> Result<(), Variable> {
+impl<'map> Layer<'map> {
+    pub fn add_variable(&mut self, name: String, var: Variable<'map>) -> Result<(), Variable> {
         let baselen = self.len();
         let varlen = match &var {
             Variable::IndexedString(v) => v.len(),
@@ -46,11 +46,11 @@ impl<'a> Layer<'a> {
         }
     }
 
-    pub fn init_primary(layer: PrimaryLayer<'a>) -> Self {
+    pub fn init_primary(layer: PrimaryLayer<'map>) -> Self {
         Self::Primary(layer, LayerVariables::default())
     }
 
-    pub fn init_segmentation(layer: SegmentationLayer<'a>) -> Self {
+    pub fn init_segmentation(layer: SegmentationLayer<'map>) -> Self {
         Self::Segmentation(layer, LayerVariables::default())
     }
 
@@ -69,8 +69,8 @@ impl<'a> Layer<'a> {
     }
 }
 
-impl<'a, S: AsRef<str>> ops::Index<S> for Layer<'a> {
-    type Output = variables::Variable<'a>;
+impl<'map, S: AsRef<str>> ops::Index<S> for Layer<'map> {
+    type Output = variables::Variable<'map>;
 
     fn index(&self, index: S) -> &Self::Output {
         match self {
@@ -81,12 +81,12 @@ impl<'a, S: AsRef<str>> ops::Index<S> for Layer<'a> {
 }
 
 #[derive(Debug, Default)]
-pub struct LayerVariables<'a> {
-    pub variables: HashMap<String, Variable<'a>>,
+pub struct LayerVariables<'map> {
+    pub variables: HashMap<String, Variable<'map>>,
 }
 
-impl<'a> LayerVariables<'a> {
-    pub fn add_variable(&mut self, name: String, var: Variable<'a>) -> Result<(), Variable> {
+impl<'map> LayerVariables<'map> {
+    pub fn add_variable(&mut self, name: String, var: Variable<'map>) -> Result<(), Variable> {
         if self.variables.contains_key(&name) {
             Err(var)
         } else {
@@ -97,23 +97,23 @@ impl<'a> LayerVariables<'a> {
 }
 
 #[derive(Debug)]
-pub struct PrimaryLayer<'a> {
+pub struct PrimaryLayer<'map> {
     mmap: Mmap,
     pub name: String,
-    pub header: container::Header<'a>,
-    partition: components::Vector<'a>,
+    pub header: container::Header<'map>,
+    partition: components::Vector<'map>,
 }
 
-impl<'a> PrimaryLayer<'a> {
+impl<'map> PrimaryLayer<'map> {
     pub fn len(&self) -> usize {
         self.header.dim1
     }
 }
 
-impl<'a> TryFrom<Container<'a>> for PrimaryLayer<'a> {
+impl<'map> TryFrom<Container<'map>> for PrimaryLayer<'map> {
     type Error = container::TryFromError;
 
-    fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
+    fn try_from(container: Container<'map>) -> Result<Self, Self::Error> {
         let Container {
             mmap,
             name,
@@ -143,27 +143,27 @@ impl<'a> TryFrom<Container<'a>> for PrimaryLayer<'a> {
 }
 
 #[derive(Debug)]
-pub struct SegmentationLayer<'a> {
+pub struct SegmentationLayer<'map> {
     pub base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: container::Header<'a>,
-    partition: components::Vector<'a>,
-    range_stream: components::Vector<'a>,
-    start_sort: components::Index<'a>,
-    end_sort: components::Index<'a>,
+    pub header: container::Header<'map>,
+    partition: components::Vector<'map>,
+    range_stream: components::Vector<'map>,
+    start_sort: components::Index<'map>,
+    end_sort: components::Index<'map>,
 }
 
-impl<'a> SegmentationLayer<'a> {
+impl<'map> SegmentationLayer<'map> {
     pub fn len(&self) -> usize {
         self.header.dim1
     }
 }
 
-impl<'a> TryFrom<Container<'a>> for SegmentationLayer<'a> {
+impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {
     type Error = container::TryFromError;
 
-    fn try_from(container: Container<'a>) -> Result<Self, Self::Error> {
+    fn try_from(container: Container<'map>) -> Result<Self, Self::Error> {
         let Container {
             mmap,
             name,

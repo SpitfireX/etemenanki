@@ -23,13 +23,13 @@ mod tests;
 pub mod variables;
 
 #[derive(Debug)]
-pub struct Datastore<'a> {
+pub struct Datastore<'map> {
     path: PathBuf,
-    layers_by_uuid: HashMap<Uuid, layers::Layer<'a>>,
+    layers_by_uuid: HashMap<Uuid, layers::Layer<'map>>,
     uuids_by_name: HashMap<String, Uuid>,
 }
 
-impl<'a> Datastore<'a> {
+impl<'map> Datastore<'map> {
     pub fn layer_by_name<S: AsRef<str>>(&self, name: S) -> Option<&layers::Layer> {
         match self.uuids_by_name.get(name.as_ref()) {
             Some(u) => self.layers_by_uuid.get(u),
@@ -157,24 +157,24 @@ impl<'a> Datastore<'a> {
     }
 }
 
-impl<'a> ops::Index<&Uuid> for Datastore<'a> {
-    type Output = layers::Layer<'a>;
+impl<'map> ops::Index<&Uuid> for Datastore<'map> {
+    type Output = layers::Layer<'map>;
 
     fn index(&self, index: &Uuid) -> &Self::Output {
         &self.layers_by_uuid[index]
     }
 }
 
-impl<'a> ops::Index<&str> for Datastore<'a> {
-    type Output = layers::Layer<'a>;
+impl<'map> ops::Index<&str> for Datastore<'map> {
+    type Output = layers::Layer<'map>;
 
     fn index(&self, index: &str) -> &Self::Output {
         &self.layers_by_uuid[&self.uuids_by_name[index]]
     }
 }
 
-impl<'a> ops::Index<&String> for Datastore<'a> {
-    type Output = layers::Layer<'a>;
+impl<'map> ops::Index<&String> for Datastore<'map> {
+    type Output = layers::Layer<'map>;
 
     fn index(&self, index: &String) -> &Self::Output {
         &self.layers_by_uuid[&self.uuids_by_name[index]]
