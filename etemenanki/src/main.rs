@@ -12,15 +12,17 @@ fn main() -> Result<()> {
     // let component = container.components.get("Partition").unwrap();
     // let vector = component.as_vector().unwrap();
 
-    let datastore = Datastore::open("../scripts/recipes4000/").unwrap();
+    let datastore = Datastore::open("../scripts/recipes_web/").unwrap();
 
-    let strings: Vec<&str> = datastore["sattr_text"]["sattr_text_url"]
+    let strings = datastore["sattr_text"]["sattr_text_url"]
         .as_plain_string()
-        .unwrap()
-        .iter()
-        .collect();
+        .unwrap();
 
-    dbg!(strings);
+    for string in strings {
+        println!("{}", string);
+    }
+
+    // dbg!(strings);
 
     // println!("{:?}", datastore.layer_uuids());
     // println!("{:?}", datastore.layer_names());

@@ -144,10 +144,7 @@ pub struct PlainStringVariable<'map> {
 
 impl<'map> PlainStringVariable<'map> {
     pub fn iter(&self) -> PlainStringIterator {
-        PlainStringIterator {
-            var: self,
-            index: 0,
-        }
+        self.into_iter()
     }
 
     pub fn len(&self) -> usize {
@@ -217,6 +214,8 @@ impl<'map> TryFrom<Container<'map>> for PlainStringVariable<'map> {
 
 pub struct PlainStringIterator<'map> {
     var: &'map PlainStringVariable<'map>,
+    offset_reader: components::VectorReader<'map>,
+    len: usize,
     index: usize,
 }
 
@@ -224,10 +223,12 @@ impl<'map> Iterator for PlainStringIterator<'map> {
     type Item = &'map str;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.var.len() {
-            let string = &self.var[self.index];
+        if self.index < self.len {
+            let start = self.offset_reader.get(self.index) as usize;
+            let end = self.offset_reader.get(self.index + 1) as usize;
             self.index += 1;
-            Some(string)
+    
+            Some(unsafe { std::str::from_utf8_unchecked(&self.var.string_data[start..end - 1]) })
         } else {
             None
         }
@@ -241,6 +242,8 @@ impl<'map> IntoIterator for &'map PlainStringVariable<'map> {
     fn into_iter(self) -> Self::IntoIter {
         PlainStringIterator {
             var: self,
+            offset_reader: self.offset_stream.into_iter(),
+            len: self.len(),
             index: 0,
         }
     }

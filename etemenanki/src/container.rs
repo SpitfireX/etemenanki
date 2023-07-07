@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::components::{Component, ComponentError};
 
 #[repr(u64)]
-#[derive(Debug, TryFromPrimitive, PartialEq)]
+#[derive(Debug, Clone, Copy, TryFromPrimitive, PartialEq)]
 pub enum Type {
     GraphLayer = 0x5a4c67,              // "ZLg"
     PrimaryLayer = 0x5a4c70,            // "ZLp"
@@ -29,7 +29,7 @@ pub enum Type {
 }
 
 #[repr(C, packed)]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct RawHeader {
     magic: [u8; 8],
     version: [u8; 4],
@@ -50,7 +50,7 @@ pub struct RawHeader {
 }
 
 #[repr(C, packed)]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct RawBomEntry {
     pub family: u8,
     pub ctype: u8,
@@ -62,7 +62,7 @@ pub struct RawBomEntry {
     pub param2: i64,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Header<'map> {
     pub version: &'map str,
     pub raw_family: char,
@@ -194,7 +194,7 @@ impl<'map> Container<'map> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Error {
     Memory(&'static str),
     FormatError(&'static str),
@@ -258,7 +258,7 @@ impl From<ComponentError> for Error {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum TryFromError {
     WrongContainerType,
     MissingComponent(&'static str),

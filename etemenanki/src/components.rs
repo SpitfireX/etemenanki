@@ -1,4 +1,4 @@
-use std::{error, fmt, ops};
+use std::{error, fmt, ops, marker::PhantomData};
 
 use enum_as_inner::EnumAsInner;
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
@@ -20,7 +20,7 @@ enum ComponentType {
     InvertedIndex = 0x0701,
 }
 
-#[derive(Debug, EnumAsInner)]
+#[derive(Debug, Clone, Copy, EnumAsInner)]
 pub enum Component<'map> {
     Blob(Blob<'map>),
     StringList(StringList<'map>),
@@ -189,7 +189,7 @@ impl<'map> Component<'map> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum ComponentError {
     InvalidType(u16),
     NullPtr,
@@ -220,7 +220,7 @@ impl error::Error for ComponentError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Blob<'map> {
     data: &'map [u8],
 }
@@ -239,7 +239,7 @@ impl<'map> std::ops::Deref for Blob<'map> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct StringList<'map> {
     length: usize,
     data: &'map [u8],
@@ -263,7 +263,7 @@ impl<'map> ops::Deref for StringList<'map> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct StringVector<'map> {
     length: usize,
     offsets: &'map [i64],
@@ -284,7 +284,7 @@ impl<'map> StringVector<'map> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Vector<'map> {
     Uncompressed {
         length: usize,
@@ -310,37 +310,37 @@ pub enum Vector<'map> {
 }
 
 impl<'map> Vector<'map> {
-        /// Decodes a whole delta block and returns a vector of its columns
-        fn decode_delta_block(d: usize, raw_data: &[u8]) -> Vec<[i64; 16]> {
-            let mut block_delta = vec![[0i64; 16]; d];
-            let mut block = vec![[0i64; 16]; d];
-    
-            let mut offset = 0;
-            for i in 0..d {
-                for j in 0..16 {
-                    let (int, len) = ziggurat_varint::decode(&raw_data[offset..]);
-                    block_delta[i][j] = int;
-                    offset += len;
-                }
+    /// Decodes a whole delta block and returns a vector of its columns
+    fn decode_delta_block(d: usize, raw_data: &[u8]) -> Vec<[i64; 16]> {
+        let mut block_delta = vec![[0i64; 16]; d];
+        let mut block = vec![[0i64; 16]; d];
+
+        let mut offset = 0;
+        for i in 0..d {
+            for j in 0..16 {
+                let (int, len) = ziggurat_varint::decode(&raw_data[offset..]);
+                block_delta[i][j] = int;
+                offset += len;
             }
-    
-            for i in 0..d {
-                block[i][0] = block_delta[i][0];
-                
-                for j in 1..16 {
-                    block[i][j] = block[i][j-1] + block_delta[i][j];
-                }
-            }
-    
-            block
         }
 
-        /// Gets the value with `index` < `self.len()`*`self.width()`.
-        /// 
-        /// This always triggers a full block decode on compressed Vectors
-        /// for efficient access use `VectorReader`.
-        pub fn get(&self, index: usize) -> i64 {
-            match *self {
+        for i in 0..d {
+            block[i][0] = block_delta[i][0];
+
+            for j in 1..16 {
+                block[i][j] = block[i][j - 1] + block_delta[i][j];
+            }
+        }
+
+        block
+    }
+
+    /// Gets the value with `index` < `self.len()`*`self.width()`.
+    ///
+    /// This always triggers a full block decode on compressed Vectors
+    /// for efficient access use `VectorReader`.
+    pub fn get(&self, index: usize) -> i64 {
+        match *self {
                 Self::Uncompressed { length: _, width: _, data } => {
                     data[index]
                 }
@@ -355,12 +355,12 @@ impl<'map> Vector<'map> {
             }
         }
 
-        /// Gets the column with `index` < `self.len()`.
-        /// 
-        /// This always triggers a full block decode on compressed Vectors
-        /// for efficient access use `VectorReader`.
-        pub fn get_slice(&self, index: usize) -> VecSlice {
-            match *self {
+    /// Gets the column with `index` < `self.len()`.
+    ///
+    /// This always triggers a full block decode on compressed Vectors
+    /// for efficient access use `VectorReader`.
+    pub fn get_slice(&self, index: usize) -> VecSlice {
+        match *self {
                 Self::Uncompressed { length: _, width, data } => {
                     VecSlice::Borrowed(&data[index..index+width])
                 }
@@ -384,9 +384,9 @@ impl<'map> Vector<'map> {
                     }
     
                     VecSlice::Owned(slice)
-                },
             }
         }
+    }
 
     pub fn len(&self) -> usize {
         match self {
@@ -438,20 +438,18 @@ pub struct VectorReader<'map> {
     vector: Vector<'map>,
     last_block: Option<Vec<[i64; 16]>>,
     last_block_index: usize,
+    last_row: usize,
     slice_buffer: Vec<i64>,
 }
 
 impl<'map> VectorReader<'map> {
     pub fn from_vector(vector: Vector<'map>) -> Self {
-        let last_block = None;
-        let last_block_index = 0;
-        let slice_buffer = vec![0; vector.width()];
-
         Self {
             vector,
-            last_block,
-            last_block_index,
-            slice_buffer,
+            last_block: None,
+            last_block_index: 0,
+            last_row: 0,
+            slice_buffer: vec![0; vector.width()],
         }
     }
 
@@ -463,15 +461,15 @@ impl<'map> VectorReader<'map> {
 
             Vector::Compressed { length, width, n_blocks, sync, data } => todo!(),
             
-            Vector::Delta { length: _, width, n_blocks, sync, data } => {
-                let ci = index / width;
-                let ri = index % width;
-                self.get_slice(ri)[ci]
+            Vector::Delta { length: _, width, n_blocks: _, sync: _, data: _ } => {
+                let ri = index / width;
+                let ci = index % width;
+                self.get_row(ri)[ci]
             }
         }
     }
 
-    pub fn get_slice(&mut self, index: usize) -> &[i64] {
+    pub fn get_row(&mut self, index: usize) -> &[i64] {
         match self.vector {
             Vector::Uncompressed { length: _, width, data } => {
                 &data[index..index+width]
@@ -492,7 +490,7 @@ impl<'map> VectorReader<'map> {
                     self.last_block = Some(Vector::decode_delta_block(width, &data[offset..]));
                     self.last_block_index = bi;
                 }
-                
+
                 if let Some(block) = self.last_block.as_ref() {
                     for i in 0..width {
                         self.slice_buffer[i] = block[i][index % 16];
@@ -502,7 +500,7 @@ impl<'map> VectorReader<'map> {
                 }
 
                 &self.slice_buffer
-            },
+            }
         }
     }
 
@@ -512,6 +510,29 @@ impl<'map> VectorReader<'map> {
 
     pub fn width(&self) -> usize {
         self.vector.width()
+    }
+}
+
+impl<'map> Iterator for VectorReader<'map> {
+    type Item = Vec<i64>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.last_row < self.len() {
+            let row = self.get_row(self.last_row).to_owned();
+            self.last_row += 1;
+            Some(row)
+        } else {
+            None
+        }
+    }
+}
+
+impl<'map> IntoIterator for Vector<'map> {
+    type Item = Vec<i64>;
+    type IntoIter = VectorReader<'map>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        VectorReader::from_vector(self)
     }
 }
 
@@ -543,36 +564,7 @@ impl<'map> ToOwned for VecSlice<'map> {
     }
 }
 
-// pub struct VectorIterator<'a> {
-//     vec: &'a mut VectorReader<'a>,
-//     index: usize,
-// }
-
-// impl<'a> Iterator for VectorIterator<'a> {
-//     type Item = &'a [i64];
-
-//     fn next(&mut self) -> Option<Self::Item> {
-//         if self.index < self.vec.len() {
-//             Some(self.vec.get_slice(self.index))
-//         } else {
-//             None
-//         }
-//     }
-// }
-
-// impl<'a> IntoIterator for &'a mut VectorReader<'a> {
-//     type Item = &'a [i64];
-//     type IntoIter = VectorIterator<'a>;
-
-//     fn into_iter(self) -> Self::IntoIter {
-//         VectorIterator{
-//             vec: self,
-//             index: 0
-//         }
-//     }
-// }
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Set<'map> {
     length: usize,
     sync: &'map [i64],
@@ -593,7 +585,7 @@ impl<'map> Set<'map> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Index<'map> {
     Compressed {
         length: usize,
@@ -605,7 +597,7 @@ pub enum Index<'map> {
     Uncompressed {
         length: usize,
         pairs: &'map [i64],
-    }
+    },
 }
 
 impl<'map> Index<'map> {
@@ -630,7 +622,7 @@ impl<'map> Index<'map> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct InvertedIndex<'map> {
     types: usize,
     jtable_length: usize,
