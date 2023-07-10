@@ -1,4 +1,4 @@
-use std::{error, fmt, marker::PhantomData, ops};
+use std::{error, fmt, ops};
 
 use enum_as_inner::EnumAsInner;
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
@@ -365,19 +365,25 @@ pub enum Vector<'map> {
 }
 
 impl<'map> Vector<'map> {
-    /// Decodes a whole delta block and returns a vector of its columns
-    fn decode_delta_block(d: usize, raw_data: &[u8]) -> Vec<[i64; 16]> {
-        let mut block_delta = vec![[0i64; 16]; d];
+    fn decode_compressed_block(d: usize, raw_data: &[u8]) -> Vec<[i64; 16]> {
         let mut block = vec![[0i64; 16]; d];
 
         let mut offset = 0;
         for i in 0..d {
             for j in 0..16 {
                 let (int, len) = ziggurat_varint::decode(&raw_data[offset..]);
-                block_delta[i][j] = int;
+                block[i][j] = int;
                 offset += len;
             }
         }
+
+        block
+    }
+
+    /// Decodes a whole delta block and returns a vector of its columns
+    fn decode_delta_block(d: usize, raw_data: &[u8]) -> Vec<[i64; 16]> {
+        let block_delta = Self::decode_compressed_block(d, raw_data);
+        let mut block = vec![[0i64; 16]; d];
 
         for i in 0..d {
             block[i][0] = block_delta[i][0];
@@ -400,9 +406,8 @@ impl<'map> Vector<'map> {
                     data[index]
                 }
     
-                Self::Compressed { length, width, n_blocks, sync, data } => todo!(),
-                
-                Self::Delta { length: _, width, n_blocks: _, sync: _, data } => {
+                Self::Compressed { length: _, width, n_blocks: _, sync: _, data: _ } |
+                Self::Delta { length: _, width, n_blocks: _, sync: _, data: _ } => {
                     let ci = index / width;
                     let ri = index % width;
                     self.get_slice(ci)[ri]
@@ -420,8 +425,7 @@ impl<'map> Vector<'map> {
                     VecSlice::Borrowed(&data[index..index+width])
                 }
     
-                Self::Compressed { length, width, n_blocks, sync, data } => todo!(),
-    
+                Self::Compressed { length: _, width, n_blocks, sync, data } |
                 Self::Delta { length: _, width, n_blocks, sync, data } => {
                     let bi = index/16;
                     if bi > n_blocks {
@@ -514,9 +518,8 @@ impl<'map> VectorReader<'map> {
                 data[index]
             }
 
-            Vector::Compressed { length, width, n_blocks, sync, data } => todo!(),
-            
-            Vector::Delta { length: _, width, n_blocks: _, sync: _, data: _ } => {
+            Vector::Compressed { length: _, width, .. } |
+            Vector::Delta { length: _, width, .. } => {
                 let ri = index / width;
                 let ci = index % width;
                 self.get_row(ri)[ci]
@@ -530,8 +533,7 @@ impl<'map> VectorReader<'map> {
                 &data[index..index+width]
             }
 
-            Vector::Compressed { length, width, n_blocks, sync, data } => todo!(),
-
+            Vector::Compressed { length: _, width, n_blocks, sync, data } |
             Vector::Delta { length: _, width, n_blocks, sync, data } => {
                 let bi = index/16;
                 if bi > n_blocks {
@@ -542,7 +544,13 @@ impl<'map> VectorReader<'map> {
                     // offset in sync vector is from start of the component, so we need
                     // to compensate for that by subtracting the len of the sync vector
                     let offset = (sync[bi] as usize) - (n_blocks * 8);
-                    self.last_block = Some(Vector::decode_delta_block(width, &data[offset..]));
+
+                    self.last_block = match self.vector {
+                        Vector::Uncompressed { .. } => None,
+                        Vector::Compressed { .. } => Some(Vector::decode_compressed_block(width, &data[offset..])),
+                        Vector::Delta { .. } => Some(Vector::decode_delta_block(width, &data[offset..])),
+                    };
+                    
                     self.last_block_index = bi;
                 }
 

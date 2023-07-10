@@ -63,6 +63,10 @@ pub struct IndexedStringVariable<'map> {
 }
 
 impl<'map> IndexedStringVariable<'map> {
+    pub fn iter(&self) -> IndexedStringIterator {
+        self.into_iter()
+    }
+
     pub fn len(&self) -> usize {
         self.header.dim1
     }
@@ -131,6 +135,40 @@ impl<'map> TryFrom<Container<'map>> for IndexedStringVariable<'map> {
             }
 
             _ => Err(Self::Error::WrongContainerType),
+        }
+    }
+}
+
+pub struct IndexedStringIterator<'map> {
+    var: &'map IndexedStringVariable<'map>,
+    id_stream_reader: components::VectorReader<'map>,
+    index: usize,
+}
+
+impl<'map> Iterator for IndexedStringIterator<'map> {
+    type Item = &'map str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.var.len() {
+            let lexid = self.id_stream_reader.get(self.index) as usize;
+            self.index += 1;
+    
+            Some(&self.var.lexicon[lexid])
+        } else {
+            None
+        }
+    }
+}
+
+impl<'map> IntoIterator for &'map IndexedStringVariable<'map> {
+    type Item = &'map str;
+    type IntoIter = IndexedStringIterator<'map>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IndexedStringIterator {
+            var: self,
+            id_stream_reader: self.lex_id_stream.into_iter(),
+            index: 0,
         }
     }
 }

@@ -12,14 +12,18 @@ fn main() -> Result<()> {
     // let component = container.components.get("Partition").unwrap();
     // let vector = component.as_vector().unwrap();
 
-    let datastore = Datastore::open("../scripts/recipes4000/").unwrap();
+    let datastore = Datastore::open("../scripts/recipes_web/").unwrap();
 
     let strings = datastore["primary_layer"]["pattr_token"]
         .as_indexed_string()
         .unwrap();
 
-    for string in strings.lexicon().iter() {
-        println!("{}", string);
+    let pos = datastore["primary_layer"]["pattr_pos"]
+        .as_indexed_string()
+        .unwrap();
+
+    for (token, pos) in std::iter::zip(strings.iter(), pos.iter()){
+        println!("{}\t{}", token, pos);
     }
 
     // dbg!(strings);
