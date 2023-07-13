@@ -63,8 +63,26 @@ pub struct IndexedStringVariable<'map> {
 }
 
 impl<'map> IndexedStringVariable<'map> {
+    pub fn get(&self, index: usize) -> &str {
+        let ti = self.lex_id_stream.get(index);
+        self.lexicon.get(ti as usize).unwrap()
+    }
+
+    pub fn get_range(&self, start: usize, end: usize) -> IndexedStringIterator {
+        IndexedStringIterator {
+            var: self,
+            id_stream_reader: self.lex_id_stream.into_iter(),
+            index: start,
+            end,
+        }
+    }
+
     pub fn index(&self) -> components::Index {
         self.lex_hash
+    }
+
+    pub fn inverted_index(&self) -> components::InvertedIndex {
+        self.lex_id_index
     }
 
     pub fn iter(&self) -> IndexedStringIterator {
@@ -147,16 +165,17 @@ pub struct IndexedStringIterator<'map> {
     var: &'map IndexedStringVariable<'map>,
     id_stream_reader: components::VectorReader<'map>,
     index: usize,
+    end: usize,
 }
 
 impl<'map> Iterator for IndexedStringIterator<'map> {
     type Item = &'map str;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.var.len() {
+        if self.index < self.end {
             let lexid = self.id_stream_reader.get(self.index) as usize;
             self.index += 1;
-    
+
             Some(&self.var.lexicon[lexid])
         } else {
             None
@@ -173,6 +192,7 @@ impl<'map> IntoIterator for &'map IndexedStringVariable<'map> {
             var: self,
             id_stream_reader: self.lex_id_stream.into_iter(),
             index: 0,
+            end: self.len(),
         }
     }
 }
@@ -273,7 +293,7 @@ impl<'map> Iterator for PlainStringIterator<'map> {
             let start = self.offset_reader.get(self.index) as usize;
             let end = self.offset_reader.get(self.index + 1) as usize;
             self.index += 1;
-    
+
             Some(unsafe { std::str::from_utf8_unchecked(&self.var.string_data[start..end - 1]) })
         } else {
             None

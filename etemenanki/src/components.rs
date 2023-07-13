@@ -1,7 +1,9 @@
 pub mod index;
+pub mod inverted_index;
 pub mod vector;
 
 pub use index::*;
+pub use inverted_index::*;
 pub use vector::*;
 
 use std::{error, fmt, ops};
@@ -183,7 +185,7 @@ impl<'map> Component<'map> {
                     Err(ComponentError::OutOfBounds("typeinfo in InvertedIndex"))?
                 } else {
                     unsafe {
-                        let typeinfo = std::slice::from_raw_parts(start_ptr as *const i64, k * 2);
+                        let typeinfo = std::slice::from_raw_parts(start_ptr as *const (i64, i64), k);
                         let data_ptr = start_ptr.offset((len_typeinfo) as isize);
                         let data = std::slice::from_raw_parts(data_ptr, len - len_typeinfo);
 
@@ -366,25 +368,3 @@ impl<'map> Set<'map> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct InvertedIndex<'map> {
-    types: usize,
-    jtable_length: usize,
-    typeinfo: &'map [i64],
-    data: &'map [u8],
-}
-
-impl<'map> InvertedIndex<'map> {
-    pub fn from_parts(k: usize, p: usize, typeinfo: &'map [i64], data: &'map [u8]) -> Self {
-        Self {
-            types: k,
-            jtable_length: p,
-            typeinfo,
-            data,
-        }
-    }
-
-    pub fn n_types(&self) -> usize {
-        self.types
-    }
-}

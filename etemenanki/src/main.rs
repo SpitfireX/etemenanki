@@ -27,12 +27,28 @@ fn main() -> Result<()> {
     //     println!("{}\t{}", token, pos);
     // }
 
-    let tests = ["Schinken", "Tortellini", "Hallo"];
+    let tests = ["Schinken", "Tortellini", "Hallo", "Cremefine", "Quäse", "Rahm", "Sahne", "Schlagsahne"];
 
     for test in tests {
         let result = strings.index().get_first(test.fnv_hash());
         match result {
-            Some(i) => println!("{} in index at {}: {}", test, i, &strings.lexicon()[i as usize]),
+            Some(i) => {
+                println!("{} in index at {}: {}", test, i, &strings.lexicon()[i as usize]);
+                let freq = strings.inverted_index().frequency(i as usize);
+                let positions: Vec<_> = strings.inverted_index().postings(i as usize).collect();
+                println!("{} appears in the corpus {} times", test, freq);
+                for p in positions {
+                    print!("\t");
+                    for s in strings.get_range(p-6, p+7) {
+                        if s == test {
+                            print!("|{}| ", s);
+                        } else {
+                            print!("{} ", s);
+                        }
+                    }
+                    println!();
+                }
+            }
             None => println!("{} not in index", test),
         }
     }
