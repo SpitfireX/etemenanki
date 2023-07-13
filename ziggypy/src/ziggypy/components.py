@@ -529,13 +529,12 @@ class InvertedIndex(Component):
             for t in occurences:
                 postings[t].append(i)
 
-
         postings_encoded = []
 
         for pl in postings:
 
             delta = np.array(pl, dtype=np.int64)
-            sub = np.append(np.array([0], dtype=np.int64), delta[1:])
+            sub = np.append(np.array([0], dtype=np.int64), delta[:-1])
             delta -= sub
 
             block = b"\x00" # jump table offset for now always zero TODO
