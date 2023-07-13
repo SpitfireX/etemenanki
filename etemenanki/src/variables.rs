@@ -63,6 +63,10 @@ pub struct IndexedStringVariable<'map> {
 }
 
 impl<'map> IndexedStringVariable<'map> {
+    pub fn index(&self) -> components::Index {
+        self.lex_hash
+    }
+
     pub fn iter(&self) -> IndexedStringIterator {
         self.into_iter()
     }

@@ -1,6 +1,7 @@
 use std::io::Result;
 
 use etemenanki::Datastore;
+use etemenanki::components::FnvHash;
 
 fn main() -> Result<()> {
     // let file = File::open("../scripts/recipes4000/sattr_text_keywords.zigv")?;
@@ -22,8 +23,18 @@ fn main() -> Result<()> {
         .as_indexed_string()
         .unwrap();
 
-    for (token, pos) in std::iter::zip(strings.iter(), pos.iter()){
-        println!("{}\t{}", token, pos);
+    // for (token, pos) in std::iter::zip(strings.iter(), pos.iter()){
+    //     println!("{}\t{}", token, pos);
+    // }
+
+    let tests = ["Schinken", "Tortellini", "Hallo"];
+
+    for test in tests {
+        let result = strings.index().get_first(test.fnv_hash());
+        match result {
+            Some(i) => println!("{} in index at {}: {}", test, i, &strings.lexicon()[i as usize]),
+            None => println!("{} not in index", test),
+        }
     }
 
     // dbg!(strings);

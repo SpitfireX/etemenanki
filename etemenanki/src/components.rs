@@ -145,8 +145,8 @@ impl<'map> Component<'map> {
 
             ComponentType::Index => {
                 let n = be.param1 as usize;
-                let pairs_ptr = start_ptr as *const i64;
-                let pairs = unsafe { std::slice::from_raw_parts(pairs_ptr, n * 2) };
+                let pairs_ptr = start_ptr as *const (u64, i64);
+                let pairs = unsafe { std::slice::from_raw_parts(pairs_ptr, n) };
                 Component::Index(Index::uncompressed_from_parts(n, pairs))
             }
 
