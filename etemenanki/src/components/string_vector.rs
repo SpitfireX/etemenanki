@@ -1,6 +1,6 @@
 use std::{
     ops,
-    str::pattern::{Pattern, ReverseSearcher}, iter::Map,
+    str::pattern::{Pattern, ReverseSearcher},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -67,8 +67,11 @@ impl<'map> StringVector<'map> {
         }
     }
 
-    pub fn get_all<'a: 'map>(&'a self, indices: &'a [usize]) -> IndicesIterator<'map, 'a> {
-        IndicesIterator { strvec: self, indices, index: 0 }
+    pub fn get_all<'a: 'map, I>(&'a self, indices: I) -> impl Iterator<Item = &'map str>
+    where
+        I: IntoIterator<Item = &'a usize>,
+    {
+        indices.into_iter().map(|x| &self[*x])
     }
 
     pub fn iter(&self) -> StringVectorIterator {
@@ -122,26 +125,6 @@ impl<'map> IntoIterator for &'map StringVector<'map> {
     }
 }
 
-pub struct IndicesIterator<'map, 'a> {
-    strvec: &'map StringVector<'map>,
-    indices: &'a [usize],
-    index: usize,
-}
-
-impl<'map, 'a> Iterator for IndicesIterator<'map, 'a> {
-    type Item = &'map str;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.indices.len() {
-            let value = &self.strvec[self.indices[self.index]];
-            self.index += 1;
-            Some(value)
-        } else {
-            None
-        }
-    }
-}
-
 pub struct PatternIterator<'map, 'a, P>
 where
     P: Pattern<'a> + Copy,
@@ -158,12 +141,13 @@ where
     P: Pattern<'a> + Copy,
     <P as Pattern<'a>>::Searcher: ReverseSearcher<'a>,
 {
-    
-    pub fn collect_strs(self) -> Vec<&'a str> {
+    pub fn as_strs(self) -> impl Iterator<Item = &'a str> {
         let strvec = self.strvec;
-        let collected: Vec<_> = self.collect();
-        let strit = IndicesIterator { strvec, indices: &collected, index: 0 };
-        strit.collect()
+        self.map(|i| &strvec[i])
+    }
+
+    pub fn collect_strs(self) -> Vec<&'a str> {
+        self.as_strs().collect()
     }
 }
 
@@ -182,7 +166,7 @@ where
             if !(self.fun)(current, self.pattern) {
                 continue;
             } else {
-                return Some(self.index-1);
+                return Some(self.index - 1);
             }
         }
         None

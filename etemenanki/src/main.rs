@@ -71,6 +71,9 @@ fn main() -> Result<()> {
     let matches: Vec<_> = pos.lexicon().all_containing("A").collect_strs();
     println!("All tags containing A: {:?}", matches);
 
+    let bla: Vec<_> = pos.lexicon().get_all(&[1, 2, 3]).collect();
+    println!("strings: {:?}", bla);
+
     // dbg!(strings);
 
     // println!("{:?}", datastore.layer_uuids());
