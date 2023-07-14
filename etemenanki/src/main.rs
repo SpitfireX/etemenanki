@@ -13,7 +13,7 @@ fn main() -> Result<()> {
     // let component = container.components.get("Partition").unwrap();
     // let vector = component.as_vector().unwrap();
 
-    let datastore = Datastore::open("../scripts/recipes_web/").unwrap();
+    let datastore = Datastore::open("../scripts/recipes4000/").unwrap();
 
     let strings = datastore["primary_layer"]["pattr_token"]
         .as_indexed_string()
@@ -27,31 +27,49 @@ fn main() -> Result<()> {
     //     println!("{}\t{}", token, pos);
     // }
 
-    let tests = ["Schinken", "Tortellini", "Hallo", "Cremefine", "Quäse", "Rahm", "Sahne", "Schlagsahne"];
+    // let tests = ["Schinken", "Tortellini", "Hallo", "Cremefine", "Quäse", "Rahm", "Sahne", "Schlagsahne"];
 
-    for test in tests {
-        let result = strings.index().get_first(test.fnv_hash());
-        match result {
-            Some(i) => {
-                println!("{} in index at {}: {}", test, i, &strings.lexicon()[i as usize]);
-                let freq = strings.inverted_index().frequency(i as usize);
-                let positions: Vec<_> = strings.inverted_index().postings(i as usize).collect();
-                println!("{} appears in the corpus {} times", test, freq);
-                for p in positions {
-                    print!("\t");
-                    for s in strings.get_range(p-6, p+7) {
-                        if s == test {
-                            print!("|{}| ", s);
-                        } else {
-                            print!("{} ", s);
-                        }
-                    }
-                    println!();
-                }
-            }
-            None => println!("{} not in index", test),
-        }
-    }
+    // for test in tests {
+    //     let result = strings.index().get_first(test.fnv_hash());
+    //     match result {
+    //         Some(i) => {
+    //             println!("{} in index at {}: {}", test, i, &strings.lexicon()[i as usize]);
+    //             let freq = strings.inverted_index().frequency(i as usize);
+    //             let positions: Vec<_> = strings.inverted_index().postings(i as usize).collect();
+    //             println!("{} appears in the corpus {} times", test, freq);
+    //             for p in positions {
+    //                 print!("\t");
+    //                 for s in strings.get_range(p-6, p+7) {
+    //                     if s == test {
+    //                         print!("|{}| ", s);
+    //                     } else {
+    //                         print!("{} ", s);
+    //                     }
+    //                 }
+    //                 println!();
+    //                 print!("\t");
+    //                 for s in pos.get_range(p-6, p+7) {
+    //                     if s == test {
+    //                         print!("|{}| ", s);
+    //                     } else {
+    //                         print!("{} ", s);
+    //                     }
+    //                 }
+    //                 println!();
+    //             }
+    //         }
+    //         None => println!("{} not in index", test),
+    //     }
+    // }
+
+    let matches: Vec<_> = pos.lexicon().all_starting_with("V").collect_strs();
+    println!("All tags starting with V: {:?}", matches);
+
+    let matches: Vec<_> = pos.lexicon().all_ending_with("N").collect_strs();
+    println!("All tags ending with N: {:?}", matches);
+
+    let matches: Vec<_> = pos.lexicon().all_containing("A").collect_strs();
+    println!("All tags containing A: {:?}", matches);
 
     // dbg!(strings);
 

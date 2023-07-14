@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 #![feature(hash_drain_filter)]
+#![feature(pattern)]
 
 use std::{
     collections::{hash_map, HashMap},
