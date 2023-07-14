@@ -126,7 +126,7 @@ with gzip.open(args.input, mode = "rt") if args.input.suffix == ".gz" else args.
         # p attrs
         if not line.startswith("<"):
             if line.strip():
-                pattrs = line.split(maxsplit = pcount-1)
+                pattrs = line.strip().split(maxsplit = pcount-1)
                 for i, attr in enumerate(pattrs):
                     corpus[i].append((attr).encode("utf-8"))
                 cpos += 1
