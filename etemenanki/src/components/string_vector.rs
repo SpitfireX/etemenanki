@@ -146,7 +146,10 @@ where
         self.map(|i| &strvec[i])
     }
 
-    pub fn collect_strs(self) -> Vec<&'a str> {
+    pub fn collect_strs<B>(self) -> B 
+    where
+        B: FromIterator<&'a str>,
+    {
         self.as_strs().collect()
     }
 }

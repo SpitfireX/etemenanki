@@ -1,7 +1,8 @@
+use std::collections::HashSet;
 use std::io::Result;
 
-use etemenanki::Datastore;
 use etemenanki::components::FnvHash;
+use etemenanki::Datastore;
 
 fn main() -> Result<()> {
     // let file = File::open("../scripts/recipes4000/sattr_text_keywords.zigv")?;
@@ -13,7 +14,7 @@ fn main() -> Result<()> {
     // let component = container.components.get("Partition").unwrap();
     // let vector = component.as_vector().unwrap();
 
-    let datastore = Datastore::open("../scripts/recipes4000/").unwrap();
+    let datastore = Datastore::open("../scripts/recipes_web/").unwrap();
 
     let strings = datastore["primary_layer"]["pattr_token"]
         .as_indexed_string()
@@ -27,52 +28,57 @@ fn main() -> Result<()> {
     //     println!("{}\t{}", token, pos);
     // }
 
-    // let tests = ["Schinken", "Tortellini", "Hallo", "Cremefine", "Quäse", "Rahm", "Sahne", "Schlagsahne"];
+    let tests = [
+        "Schinken",
+        "Tortellini",
+        "Hallo",
+        "Cremefine",
+        "Quäse",
+        "Rahm",
+        "Sahne",
+        "Schlagsahne",
+    ];
 
-    // for test in tests {
-    //     let result = strings.index().get_first(test.fnv_hash());
-    //     match result {
-    //         Some(i) => {
-    //             println!("{} in index at {}: {}", test, i, &strings.lexicon()[i as usize]);
-    //             let freq = strings.inverted_index().frequency(i as usize);
-    //             let positions: Vec<_> = strings.inverted_index().postings(i as usize).collect();
-    //             println!("{} appears in the corpus {} times", test, freq);
-    //             for p in positions {
-    //                 print!("\t");
-    //                 for s in strings.get_range(p-6, p+7) {
-    //                     if s == test {
-    //                         print!("|{}| ", s);
-    //                     } else {
-    //                         print!("{} ", s);
-    //                     }
-    //                 }
-    //                 println!();
-    //                 print!("\t");
-    //                 for s in pos.get_range(p-6, p+7) {
-    //                     if s == test {
-    //                         print!("|{}| ", s);
-    //                     } else {
-    //                         print!("{} ", s);
-    //                     }
-    //                 }
-    //                 println!();
-    //             }
-    //         }
-    //         None => println!("{} not in index", test),
-    //     }
-    // }
+    let verbs: HashSet<_> = pos.lexicon().all_starting_with("VVI").collect_strs();
 
-    let matches: Vec<_> = pos.lexicon().all_starting_with("V").collect_strs();
-    println!("All tags starting with V: {:?}", matches);
+    for test in tests {
+        let result = strings.index().get_first(test.fnv_hash());
+        match result {
+            Some(i) => {
+                let positions: Vec<_> = strings.inverted_index().postings(i as usize).collect();
 
-    let matches: Vec<_> = pos.lexicon().all_ending_with("N").collect_strs();
-    println!("All tags ending with N: {:?}", matches);
+                let mut usage = HashSet::new();
+                for p in positions {
+                    let nextpos = pos.get(p+1);
+                    if verbs.contains(nextpos) {
+                        usage.insert(strings.get(p+1));
+                    }
 
-    let matches: Vec<_> = pos.lexicon().all_containing("A").collect_strs();
-    println!("All tags containing A: {:?}", matches);
+                    let surface: Vec<_> = strings.get_range(p-6, p+7).collect();
+                    println!("{}", surface.join(" "));
+                }
 
-    let bla: Vec<_> = pos.lexicon().get_all(&[1, 2, 3]).collect();
-    println!("strings: {:?}", bla);
+                print!("{} => ", test);
+                for v in usage {
+                    print!("{}, ", v)
+                }
+                println!();
+            }
+            None => println!("{} not in index", test),
+        }
+    }
+
+    // let matches: Vec<_> = pos.lexicon().all_starting_with("V").collect_strs();
+    // println!("All tags starting with V: {:?}", matches);
+
+    // let matches: Vec<_> = pos.lexicon().all_ending_with("N").collect_strs();
+    // println!("All tags ending with N: {:?}", matches);
+
+    // let matches: Vec<_> = pos.lexicon().all_containing("A").collect_strs();
+    // println!("All tags containing A: {:?}", matches);
+
+    // let bla: Vec<_> = pos.lexicon().get_all(&[1, 2, 3]).collect();
+    // println!("strings: {:?}", bla);
 
     // dbg!(strings);
 
