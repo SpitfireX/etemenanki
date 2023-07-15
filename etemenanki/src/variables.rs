@@ -65,7 +65,11 @@ pub struct IndexedStringVariable<'map> {
 impl<'map> IndexedStringVariable<'map> {
     pub fn get(&self, index: usize) -> &str {
         let ti = self.lex_id_stream.get(index);
-        self.lexicon.get(ti as usize).unwrap()
+        &self.lexicon[ti as usize]
+    }
+
+    pub fn get_id(&self, index: usize) -> usize {
+        self.lex_id_stream.get(index) as usize
     }
 
     pub fn get_range(&self, start: usize, end: usize) -> IndexedStringIterator {
@@ -75,6 +79,10 @@ impl<'map> IndexedStringVariable<'map> {
             index: start,
             end,
         }
+    }
+
+    pub fn id_stream(&self) -> components::Vector {
+        self.lex_id_stream
     }
 
     pub fn index(&self) -> components::Index {

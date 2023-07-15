@@ -96,7 +96,11 @@ impl<'map> Vector<'map> {
                     // offset in sync vector is from start of the component, so we need
                     // to compensate for that by subtracting the len of the sync vector
                     let offset = (sync[bi] as usize) - (n_blocks * 8);
-                    let block = Self::decode_delta_block(width, &data[offset..]);
+                    let block = match self {
+                        Vector::Uncompressed { .. } => unreachable!("unreachable because of previous match block"),
+                        Vector::Compressed { .. } => Self::decode_compressed_block(width, &data[offset..]),
+                        Vector::Delta { .. } => Self::decode_delta_block(width, &data[offset..]),
+                    };
                     
                     let mut slice = vec![0i64; width];
                     for i in 0..width {
@@ -207,7 +211,7 @@ impl<'map> VectorReader<'map> {
                     let offset = (sync[bi] as usize) - (n_blocks * 8);
 
                     self.last_block = match self.vector {
-                        Vector::Uncompressed { .. } => None,
+                        Vector::Uncompressed { .. } => unreachable!("unreachable because of previous match block"),
                         Vector::Compressed { .. } => Some(Vector::decode_compressed_block(width, &data[offset..])),
                         Vector::Delta { .. } => Some(Vector::decode_delta_block(width, &data[offset..])),
                     };
