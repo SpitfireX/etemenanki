@@ -14,7 +14,7 @@ fn main() -> Result<()> {
     // let component = container.components.get("Partition").unwrap();
     // let vector = component.as_vector().unwrap();
 
-    let datastore = Datastore::open("../scripts/recipes_web/").unwrap();
+    let datastore = Datastore::open("../scripts/recipes4000/").unwrap();
 
     let strings = datastore["primary_layer"]["pattr_token"]
         .as_indexed_string()
@@ -67,6 +67,9 @@ fn main() -> Result<()> {
             None => println!("{} not in index", test),
         }
     }
+
+    let texts = datastore["sattr_text"].as_segmentation().unwrap();
+    println!("text ranges: {:?}", texts.iter().collect::<Vec<_>>());
 
     // let matches: Vec<_> = pos.lexicon().all_starting_with("V").collect_strs();
     // println!("All tags starting with V: {:?}", matches);

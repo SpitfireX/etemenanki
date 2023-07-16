@@ -69,9 +69,9 @@ impl<'map> Vector<'map> {
     
                 Self::Compressed { length: _, width, n_blocks: _, sync: _, data: _ } |
                 Self::Delta { length: _, width, n_blocks: _, sync: _, data: _ } => {
-                    let ci = index / width;
-                    let ri = index % width;
-                    self.get_slice(ci)[ri]
+                    let ri = index / width;
+                    let ci = index % width;
+                    self.get_row(ri)[ci]
                 }
             }
         }
@@ -80,7 +80,7 @@ impl<'map> Vector<'map> {
     ///
     /// This always triggers a full block decode on compressed Vectors
     /// for efficient access use `VectorReader`.
-    pub fn get_slice(&self, index: usize) -> VecSlice {
+    pub fn get_row(&self, index: usize) -> VecSlice {
         match *self {
                 Self::Uncompressed { length: _, width, data } => {
                     VecSlice::Borrowed(&data[index..index+width])
@@ -110,6 +110,10 @@ impl<'map> Vector<'map> {
                     VecSlice::Owned(slice)
             }
         }
+    }
+
+    pub fn iter(&self) -> VectorReader {
+        self.into_iter()
     }
 
     pub fn len(&self) -> usize {

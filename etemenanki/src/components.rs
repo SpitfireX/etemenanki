@@ -245,7 +245,7 @@ impl<'map> std::ops::Deref for Blob<'map> {
     type Target = [u8];
 
     fn deref(&self) -> &Self::Target {
-        &self.data
+        self.data
     }
 }
 

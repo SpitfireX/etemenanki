@@ -10,15 +10,25 @@ use crate::macros::{check_and_return_component, get_container_base};
 use crate::variables::Variable;
 use crate::{components, variables};
 
+#[derive(Debug)]
+pub struct LayerData<'map, T>(T, LayerVariables<'map>);
+
+impl<'map, T> ops::Deref for LayerData<'map, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(Debug, EnumAsInner)]
 pub enum Layer<'map> {
-    Primary(PrimaryLayer<'map>, LayerVariables<'map>),
-    Segmentation(SegmentationLayer<'map>, LayerVariables<'map>),
+    Primary(LayerData<'map, PrimaryLayer<'map>>),
+    Segmentation(LayerData<'map, SegmentationLayer<'map>>),
 }
 
 impl<'map> Layer<'map> {
     pub fn add_variable(&mut self, name: String, var: Variable<'map>) -> Result<(), Variable> {
-        let baselen = self.len();
         let varlen = match &var {
             Variable::IndexedString(v) => v.len(),
             Variable::PlainString(v) => v.len(),
@@ -29,42 +39,49 @@ impl<'map> Layer<'map> {
             Variable::Hash => todo!(),
         };
 
-        if varlen != baselen {
+        if varlen != self.len() {
             Err(var)
         } else {
             match self {
-                Self::Primary(_, vars) => vars.add_variable(name, var),
-                Self::Segmentation(_, vars) => vars.add_variable(name, var),
+                Self::Primary(LayerData(_, vars)) => vars.add_variable(name, var),
+                Self::Segmentation(LayerData(_, vars)) => vars.add_variable(name, var),
             }
         }
     }
 
     pub fn variable_by_name<S: AsRef<str>>(&self, name: S) -> Option<&variables::Variable> {
         match self {
-            Layer::Primary(_, vars) => vars.variables.get(name.as_ref()),
-            Layer::Segmentation(_, vars) => vars.variables.get(name.as_ref()),
+            Layer::Primary(LayerData(_, vars)) => vars.variables.get(name.as_ref()),
+            Layer::Segmentation(LayerData(_, vars)) => vars.variables.get(name.as_ref()),
         }
     }
 
     pub fn init_primary(layer: PrimaryLayer<'map>) -> Self {
-        Self::Primary(layer, LayerVariables::default())
+        Self::Primary(LayerData(layer, LayerVariables::default()))
     }
 
     pub fn init_segmentation(layer: SegmentationLayer<'map>) -> Self {
-        Self::Segmentation(layer, LayerVariables::default())
+        Self::Segmentation(LayerData(layer, LayerVariables::default()))
     }
 
     pub fn len(&self) -> usize {
         match &self {
-            Self::Primary(l, _) => l.len(),
-            Self::Segmentation(l, _) => l.len(),
+            Self::Primary(LayerData(l, _)) => l.len(),
+            Self::Segmentation(LayerData(l, _)) => l.len(),
+        }
+    }
+
+    pub fn variable_len(&self) -> usize {
+        match &self {
+            Self::Primary(LayerData(_, var)) => var.len(),
+            Self::Segmentation(LayerData(_, var)) => var.len(),
         }
     }
 
     pub fn variable_names(&self) -> hash_map::Keys<String, variables::Variable> {
         match self {
-            Layer::Primary(_, vars) => vars.variables.keys(),
-            Layer::Segmentation(_, vars) => vars.variables.keys(),
+            Layer::Primary(LayerData(_, vars)) => vars.variables.keys(),
+            Layer::Segmentation(LayerData(_, vars)) => vars.variables.keys(),
         }
     }
 }
@@ -74,8 +91,8 @@ impl<'map, S: AsRef<str>> ops::Index<S> for Layer<'map> {
 
     fn index(&self, index: S) -> &Self::Output {
         match self {
-            Layer::Primary(_, vars) => &vars.variables[index.as_ref()],
-            Layer::Segmentation(_, vars) => &vars.variables[index.as_ref()],
+            Layer::Primary(LayerData(_, vars)) => &vars.variables[index.as_ref()],
+            Layer::Segmentation(LayerData(_, vars)) => &vars.variables[index.as_ref()],
         }
     }
 }
@@ -94,6 +111,10 @@ impl<'map> LayerVariables<'map> {
             Ok(())
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.variables.len()
+    }
 }
 
 #[derive(Debug)]
@@ -105,6 +126,7 @@ pub struct PrimaryLayer<'map> {
 }
 
 impl<'map> PrimaryLayer<'map> {
+    #[inline]
     pub fn len(&self) -> usize {
         self.header.dim1
     }
@@ -155,6 +177,18 @@ pub struct SegmentationLayer<'map> {
 }
 
 impl<'map> SegmentationLayer<'map> {
+    #[inline]
+    pub fn get(&self, index: usize) -> (usize, usize) {
+        let row = self.range_stream.get_row(index);
+        (row[0] as usize, row[1] as usize)
+    }
+
+    #[inline]
+    pub fn iter(&self) -> SegmentationLayerIterator {
+        self.into_iter()
+    }
+
+    #[inline]
     pub fn len(&self) -> usize {
         self.header.dim1
     }
@@ -203,6 +237,37 @@ impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {
             }
 
             _ => Err(Self::Error::WrongContainerType),
+        }
+    }
+}
+
+pub struct SegmentationLayerIterator<'map> {
+    ranges: components::VectorReader<'map>,
+    index: usize,
+}
+
+impl<'map> Iterator for SegmentationLayerIterator<'map> {
+    type Item = (usize, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.ranges.len() {
+            let row = self.ranges.get_row(self.index);
+            self.index += 1;
+            Some((row[0] as usize, row[1] as usize))
+        } else {
+            None
+        }
+    }
+}
+
+impl<'map> IntoIterator for &'map SegmentationLayer<'map> {
+    type Item = (usize, usize);
+    type IntoIter = SegmentationLayerIterator<'map>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        SegmentationLayerIterator {
+            ranges: self.range_stream.into_iter(),
+            index: 0,
         }
     }
 }
