@@ -167,7 +167,7 @@ impl<'map> Component<'map> {
                 } else {
                     unsafe {
                         let sync =
-                            std::slice::from_raw_parts(start_ptr.offset(8) as *const i64, mr * 2);
+                            std::slice::from_raw_parts(start_ptr.offset(8) as *const (u64, u64), mr);
                         let data_ptr = start_ptr.offset((8 + len_sync) as isize);
                         let data = std::slice::from_raw_parts(data_ptr, len - len_sync - 8);
 

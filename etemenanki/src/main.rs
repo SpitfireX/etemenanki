@@ -70,6 +70,7 @@ fn main() -> Result<()> {
 
     let texts = datastore["sattr_text"].as_segmentation().unwrap();
     println!("text ranges: {:?}", texts.iter().collect::<Vec<_>>());
+    println!("asdf {:?}", texts.get(0));
 
     // let matches: Vec<_> = pos.lexicon().all_starting_with("V").collect_strs();
     // println!("All tags starting with V: {:?}", matches);

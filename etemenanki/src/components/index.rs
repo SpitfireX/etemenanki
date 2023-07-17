@@ -1,4 +1,5 @@
 use core::hash::Hasher;
+use std::cmp::min;
 
 use fnv::FnvHasher;
 
@@ -22,7 +23,7 @@ pub enum Index<'map> {
     Compressed {
         length: usize,
         r: usize,
-        sync: &'map [i64],
+        sync: &'map [(u64, u64)],
         data: &'map [u8],
     },
 
@@ -41,7 +42,12 @@ impl<'map> Index<'map> {
         }
     }
 
-    pub fn compressed_from_parts(n: usize, r: usize, sync: &'map [i64], data: &'map [u8]) -> Self {
+    pub fn compressed_from_parts(
+        n: usize,
+        r: usize,
+        sync: &'map [(u64, u64)],
+        data: &'map [u8],
+    ) -> Self {
         Self::Compressed {
             length: n,
             r,
@@ -53,9 +59,9 @@ impl<'map> Index<'map> {
     #[inline]
     pub fn get_first(&self, key: u64) -> Option<i64> {
         match *self {
-            Index::Compressed { length, r, sync, data } => todo!(),
+            Index::Compressed { .. } => self.get_all(key).next(),
 
-            Index::Uncompressed { length: _, pairs } => match self.position(key) {
+            Index::Uncompressed { length: _, pairs } => match Self::position(pairs, key) {
                 Some(i) => Some(pairs[i].1),
                 None => None,
             },
@@ -64,11 +70,7 @@ impl<'map> Index<'map> {
 
     #[inline]
     pub fn get_all(&self, key: u64) -> IndexIterator {
-        IndexIterator {
-            index: *self,
-            key,
-            position: self.position(key),
-        }
+        IndexIterator::new(*self, key)
     }
 
     #[inline]
@@ -79,17 +81,18 @@ impl<'map> Index<'map> {
         }
     }
 
-    #[inline]
-    pub fn position(&self, key: u64) -> Option<usize> {
-        match *self {
-            Index::Compressed { length, r, sync, data } => todo!(),
-            
-            Index::Uncompressed { length: _, pairs } => {
-                match pairs.binary_search_by_key(&key, |(k, _)| *k) {
-                    Ok(i) => Some(i),
-                    Err(_) => None,
-                }
-            }
+    fn block_position(sync: &[(u64, u64)], key: u64) -> usize {
+        match sync.binary_search_by_key(&key, |(k, _)| *k) {
+            Ok(bi) => bi,
+            Err(0) => 0,
+            Err(nbi) => nbi - 1,
+        }
+    }
+
+    fn position(pairs: &[(u64, i64)], key: u64) -> Option<usize> {
+        match pairs.binary_search_by_key(&key, |(k, _)| *k) {
+            Ok(i) => Some(i),
+            Err(_) => None,
         }
     }
 
@@ -98,31 +101,121 @@ impl<'map> Index<'map> {
     }
 }
 
-pub struct IndexIterator<'a> {
-    index: Index<'a>,
-    key: u64,
-    position: Option<usize>,
+pub enum IndexIterator<'map> {
+    None,
+
+    Compressed {
+        data: &'map [u8],
+        position: usize,
+        len: usize,
+    },
+
+    Uncompressed {
+        pairs: &'map [(u64, i64)],
+        key: u64,
+        position: usize,
+    },
 }
 
-impl<'a> Iterator for IndexIterator<'a> {
+impl<'map> IndexIterator<'map> {
+    pub fn new(index: Index<'map>, key: u64) -> Self {
+        match index {
+            Index::Compressed {
+                length: _,
+                r,
+                sync,
+                data,
+            } => {
+                let bi = Index::block_position(sync, key);
+                let mut offset = sync[bi].1 as usize - (8 + (sync.len() * 16));
+
+                let (o, readlen) = ziggurat_varint::decode(&data[offset..]);
+                offset += readlen;
+
+                // read keys vector
+                let klen = min(r - (bi * 16), 16); // number of keys can be <16
+                let mut keys = Vec::with_capacity(16);
+                for _ in 0..klen {
+                    let (k, readlen) = ziggurat_varint::decode(&data[offset..]);
+                    keys.push(k as u64);
+                    offset += readlen;
+                }
+
+                match keys.binary_search(&key) {
+                    // key not in block
+                    Err(_) => Self::None,
+
+                    // key in block at i
+                    Ok(ki) => {
+                        // determine number of elements with key in block
+                        let mut len = keys.iter().filter(|&x| *x == key).count();
+                        // add overflow items if key is the last in block
+                        if keys[keys.len()] == key {
+                            len += o as usize;
+                        }
+
+                        // discard first ki values in block
+                        for _ in 0..ki {
+                            let (_, readlen) = ziggurat_varint::decode(&data[offset..]);
+                            offset += readlen;
+                        }
+
+                        Self::Compressed {
+                            data: &data[offset..],
+                            position: 0,
+                            len,
+                        }
+                    }
+                }
+            }
+
+            Index::Uncompressed { length: _, pairs } => match Index::position(pairs, key) {
+                Some(position) => Self::Uncompressed {
+                    pairs,
+                    key,
+                    position,
+                },
+                None => Self::None,
+            },
+        }
+    }
+}
+
+impl<'map> Iterator for IndexIterator<'map> {
     type Item = i64;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.index {
-            Index::Compressed { length, r, sync, data } => todo!(),
+        match *self {
+            Self::None => None,
 
-            Index::Uncompressed { length: _, pairs } => match self.position {
-                None => None,
-                Some(i) => {
-                    if i < pairs.len() && pairs[i].0 == self.key {
-                        let value = pairs[i].1;
-                        self.position = Some(i + 1);
-                        Some(value)
-                    } else {
-                        None
-                    }
+            Self::Compressed {
+                ref mut data,
+                ref mut position,
+                len,
+            } => {
+                if *position > len {
+                    let (v, readlen) = ziggurat_varint::decode(data);
+                    *data = &data[readlen..];
+                    *position += 1;
+                    Some(v)
+                } else {
+                    None
                 }
-            },
+            }
+
+            Self::Uncompressed {
+                pairs,
+                key,
+                ref mut position,
+            } => {
+                if *position < pairs.len() && pairs[*position].0 == key {
+                    let value = pairs[*position].1;
+                    *position += 1;
+                    Some(value)
+                } else {
+                    None
+                }
+            }
         }
     }
 }
