@@ -67,6 +67,9 @@ struct BOMEntry {
     if (type == 0x02 && mode == 0x00) { // StringList
         //String string[param1] @ offset;
         u8 strings[size] @ offset;
+    } else if (type == 0x03 && mode == 0x00) { // StringVector
+        s64 offsets[param1+1] @ offset;
+        u8 strings[size - ((param1+1)*8)] @ offset + ((param1+1)*8);
     } else if (type == 0x04 && mode == 0x00) { // Vector
         s64 data[param1*param2] @ offset;
     } else if (type == 0x04 && mode == 0x02) { // Vector:delta
@@ -78,7 +81,10 @@ struct BOMEntry {
     } else if (type == 0x06 && mode == 0x01) { // Index:comp
         s64 r @ offset;
         s64 sync[m(r) * 2] @ offset + 8;
-        u8 data[size - (m(r)*2) - 8] @ offset + 8 + (m(r) * 2);
+        u8 data[size-(m(r)*16+8)] @ offset + 8 + (m(r)*16);
+    } else if (type == 0x07 && mode == 0x01) { // InvertedIdx
+        s64 typeinfo[param1*2] @ offset;
+        u8 data[size - (param1*16)] @ offset + (param1*16);
     }
 };
 
@@ -88,4 +94,5 @@ fn m(s64 size) {
 
 ContainerHeader header @ 0x00;
 BOMEntry bom[header.used_components] @ 160;
+
 
