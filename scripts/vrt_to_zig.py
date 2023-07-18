@@ -224,7 +224,7 @@ s_attr_layers = dict()
 
 for attr in s_attrs:
     slen = len(spans[attr])
-    layer = SegmentationLayer(primary_layer, slen, (0, slen), spans[attr])
+    layer = SegmentationLayer(primary_layer, slen, (0, slen), spans[attr], compressed = not args.uncompressed)
 
     s_attr_layers[attr] = layer
     write_datastore_object(layer, "sattr_" + attr)

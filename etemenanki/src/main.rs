@@ -72,6 +72,14 @@ fn main() -> Result<()> {
     println!("text ranges: {:?}", texts.iter().collect::<Vec<_>>());
     println!("asdf {:?}", texts.get(0));
 
+    println!("{:?}", texts.start_index().get_first(3014));
+
+    for (i, (s, e)) in texts.iter().enumerate() {
+        println!("range {}: ({}, {})", i, s, e);
+        println!("\tstart_index: {:?}", texts.start_index().get_first(s as u64));
+        println!("\tend_index: {:?}", texts.end_index().get_first(e as u64));
+    }
+
     // let matches: Vec<_> = pos.lexicon().all_starting_with("V").collect_strs();
     // println!("All tags starting with V: {:?}", matches);
 

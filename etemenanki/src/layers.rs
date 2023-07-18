@@ -192,6 +192,14 @@ impl<'map> SegmentationLayer<'map> {
     pub fn len(&self) -> usize {
         self.header.dim1
     }
+
+    pub fn end_index(&self) -> components::Index {
+        self.end_sort
+    }
+
+    pub fn start_index(&self) -> components::Index {
+        self.start_sort
+    }
 }
 
 impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {

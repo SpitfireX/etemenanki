@@ -39,7 +39,7 @@ class PrimaryLayer(Layer):
 
 class SegmentationLayer(Layer):
 
-    def __init__(self, base_layer: Layer, n: int, partition: Sequence[int], ranges: Iterable[Tuple[int, int]], uuid: Optional[UUID] = None):
+    def __init__(self, base_layer: Layer, n: int, partition: Sequence[int], ranges: Iterable[Tuple[int, int]], uuid: Optional[UUID] = None, compressed: bool = True):
 
         super().__init__(n, partition, uuid if uuid else uuid4())
 
@@ -50,9 +50,15 @@ class SegmentationLayer(Layer):
 
         range_stream = VectorDelta(ranges, "RangeStream", n, d = 2)
 
-        start_sort = IndexCompressed(ranges, "StartSort", n, sorted=True)
-
-        end_sort = IndexCompressed(ranges[:,[1,0]], "EndSort", n, sorted=False)
+        range_start_index = [(b, a[0]) for (a,b) in np.ndenumerate(ranges[:,0])]
+        range_end_index = [(b, a[0]) for (a,b) in np.ndenumerate(ranges[:,1])]
+        
+        if compressed:
+            start_sort = IndexCompressed(range_start_index, "StartSort", n, sorted=True)
+            end_sort = IndexCompressed(range_end_index, "EndSort", n, sorted=False)
+        else:
+            start_sort = Index(range_start_index, "StartSort", n, sorted=True)
+            end_sort = Index(range_end_index, "EndSort", n, sorted=False)
 
         self.container = Container(
             (

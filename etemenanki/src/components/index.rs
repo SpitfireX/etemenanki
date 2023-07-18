@@ -101,6 +101,7 @@ impl<'map> Index<'map> {
     }
 }
 
+#[derive(Debug)]
 pub enum IndexIterator<'map> {
     None,
 
@@ -108,6 +109,7 @@ pub enum IndexIterator<'map> {
         data: &'map [u8],
         position: usize,
         len: usize,
+        last_value: i64,
     },
 
     Uncompressed {
@@ -129,15 +131,24 @@ impl<'map> IndexIterator<'map> {
                 let bi = Index::block_position(sync, key);
                 let mut offset = sync[bi].1 as usize - (8 + (sync.len() * 16));
 
+                // number of overflow items
                 let (o, readlen) = ziggurat_varint::decode(&data[offset..]);
                 offset += readlen;
 
                 // read keys vector
                 let klen = min(r - (bi * 16), 16); // number of keys can be <16
-                let mut keys = Vec::with_capacity(16);
-                for _ in 0..klen {
+                let mut keys = Vec::with_capacity(klen);
+
+                let (k, readlen) = ziggurat_varint::decode(&data[offset..]);
+                keys.push(k as u64);
+                offset += readlen;
+
+                // key vector always has len 16, is padded with -1
+                for i in 1..16 {
                     let (k, readlen) = ziggurat_varint::decode(&data[offset..]);
-                    keys.push(k as u64);
+                    if i < klen {
+                        keys.push(k as u64 + keys[i-1]);
+                    }
                     offset += readlen;
                 }
 
@@ -150,13 +161,15 @@ impl<'map> IndexIterator<'map> {
                         // determine number of elements with key in block
                         let mut len = keys.iter().filter(|&x| *x == key).count();
                         // add overflow items if key is the last in block
-                        if keys[keys.len()] == key {
+                        if keys[keys.len()-1] == key {
                             len += o as usize;
                         }
 
                         // discard first ki values in block
+                        let mut start = 0;
                         for _ in 0..ki {
-                            let (_, readlen) = ziggurat_varint::decode(&data[offset..]);
+                            let (v, readlen) = ziggurat_varint::decode(&data[offset..]);
+                            start += v;
                             offset += readlen;
                         }
 
@@ -164,6 +177,7 @@ impl<'map> IndexIterator<'map> {
                             data: &data[offset..],
                             position: 0,
                             len,
+                            last_value: start,
                         }
                     }
                 }
@@ -192,12 +206,14 @@ impl<'map> Iterator for IndexIterator<'map> {
                 ref mut data,
                 ref mut position,
                 len,
+                ref mut last_value,
             } => {
-                if *position > len {
+                if *position < len {
                     let (v, readlen) = ziggurat_varint::decode(data);
                     *data = &data[readlen..];
                     *position += 1;
-                    Some(v)
+                    *last_value += v;
+                    Some(*last_value)
                 } else {
                     None
                 }
