@@ -7,6 +7,6 @@ As of now this project is an experimentation sandbox for both the in-memory data
 ## Components in this repo
 
 - etemenanki: A Rust library for reading Ziggurat datastores
-- vrt_to_zig.py: A Python script for encoting VRT files to Ziggurat datastores
+- vrt_to_zig.py: A Python script for encoding VRT files to Ziggurat datastores
 - ziggurat-varint: A combined Rust crate and Python module implementing the Ziggurat varint format
 - ZiggyPy: A Python module for interacting with (as of now: only writing) Ziggurat datastores.
