@@ -177,18 +177,45 @@ pub struct SegmentationLayer<'map> {
 }
 
 impl<'map> SegmentationLayer<'map> {
-    #[inline]
-    pub fn get(&self, index: usize) -> (usize, usize) {
+    pub fn contains(&self, range: (usize, usize)) -> bool {
+        let (start, end) = range;
+
+        match self.start_sort.get_first(start as i64) {
+            None => false,
+            Some(i) => end == self.get_unchecked(i as usize).1,
+        }
+    }
+
+    pub fn contains_end(&self, end: usize) -> bool {
+        self.end_sort.contains_key(end as i64)
+    }
+
+    pub fn contains_start(&self, start: usize) -> bool {
+        self.start_sort.contains_key(start as i64)
+    }
+
+    /// Finds the index of the range containing baselayer position `position`
+    pub fn find_containing(&self, position: usize) -> Option<usize> {
+        todo!()
+    }
+
+    pub fn get(&self, index: usize) -> Option<(usize, usize)> {
+        if index < self.len() {
+            Some(self.get_unchecked(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_unchecked(&self, index: usize) -> (usize, usize) {
         let row = self.range_stream.get_row(index);
         (row[0] as usize, row[1] as usize)
     }
 
-    #[inline]
     pub fn iter(&self) -> SegmentationLayerIterator {
         self.into_iter()
     }
 
-    #[inline]
     pub fn len(&self) -> usize {
         self.header.dim1
     }

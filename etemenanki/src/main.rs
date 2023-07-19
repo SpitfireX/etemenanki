@@ -76,8 +76,8 @@ fn main() -> Result<()> {
 
     for (i, (s, e)) in texts.iter().enumerate() {
         println!("range {}: ({}, {})", i, s, e);
-        println!("\tstart_index: {:?}", texts.start_index().get_first(s as u64));
-        println!("\tend_index: {:?}", texts.end_index().get_first(e as u64));
+        println!("\tstart_index: {:?}", texts.start_index().get_first(s as i64));
+        println!("\tend_index: {:?}", texts.end_index().get_first(e as i64));
     }
 
     // let matches: Vec<_> = pos.lexicon().all_starting_with("V").collect_strs();

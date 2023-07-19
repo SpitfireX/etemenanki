@@ -4,17 +4,17 @@ use std::cmp::min;
 use fnv::FnvHasher;
 
 pub trait FnvHash {
-    fn fnv_hash(&self) -> u64;
+    fn fnv_hash(&self) -> i64;
 }
 
 impl<T> FnvHash for T
 where
     T: AsRef<[u8]>,
 {
-    fn fnv_hash(&self) -> u64 {
+    fn fnv_hash(&self) -> i64 {
         let mut hasher = FnvHasher::default();
         hasher.write(self.as_ref());
-        hasher.finish()
+        hasher.finish() as i64
     }
 }
 
@@ -23,19 +23,19 @@ pub enum Index<'map> {
     Compressed {
         length: usize,
         r: usize,
-        sync: &'map [(u64, u64)],
+        sync: &'map [(i64, usize)],
         data: &'map [u8],
     },
 
     Uncompressed {
         length: usize,
-        pairs: &'map [(u64, i64)],
+        pairs: &'map [(i64, i64)],
     },
 }
 
 impl<'map> Index<'map> {
     #[inline]
-    pub fn contains_key(&self, key: u64) -> bool {
+    pub fn contains_key(&self, key: i64) -> bool {
         match self.get_first(key) {
             Some(_) => true,
             None => false,
@@ -45,7 +45,7 @@ impl<'map> Index<'map> {
     pub fn compressed_from_parts(
         n: usize,
         r: usize,
-        sync: &'map [(u64, u64)],
+        sync: &'map [(i64, usize)],
         data: &'map [u8],
     ) -> Self {
         Self::Compressed {
@@ -57,7 +57,7 @@ impl<'map> Index<'map> {
     }
 
     #[inline]
-    pub fn get_first(&self, key: u64) -> Option<i64> {
+    pub fn get_first(&self, key: i64) -> Option<i64> {
         match *self {
             Index::Compressed { .. } => self.get_all(key).next(),
 
@@ -69,7 +69,7 @@ impl<'map> Index<'map> {
     }
 
     #[inline]
-    pub fn get_all(&self, key: u64) -> IndexIterator {
+    pub fn get_all(&self, key: i64) -> IndexIterator {
         IndexIterator::new(*self, key)
     }
 
@@ -81,7 +81,7 @@ impl<'map> Index<'map> {
         }
     }
 
-    fn block_position(sync: &[(u64, u64)], key: u64) -> usize {
+    fn block_position(sync: &[(i64, usize)], key: i64) -> usize {
         match sync.binary_search_by_key(&key, |(k, _)| *k) {
             Ok(bi) => bi,
             Err(0) => 0,
@@ -89,14 +89,14 @@ impl<'map> Index<'map> {
         }
     }
 
-    fn position(pairs: &[(u64, i64)], key: u64) -> Option<usize> {
+    fn position(pairs: &[(i64, i64)], key: i64) -> Option<usize> {
         match pairs.binary_search_by_key(&key, |(k, _)| *k) {
             Ok(i) => Some(i),
             Err(_) => None,
         }
     }
 
-    pub fn uncompressed_from_parts(n: usize, pairs: &'map [(u64, i64)]) -> Self {
+    pub fn uncompressed_from_parts(n: usize, pairs: &'map [(i64, i64)]) -> Self {
         Self::Uncompressed { length: n, pairs }
     }
 }
@@ -113,14 +113,14 @@ pub enum IndexIterator<'map> {
     },
 
     Uncompressed {
-        pairs: &'map [(u64, i64)],
-        key: u64,
+        pairs: &'map [(i64, i64)],
+        key: i64,
         position: usize,
     },
 }
 
 impl<'map> IndexIterator<'map> {
-    pub fn new(index: Index<'map>, key: u64) -> Self {
+    pub fn new(index: Index<'map>, key: i64) -> Self {
         match index {
             Index::Compressed {
                 length: _,
@@ -140,14 +140,14 @@ impl<'map> IndexIterator<'map> {
                 let mut keys = Vec::with_capacity(klen);
 
                 let (k, readlen) = ziggurat_varint::decode(&data[offset..]);
-                keys.push(k as u64);
+                keys.push(k);
                 offset += readlen;
 
                 // key vector always has len 16, is padded with -1
                 for i in 1..16 {
                     let (k, readlen) = ziggurat_varint::decode(&data[offset..]);
                     if i < klen {
-                        keys.push(k as u64 + keys[i-1]);
+                        keys.push(k + keys[i-1]);
                     }
                     offset += readlen;
                 }
