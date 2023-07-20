@@ -2,6 +2,7 @@ use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use uuid::Uuid;
 
+use std::cmp::min;
 use std::collections::{hash_map, HashMap};
 use std::ops;
 
@@ -18,6 +19,14 @@ impl<'map, T> ops::Deref for LayerData<'map, T> {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl<'map, T, S: AsRef<str>> ops::Index<S> for LayerData<'map, T> {
+    type Output = variables::Variable<'map>;
+
+    fn index(&self, index: S) -> &Self::Output {
+        &self.1.variables[index.as_ref()]
     }
 }
 
@@ -196,7 +205,66 @@ impl<'map> SegmentationLayer<'map> {
 
     /// Finds the index of the range containing baselayer position `position`
     pub fn find_containing(&self, position: usize) -> Option<usize> {
-        todo!()
+        let i = match self.start_sort {
+            components::Index::Compressed { length: _, r, sync, data } => {
+                let bi = match sync.binary_search_by_key(&(position as i64), |(s, _)| *s) {
+                    Ok(i) => i,
+                    Err(0) => 0,
+                    Err(i) => i-1,
+                };
+                if bi < sync.len() {
+                    let mut offset = sync[bi].1 - (8 + (sync.len()*16));
+
+                    let (_, readlen) = ziggurat_varint::decode(&data[offset..]);
+                    offset += readlen;
+
+                    // read keys vector
+                    let klen = min(r - (bi * 16), 16); // number of keys can be <16
+                    let mut keys = Vec::with_capacity(klen);
+
+                    let (k, readlen) = ziggurat_varint::decode(&data[offset..]);
+                    keys.push(k);
+                    offset += readlen;
+
+                    // key vector always has len 16, is padded with -1
+                    for i in 1..16 {
+                        let (k, readlen) = ziggurat_varint::decode(&data[offset..]);
+                        if i < klen {
+                            keys.push(k + keys[i-1]);
+                        }
+                        offset += readlen;
+                    }
+
+                    match keys[..klen].binary_search(&(position as i64)) {
+                        Ok(i) => bi*16 + i,
+                        Err(0) => bi*16,
+                        Err(i) => bi*16 + i-1,
+                    }
+                } else {
+                    return None
+                }
+            }
+            
+            components::Index::Uncompressed { length: _, pairs } => {
+                match pairs.binary_search_by_key(&(position as i64), |(s, _)| *s) {
+                    Ok(i) => i,
+                    Err(0) => 0,
+                    Err(i) => i-1,
+                }
+            }
+        };
+
+        if i < self.len() {
+            let (start, end) = self.get_unchecked(i);
+
+            if position >= start && position < end {
+                Some(i)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 
     pub fn get(&self, index: usize) -> Option<(usize, usize)> {

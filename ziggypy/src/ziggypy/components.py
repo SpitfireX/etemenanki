@@ -389,7 +389,7 @@ class Index(Component):
             (n, 2)
         )
         
-        self.data = np.array(pairs, dtype=np.uint64)
+        self.data = np.array(pairs, dtype=np.int64)
         self.data.shape = (n, 2)
 
         if not sorted:
@@ -403,7 +403,7 @@ class Index(Component):
 
     def write(self, f):
         for i in self.data.flat:
-            f.write(pack('<Q', i))
+            f.write(pack('<q', i))
 
 
 class IndexCompressed(Component):
@@ -417,7 +417,7 @@ class IndexCompressed(Component):
             (n, 2)
         )
 
-        data = np.array(pairs, dtype=np.uint64)
+        data = np.array(pairs, dtype=np.int64)
         data.shape = (n, 2)
 
         if not sorted:
@@ -442,7 +442,7 @@ class IndexCompressed(Component):
         if blen != 0:
             if blen < 16: # padding to a full block
                 block_padding = 16 - blen
-                block = np.full((16, 2), -1, dtype=np.uint64)
+                block = np.full((16, 2), -1, dtype=np.int64)
                 block[:blen] = data[bstart:]
                 blocks.append(block)
             else:
@@ -478,7 +478,7 @@ class IndexCompressed(Component):
                 positions_delta.append(positions[i] - positions[i-1])
 
             packed = encode_varint(len(b) - 16)
-            packed += encode_varint_block_unsigned(keys_delta)
+            packed += encode_varint_block(keys_delta)
             packed += encode_varint_block(positions_delta)
 
             packed_blocks.append(packed)
@@ -494,7 +494,7 @@ class IndexCompressed(Component):
 
         sync = []
         for k, o in zip(block_keys, offsets):
-            sync.append(pack('<Q', k))
+            sync.append(pack('<q', k))
             sync.append(pack('<q', o))
 
         self.encoded = pack('<q', r)

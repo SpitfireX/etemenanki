@@ -8,7 +8,12 @@ from .container import Container
 from .components import *
 from .layers import Layer
 
+from ctypes import c_int64
+
 from fnvhash import fnv1a_64
+
+def fnv_hash(data: bytes) -> int:
+    return c_int64(fnv1a_64(data)).value
 
 class Variable(ABC):
 
@@ -44,7 +49,7 @@ class PlainStringVariable(Variable):
 
         # build StringHash [(hash, cpos)]
         print('Building StringHash')
-        string_pairs = [(fnv1a_64(s), i) for i, s in enumerate(strings)]
+        string_pairs = [(fnv_hash(s), i) for i, s in enumerate(strings)]
 
         if compressed:
             string_hash = IndexCompressed(string_pairs, "StringHash", base_layer.n)
@@ -76,7 +81,7 @@ class IndexedStringVariable(Variable):
         lexicon = StringVector(lex.keys(), "Lexicon", lsize)
 
         # lexicon hashes
-        hashes = [(fnv1a_64(l), i) for l, i in lex.items()]
+        hashes = [(fnv_hash(l), i) for l, i in lex.items()]
 
         lexindex = Index(hashes, "LexHash", lsize)
 
@@ -154,7 +159,7 @@ class SetVariable(Variable):
         lexicon = StringVector(types.keys(), "Lexicon", v)
         
         # sort index of types
-        types_hash = [(fnv1a_64(t), i) for t, i in types.items()]
+        types_hash = [(fnv_hash(t), i) for t, i in types.items()]
 
         lexhash = Index(types_hash, "LexHash", len(types_hash))
 
