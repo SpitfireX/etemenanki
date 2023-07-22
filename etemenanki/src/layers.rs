@@ -14,6 +14,12 @@ use crate::{components, variables};
 #[derive(Debug)]
 pub struct LayerData<'map, T>(T, LayerVariables<'map>);
 
+impl<'map, T> LayerData<'map, T> {
+    pub fn variable_by_name<S: AsRef<str>>(&self, name: S) -> Option<&variables::Variable> {
+        self.1.variables.get(name.as_ref())
+    }
+}
+
 impl<'map, T> ops::Deref for LayerData<'map, T> {
     type Target = T;
 
@@ -364,7 +370,7 @@ impl<'map> Iterator for SegmentationLayerIterator<'map> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.ranges.len() {
-            let row = self.ranges.get_row(self.index);
+            let row = self.ranges.get_row_unchecked(self.index);
             self.index += 1;
             Some((row[0] as usize, row[1] as usize))
         } else {

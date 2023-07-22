@@ -205,7 +205,15 @@ impl<'map> VectorReader<'map> {
         }
     }
 
-    pub fn get(&mut self, index: usize) -> i64 {
+    pub fn get(&mut self, index: usize) -> Option<i64> {
+        if index < self.len() * self.width() {
+            Some(self.get_unchecked(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_unchecked(&mut self, index: usize) -> i64 {
         match self.vector {
             Vector::Uncompressed { length: _, width: _, data } => {
                 data[index]
@@ -215,12 +223,20 @@ impl<'map> VectorReader<'map> {
             Vector::Delta { length: _, width, .. } => {
                 let ri = index / width;
                 let ci = index % width;
-                self.get_row(ri)[ci]
+                self.get_row_unchecked(ri)[ci]
             }
         }
     }
 
-    pub fn get_row(&mut self, index: usize) -> &[i64] {
+    pub fn get_row(&mut self, index: usize) -> Option<&[i64]> {
+        if index < self.len() {
+            Some(self.get_row_unchecked(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_row_unchecked(&mut self, index: usize) -> &[i64] {
         match self.vector {
             Vector::Uncompressed { length: _, width, data } => {
                 &data[index..index+width]
@@ -274,7 +290,7 @@ impl<'map> Iterator for VectorReader<'map> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.last_row < self.len() {
-            let row = self.get_row(self.last_row).to_owned();
+            let row = self.get_row_unchecked(self.last_row).to_owned();
             self.last_row += 1;
             Some(row)
         } else {

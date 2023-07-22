@@ -84,15 +84,35 @@ fn main() -> Result<()> {
                         let title = &text["sattr_text_title"].as_plain_string().unwrap()[tid];
                         let author = &text["sattr_text_author"].as_indexed_string().unwrap()[tid];
                         let url = &text["sattr_text_url"].as_plain_string().unwrap()[tid];
-                        println!("text {} with title \"{}\" by {} at url {}\n", tid, title, author, url);
+                        let year = &text["sattr_text_year"]
+                            .as_integer()
+                            .unwrap()
+                            .get_unchecked(tid);
+                        println!(
+                            "text {} with title \"{}\" from {} by {} at url {}\n",
+                            tid, title, year, author, url
+                        );
                     }
                 }
 
-                println!("{} => {}", test, usage.into_iter().intersperse(", ").collect::<String>());
+                println!(
+                    "{} => {}",
+                    test,
+                    usage.into_iter().intersperse(", ").collect::<String>()
+                );
             }
             None => println!("{} not in index", test),
         }
     }
+
+    let all2016: Vec<_> = text.variable_by_name("sattr_text_year")
+        .unwrap()
+        .as_integer()
+        .unwrap()
+        .get_all(2016)
+        .collect();
+
+    println!("\nthere are {} texts from 2016", all2016.len());
 
     // let texts = datastore["sattr_text"].as_segmentation().unwrap();
 

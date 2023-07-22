@@ -4,7 +4,7 @@ use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use uuid::Uuid;
 
-use crate::components;
+use crate::components::{self, VectorReader};
 use crate::container::{self, Container};
 use crate::macros::{check_and_return_component, get_container_base};
 
@@ -205,7 +205,7 @@ impl<'map> Iterator for IndexedStringIterator<'map> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.end {
-            let lexid = self.id_stream_reader.get(self.index) as usize;
+            let lexid = self.id_stream_reader.get_unchecked(self.index) as usize;
             self.index += 1;
 
             Some(&self.var.lexicon[lexid])
@@ -334,8 +334,8 @@ impl<'map> Iterator for PlainStringIterator<'map> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.len {
-            let start = self.offset_reader.get(self.index) as usize;
-            let end = self.offset_reader.get(self.index + 1) as usize;
+            let start = self.offset_reader.get_unchecked(self.index) as usize;
+            let end = self.offset_reader.get_unchecked(self.index + 1) as usize;
             self.index += 1;
 
             Some(unsafe { std::str::from_utf8_unchecked(&self.var.string_data[start..end - 1]) })
@@ -370,6 +370,26 @@ pub struct IntegerVariable<'map> {
 }
 
 impl<'map> IntegerVariable<'map> {
+    pub fn get(&self, index: usize) -> Option<i64> {
+        if index < self.len() {
+            Some(self.get_unchecked(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_all(&self, value: i64) -> components::IndexIterator {
+        self.int_sort.get_all(value)
+    }
+
+    pub fn get_unchecked(&self, index: usize) -> i64 {
+        self.int_stream.get_unchecked(index)
+    }
+
+    pub fn iter(&self) -> IntegerIterator {
+        self.into_iter()
+    }
+
     pub fn len(&self) -> usize {
         self.header.dim1
     }
@@ -416,6 +436,37 @@ impl<'map> TryFrom<Container<'map>> for IntegerVariable<'map> {
             }
 
             _ => Err(Self::Error::WrongContainerType),
+        }
+    }
+}
+
+pub struct IntegerIterator<'map> {
+    reader: VectorReader<'map>,
+    index: usize,
+}
+
+impl<'map> Iterator for IntegerIterator<'map> {
+    type Item = i64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.reader.len() {
+            let value = self.reader.get_unchecked(self.index);
+            self.index += 1;
+            Some(value)
+        } else {
+            None
+        }
+    }
+}
+
+impl<'map> IntoIterator for &'map IntegerVariable<'map> {
+    type Item = i64;
+    type IntoIter = IntegerIterator<'map>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntegerIterator {
+            reader: self.int_stream.into_iter(),
+            index: 0,
         }
     }
 }
