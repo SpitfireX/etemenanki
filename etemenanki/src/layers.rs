@@ -71,11 +71,11 @@ impl<'map> Layer<'map> {
         }
     }
 
-    pub fn init_primary(layer: PrimaryLayer<'map>) -> Self {
+    pub fn new_primary(layer: PrimaryLayer<'map>) -> Self {
         Self::Primary(LayerData(layer, LayerVariables::default()))
     }
 
-    pub fn init_segmentation(layer: SegmentationLayer<'map>) -> Self {
+    pub fn new_segmentation(layer: SegmentationLayer<'map>) -> Self {
         Self::Segmentation(LayerData(layer, LayerVariables::default()))
     }
 

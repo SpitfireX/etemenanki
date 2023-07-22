@@ -89,7 +89,7 @@ impl<'map> Datastore<'map> {
         for (uuid, container) in players {
             let name = container.name.clone();
             let primarylayer = container.try_into()?;
-            let layer = layers::Layer::init_primary(primarylayer);
+            let layer = layers::Layer::new_primary(primarylayer);
 
             layers_by_uuid.insert(uuid, layer);
             uuids_by_name.insert(name, uuid);
@@ -113,7 +113,7 @@ impl<'map> Datastore<'map> {
                     ));
                 }
 
-                let layer = layers::Layer::init_segmentation(seglayer);
+                let layer = layers::Layer::new_segmentation(seglayer);
 
                 temp_by_uuid.push((uuid, layer));
                 uuids_by_name.insert(name, uuid);
