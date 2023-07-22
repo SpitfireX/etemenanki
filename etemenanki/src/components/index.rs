@@ -137,22 +137,10 @@ impl<'map> IndexIterator<'map> {
 
                 // read keys vector
                 let klen = min(r - (bi * 16), 16); // number of keys can be <16
-                let mut keys = Vec::with_capacity(klen);
-
-                let (k, readlen) = ziggurat_varint::decode(&data[offset..]);
-                keys.push(k);
+                let (keys, readlen) = ziggurat_varint::decode_delta_array::<16>(&data[offset..]);
                 offset += readlen;
 
-                // key vector always has len 16, is padded with -1
-                for i in 1..16 {
-                    let (k, readlen) = ziggurat_varint::decode(&data[offset..]);
-                    if i < klen {
-                        keys.push(k + keys[i-1]);
-                    }
-                    offset += readlen;
-                }
-
-                match keys.binary_search(&key) {
+                match keys[..klen].binary_search(&key) {
                     // key not in block
                     Err(_) => Self::None,
 
