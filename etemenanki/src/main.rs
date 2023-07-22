@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 use std::io::Result;
+use std::process::exit;
 
 use etemenanki::components::FnvHash;
 use etemenanki::Datastore;
@@ -26,12 +27,15 @@ fn main() -> Result<()> {
         .as_indexed_string()
         .unwrap();
 
-    let s = datastore["sattr_s"]
-        .as_segmentation()
-        .unwrap();
+    let s = datastore["sattr_s"].as_segmentation().unwrap();
+    let text = datastore["sattr_text"].as_segmentation().unwrap();
 
     // for (token, pos) in std::iter::zip(strings.iter(), pos.iter()){
     //     println!("{}\t{}", token, pos);
+    // }
+
+    // for (start, end) in s.iter() {
+    //     println!("{}\t{}", start, end);
     // }
 
     let tests = [
@@ -56,18 +60,31 @@ fn main() -> Result<()> {
 
                 let mut usage = HashSet::new();
                 for p in positions {
-                    let nextpos = pos.get(p+1);
+                    let nextpos = pos.get(p + 1);
                     if posses.contains(nextpos) {
-                        usage.insert(strings.get(p+1));
-                    
-                        if let None = s.find_containing(p) {
-                            println!("None position {}", p);
-                        }
+                        usage.insert(strings.get(p + 1));
 
-                        // let (sstart, send) = s.get_unchecked(sid);
+                        let sid = s.find_containing(p).unwrap();
+                        let (start, end) = s.get_unchecked(sid);
 
-                        // let surface: Vec<_> = strings.get_range(sstart, send).collect();
-                        // println!("{}", surface.join(" "));
+                        let surface: String = strings
+                            .get_range(start, end)
+                            .map(|str| {
+                                if str == test {
+                                    format!("|{}|", str)
+                                } else {
+                                    str.to_owned()
+                                }
+                            })
+                            .intersperse(" ".to_owned())
+                            .collect();
+                        println!("{}", surface);
+
+                        let tid = text.find_containing(p).unwrap();
+                        let title = &datastore["sattr_text"]["sattr_text_title"].as_plain_string().unwrap()[tid];
+                        let author = &datastore["sattr_text"]["sattr_text_author"].as_indexed_string().unwrap().get(tid);
+                        let url = &datastore["sattr_text"]["sattr_text_url"].as_plain_string().unwrap()[tid];
+                        println!("text {} with title \"{}\" by {} at url {}\n", tid, title, author, url);
                     }
                 }
 
@@ -94,8 +111,6 @@ fn main() -> Result<()> {
     // println!("author: {}", &datastore["sattr_text"]["sattr_text_author"].as_indexed_string().unwrap().get(ti));
 
     // println!("{} in range {:?}", 666, texts.find_containing(666));
-
-
 
     // let matches: Vec<_> = pos.lexicon().all_starting_with("V").collect_strs();
     // println!("All tags starting with V: {:?}", matches);

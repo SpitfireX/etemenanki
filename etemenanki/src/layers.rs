@@ -207,14 +207,17 @@ impl<'map> SegmentationLayer<'map> {
     pub fn find_containing(&self, position: usize) -> Option<usize> {
         let i = match self.start_sort {
             components::Index::Compressed { length: _, r, sync, data } => {
+
                 let bi = match sync.binary_search_by_key(&(position as i64), |(s, _)| *s) {
                     Ok(i) => i,
                     Err(0) => 0,
                     Err(i) => i-1,
                 };
+
                 if bi < sync.len() {
                     let mut offset = sync[bi].1 - (8 + (sync.len()*16));
 
+                    // read o
                     let (_, readlen) = ziggurat_varint::decode(&data[offset..]);
                     offset += readlen;
 
@@ -235,30 +238,43 @@ impl<'map> SegmentationLayer<'map> {
                         offset += readlen;
                     }
 
-                    match keys[..klen].binary_search(&(position as i64)) {
-                        Ok(i) => bi*16 + i,
-                        Err(0) => bi*16,
-                        Err(i) => bi*16 + i-1,
+                    let vi = match keys[..klen].binary_search(&(position as i64)) {
+                        Ok(i) => i,
+                        Err(0) => 0,
+                        Err(i) => i-1,
+                    };
+
+                    let (mut value, readlen) = ziggurat_varint::decode(&data[offset..]);
+                    offset += readlen;
+
+                    for _ in 0..vi {
+                        let (tmp, readlen) = ziggurat_varint::decode(&data[offset..]);
+                        value += tmp;
+                        offset += readlen;
                     }
+
+                    value
                 } else {
                     return None
                 }
             }
             
             components::Index::Uncompressed { length: _, pairs } => {
-                match pairs.binary_search_by_key(&(position as i64), |(s, _)| *s) {
+                let i = match pairs.binary_search_by_key(&(position as i64), |(s, _)| *s) {
                     Ok(i) => i,
                     Err(0) => 0,
                     Err(i) => i-1,
-                }
+                };
+
+                pairs[i].1
             }
         };
 
-        if i < self.len() {
-            let (start, end) = self.get_unchecked(i);
+        if (i as usize) < self.len() {
+            let (start, end) = self.get_unchecked(i as usize);
 
-            if position >= start && position < end {
-                Some(i)
+            if position >= start && end > position {
+                Some(i as usize)
             } else {
                 None
             }
