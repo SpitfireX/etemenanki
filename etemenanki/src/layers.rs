@@ -280,7 +280,7 @@ impl<'map> SegmentationLayer<'map> {
     }
 
     pub fn get_unchecked(&self, index: usize) -> (usize, usize) {
-        let row = self.range_stream.get_row(index);
+        let row = self.range_stream.get_row_unchecked(index);
         (row[0] as usize, row[1] as usize)
     }
 
@@ -323,13 +323,19 @@ impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {
 
                 let range_stream =
                     check_and_return_component!(components, "RangeStream", Vector)?;
-                if range_stream.width() != 2 {
+                if range_stream.width() != 2 || range_stream.len() != header.dim1 {
                     return Err(Self::Error::WrongComponentDimensions("RangeStream"));
                 }
 
                 let start_sort = check_and_return_component!(components, "StartSort", Index)?;
+                if start_sort.len() != header.dim1 {
+                    return Err(Self::Error::WrongComponentDimensions("StartSort"));
+                }
 
                 let end_sort = check_and_return_component!(components, "EndSort", Index)?;
+                if end_sort.len() != header.dim1 {
+                    return Err(Self::Error::WrongComponentDimensions("EndSort"));
+                }
 
                 Ok(Self {
                     base,

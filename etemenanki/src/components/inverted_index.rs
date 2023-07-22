@@ -17,19 +17,17 @@ impl<'map> InvertedIndex<'map> {
     }
 
     /// Returns the frequency of type `i`
-    #[inline]
     pub fn frequency(&self, i: usize) -> usize {
         self.typeinfo[i].0 as usize
     }
 
-    #[inline]
+    /// Returns the number of types in this index
     pub fn n_types(&self) -> usize {
         self.types
     }
 
     /// Returns the start offset of the postings list for type `i`
     /// within the `data` component
-    #[inline]
     pub fn offset(&self, i: usize) -> usize {
         self.typeinfo[i].1 as usize - (self.n_types() * 16)
     }

@@ -59,28 +59,55 @@ impl<'map> Vector<'map> {
 
     /// Gets the value with `index` < `self.len()`*`self.width()`.
     ///
-    /// This always triggers a full block decode on compressed Vectors
-    /// for efficient access use `VectorReader`.
-    pub fn get(&self, index: usize) -> i64 {
+    /// This always triggers a full block decode on compressed Vectors,
+    /// for efficient sequential access use `VectorReader`.
+    pub fn get(&self, index: usize) -> Option<i64> {
+        if index < self.len() * self.width() {
+            Some(self.get_unchecked(index))
+        } else {
+            None
+        }
+    }
+
+    /// Gets the value with `index` < `self.len()`*`self.width()`.
+    /// Panics if index is out of bounds.
+    ///
+    /// This always triggers a full block decode on compressed Vectors,
+    /// for efficient sequential access use `VectorReader`.
+    pub fn get_unchecked(&self, index: usize) -> i64 {
         match *self {
-                Self::Uncompressed { length: _, width: _, data } => {
-                    data[index]
-                }
-    
-                Self::Compressed { length: _, width, n_blocks: _, sync: _, data: _ } |
-                Self::Delta { length: _, width, n_blocks: _, sync: _, data: _ } => {
-                    let ri = index / width;
-                    let ci = index % width;
-                    self.get_row(ri)[ci]
-                }
+            Self::Uncompressed { length: _, width: _, data } => {
+                data[index]
+            }
+
+            Self::Compressed { length: _, width, n_blocks: _, sync: _, data: _ } |
+            Self::Delta { length: _, width, n_blocks: _, sync: _, data: _ } => {
+                let ri = index / width;
+                let ci = index % width;
+                self.get_row_unchecked(ri)[ci]
             }
         }
+    }
+
 
     /// Gets the column with `index` < `self.len()`.
     ///
-    /// This always triggers a full block decode on compressed Vectors
-    /// for efficient access use `VectorReader`.
-    pub fn get_row(&self, index: usize) -> VecSlice {
+    /// This always triggers a full block decode on compressed Vectors,
+    /// for efficient sequential access use `VectorReader`.
+    pub fn get_row(&self, index: usize) -> Option<VecSlice> {
+        if index < self.len() {
+            Some(self.get_row_unchecked(index))
+        } else {
+            None
+        }
+    }
+
+    /// Gets the column with `index` < `self.len()`.
+    /// Panics if index is out of bounds.
+    ///
+    /// This always triggers a full block decode on compressed Vectors,
+    /// for efficient sequential access use `VectorReader`.
+    pub fn get_row_unchecked(&self, index: usize) -> VecSlice {
         match *self {
                 Self::Uncompressed { length: _, width, data } => {
                     VecSlice::Borrowed(&data[index..index+width])
@@ -89,9 +116,6 @@ impl<'map> Vector<'map> {
                 Self::Compressed { length: _, width, n_blocks, sync, data } |
                 Self::Delta { length: _, width, n_blocks, sync, data } => {
                     let bi = index/16;
-                    if bi > n_blocks {
-                        panic!("block index out of range");
-                    }
     
                     // offset in sync vector is from start of the component, so we need
                     // to compensate for that by subtracting the len of the sync vector

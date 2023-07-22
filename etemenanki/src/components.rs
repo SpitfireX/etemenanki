@@ -293,4 +293,3 @@ impl<'map> Set<'map> {
         self.length
     }
 }
-

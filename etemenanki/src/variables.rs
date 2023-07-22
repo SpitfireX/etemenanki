@@ -63,13 +63,29 @@ pub struct IndexedStringVariable<'map> {
 }
 
 impl<'map> IndexedStringVariable<'map> {
-    pub fn get(&self, index: usize) -> &str {
-        let ti = self.lex_id_stream.get(index);
+    pub fn get(&self, index: usize) -> Option<&str> {
+        if index < self.lex_id_stream.len() {
+            Some(self.get_unchecked(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_unchecked(&self, index: usize) -> &str {
+        let ti = self.lex_id_stream.get_unchecked(index);
         &self.lexicon[ti as usize]
     }
 
-    pub fn get_id(&self, index: usize) -> usize {
-        self.lex_id_stream.get(index) as usize
+    pub fn get_id(&self, index: usize) -> Option<usize> {
+        if index < self.lex_id_stream.len() {
+            Some(self.get_id_unchecked(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_id_unchecked(&self, index: usize) -> usize {
+        self.lex_id_stream.get_unchecked(index) as usize
     }
 
     pub fn get_range(&self, start: usize, end: usize) -> IndexedStringIterator {
@@ -107,6 +123,14 @@ impl<'map> IndexedStringVariable<'map> {
 
     pub fn n_types(&self) -> usize {
         self.header.dim2
+    }
+}
+
+impl<'map> ops::Index<usize> for IndexedStringVariable<'map> {
+    type Output = str;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        self.get_unchecked(index)
     }
 }
 
@@ -217,6 +241,21 @@ pub struct PlainStringVariable<'map> {
 }
 
 impl<'map> PlainStringVariable<'map> {
+    pub fn get(&self, index: usize) -> Option<&str> {
+        if index+1 < self.offset_stream.len() {
+            Some(self.get_unchecked(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_unchecked(&self, index: usize) -> &str {
+        let start = self.offset_stream.get_unchecked(index) as usize;
+        let end = self.offset_stream.get_unchecked(index + 1) as usize;
+
+        unsafe { std::str::from_utf8_unchecked(&self.string_data[start..end - 1]) }
+    }
+
     pub fn iter(&self) -> PlainStringIterator {
         self.into_iter()
     }
@@ -230,10 +269,7 @@ impl<'map> ops::Index<usize> for PlainStringVariable<'map> {
     type Output = str;
 
     fn index(&self, index: usize) -> &Self::Output {
-        let start = self.offset_stream.get(index) as usize;
-        let end = self.offset_stream.get(index + 1) as usize;
-
-        unsafe { std::str::from_utf8_unchecked(&self.string_data[start..end - 1]) }
+        self.get_unchecked(index)
     }
 }
 

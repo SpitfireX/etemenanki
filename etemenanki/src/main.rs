@@ -46,6 +46,7 @@ fn main() -> Result<()> {
         "Rahm",
         "Sahne",
         "Schlagsahne",
+        "Tofu",
     ];
 
     let posses: HashSet<_> = pos.lexicon().all_starting_with("VVI").collect_strs();
@@ -59,9 +60,9 @@ fn main() -> Result<()> {
 
                 let mut usage = HashSet::new();
                 for p in positions {
-                    let nextpos = pos.get(p + 1);
+                    let nextpos = pos.get_unchecked(p + 1);
                     if posses.contains(nextpos) {
-                        usage.insert(strings.get(p + 1));
+                        usage.insert(strings.get_unchecked(p + 1));
 
                         let sid = s.find_containing(p).unwrap();
                         let (start, end) = s.get_unchecked(sid);
@@ -80,18 +81,14 @@ fn main() -> Result<()> {
                         println!("{}", surface);
 
                         let tid = text.find_containing(p).unwrap();
-                        let title = &datastore["sattr_text"]["sattr_text_title"].as_plain_string().unwrap()[tid];
-                        let author = &datastore["sattr_text"]["sattr_text_author"].as_indexed_string().unwrap().get(tid);
-                        let url = &datastore["sattr_text"]["sattr_text_url"].as_plain_string().unwrap()[tid];
+                        let title = &text["sattr_text_title"].as_plain_string().unwrap()[tid];
+                        let author = &text["sattr_text_author"].as_indexed_string().unwrap()[tid];
+                        let url = &text["sattr_text_url"].as_plain_string().unwrap()[tid];
                         println!("text {} with title \"{}\" by {} at url {}\n", tid, title, author, url);
                     }
                 }
 
-                // print!("{} => ", test);
-                // for v in usage {
-                //     print!("{}, ", v)
-                // }
-                // println!();
+                println!("{} => {}", test, usage.into_iter().intersperse(", ").collect::<String>());
             }
             None => println!("{} not in index", test),
         }
