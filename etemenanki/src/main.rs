@@ -2,7 +2,6 @@
 
 use std::collections::HashSet;
 use std::io::Result;
-use std::process::exit;
 
 use etemenanki::components::FnvHash;
 use etemenanki::Datastore;
