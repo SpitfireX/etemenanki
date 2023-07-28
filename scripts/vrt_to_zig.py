@@ -164,6 +164,11 @@ for name in s_attrs:
         for annotation, type in s_annos[name]:
             print(f"\t\t'{annotation}' of type '{type}'")
 
+if not p_attrs and not s_attrs and not s_annos:
+    print("\tNo attributes for encoding")
+    print("Hint: you should probably specify some with -p, -s, or -a (see --help)")
+    exit()
+
 clen = cpos
 
 # double check dimensions
