@@ -23,8 +23,7 @@ parser.add_argument("-p", action="append", metavar="p_attribute_name", default=[
                     help="""Declares and names a p-attribute. Order of declaration must correspond to order of columns in input.
                     P-attributes are encoded as variables on the primary layer of the corpus.
                     Variable type can be specified with a colon after the name, i.e. 'pos:indexed'.
-                    Valid variable types are: indexed, plain. Per default all p-attributes in the input are encoded with type
-                    'indexed' and a simple numeric name, e.g. 'p1'.""")
+                    Valid variable types are: indexed, plain.""")
 parser.add_argument("-s", action="append", metavar="s_attribute_name", default=[],
                     help="""Declares an s-attribute. The attribute name must correspond to the attribute's XML tag in the input.
                     S-attributes are encoded as segmentation layers and thus only store the start and end positions of the spans
@@ -150,7 +149,7 @@ with gzip.open(args.input, mode = "rt") if args.input.suffix == ".gz" else args.
 print(f"\t found {len(spans.keys())} s-attrs: {tuple(spans.keys())}")
 
 # padding p_attrs with default values (numeric name and type indexed)
-p_attrs.extend([(str(n+1), "indexed") for n in range(len(corpus))][len(p_attrs):])
+# p_attrs.extend([(str(n+1), "indexed") for n in range(len(corpus))][len(p_attrs):])
 
 print("Encoding the following attributes:")
 for name, type in p_attrs:

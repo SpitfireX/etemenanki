@@ -102,16 +102,18 @@ pub fn decode_delta_array<const N: usize>(bytes: &[u8]) -> ([i64; N], usize) {
     let mut offset = 0;
     let mut output = [0; N];
 
-    // first value
-    let (int, readlen) = decode(&bytes[offset..]);
-    output[0] = int;
-    offset += readlen;
-
-    // rest
-    for i in 1..N {
+    if N > 0 {
+        // first value
         let (int, readlen) = decode(&bytes[offset..]);
-        output[i] = output[i-1] + int;
+        output[0] = int;
         offset += readlen;
+
+        // rest
+        for i in 1..N {
+            let (int, readlen) = decode(&bytes[offset..]);
+            output[i] = output[i-1] + int;
+            offset += readlen;
+        }
     }
 
     (output, offset)
@@ -131,17 +133,19 @@ pub fn decode_fixed_block(bytes: &[u8], len: usize) -> (Vec<i64>, usize) {
 pub fn decode_fixed_delta_block(bytes: &[u8], len: usize) -> (Vec<i64>, usize) {
     let mut offset = 0;
     let mut output = Vec::with_capacity(len);
-    
-    // first value
-    let (int, readlen) = decode(&bytes[offset..]);
-    output.push(int);
-    offset += readlen;
 
-    // rest
-    for i in 1..len {
+    if len > 0 {
+        // first value
         let (int, readlen) = decode(&bytes[offset..]);
-        output.push(output[i-1] + int);
+        output.push(int);
         offset += readlen;
+
+        // rest
+        for i in 1..len {
+            let (int, readlen) = decode(&bytes[offset..]);
+            output.push(output[i-1] + int);
+            offset += readlen;
+        }
     }
 
     (output, offset)

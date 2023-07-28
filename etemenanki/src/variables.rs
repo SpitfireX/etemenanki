@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ops;
 
 use enum_as_inner::EnumAsInner;
@@ -242,7 +243,7 @@ pub struct PlainStringVariable<'map> {
 
 impl<'map> PlainStringVariable<'map> {
     pub fn get(&self, index: usize) -> Option<&str> {
-        if index+1 < self.offset_stream.len() {
+        if index + 1 < self.offset_stream.len() {
             Some(self.get_unchecked(index))
         } else {
             None
@@ -485,6 +486,23 @@ pub struct SetVariable<'map> {
 }
 
 impl<'map> SetVariable<'map> {
+    pub fn get(&self, index: usize) -> Option<HashSet<&str>> {
+        if index < self.len() {
+            Some(self.get_unchecked(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_unchecked(&self, index: usize) -> HashSet<&str> {
+        let tids = self.id_set_stream.get_unchecked(index);
+
+        tids.iter()
+            .map(|id| *id as usize)
+            .map(|id| self.lexicon.get_unchecked(id))
+            .collect::<HashSet<&str>>()
+    }
+
     pub fn len(&self) -> usize {
         self.header.dim1
     }

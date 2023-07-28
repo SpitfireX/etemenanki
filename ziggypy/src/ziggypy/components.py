@@ -330,11 +330,11 @@ class Set(Component):
                 delta = [set[0]] if len(set) > 0 else []
                 for i in range(1, len(set)):
                     delta.append(set[i] - set[i-1])
-                
+
                 encoded = encode_varint_block(delta)
                 
                 offsets.append(itemoffset)
-                lengths.append(len(encoded))
+                lengths.append(len(set))
                 encoded_items += encoded
 
                 itemoffset += len(encoded)
@@ -358,13 +358,14 @@ class Set(Component):
 
             blocks.append(block)
         
-        # synchronisation vector with offsets for each block
-        sync = [0]
+        # synchronisation vector with offsets for each block relative to start of component
+        synclen = len(blocks) * 8
+        sync = [synclen]
         for i, b in enumerate(blocks[:-1], start=1):
             sync.append(sync[i-1] + len(b))
 
         self.sync = sync
-        self.blocks = blocks        
+        self.blocks = blocks
 
     
     def bytelen(self):

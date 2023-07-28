@@ -88,9 +88,11 @@ fn main() -> Result<()> {
                             .as_integer()
                             .unwrap()
                             .get_unchecked(tid);
+                        let keywords = &text["sattr_text_keywords"].as_set().unwrap().get_unchecked(tid);
+                        let ingredients = &text["sattr_text_ingredients"].as_set().unwrap().get_unchecked(tid);
                         println!(
-                            "text {} with title \"{}\" from {} by {} at url {}\n",
-                            tid, title, year, author, url
+                            "text {} with title \"{}\" from {} by {} at url {} with keywords {:?} using ingredients {:?}\n",
+                            tid, title, year, author, url, keywords, ingredients
                         );
                     }
                 }

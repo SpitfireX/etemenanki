@@ -1,10 +1,12 @@
 pub mod index;
 pub mod inverted_index;
+pub mod set;
 pub mod string_vector;
 pub mod vector;
 
 pub use index::*;
 pub use inverted_index::*;
+pub use set::*;
 pub use string_vector::*;
 pub use vector::*;
 
@@ -270,26 +272,5 @@ impl<'map> ops::Deref for StringList<'map> {
 
     fn deref(&self) -> &Self::Target {
         &self.data
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Set<'map> {
-    length: usize,
-    sync: &'map [i64],
-    data: &'map [u8],
-}
-
-impl<'map> Set<'map> {
-    pub fn from_parts(n: usize, sync: &'map [i64], data: &'map [u8]) -> Self {
-        Self {
-            length: n,
-            sync,
-            data,
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.length
     }
 }
