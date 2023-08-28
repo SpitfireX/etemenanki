@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-#![feature(hash_drain_filter)]
+#![feature(hash_extract_if)]
 #![feature(pattern)]
 
 use std::{
@@ -84,7 +84,7 @@ impl<'map> Datastore<'map> {
         let mut uuids_by_name = HashMap::new();
 
         let players = containers
-            .drain_filter(|_, c| c.header.container_type == container::Type::PrimaryLayer);
+            .extract_if(|_, c| c.header.container_type == container::Type::PrimaryLayer);
 
         for (uuid, container) in players {
             let name = container.name.clone();
@@ -100,7 +100,7 @@ impl<'map> Datastore<'map> {
             .any(|c| c.header.container_type == container::Type::SegmentationLayer)
         {
             let seglayers = containers
-                .drain_filter(|_, c| c.header.container_type == container::Type::SegmentationLayer);
+                .extract_if(|_, c| c.header.container_type == container::Type::SegmentationLayer);
 
             let mut temp_by_uuid = Vec::new();
             for (uuid, container) in seglayers {
@@ -122,7 +122,7 @@ impl<'map> Datastore<'map> {
             layers_by_uuid.extend(temp_by_uuid);
         }
 
-        let vars = containers.drain_filter(|_, c| c.header.raw_class == 'V');
+        let vars = containers.extract_if(|_, c| c.header.raw_class == 'V');
 
         for (_, container) in vars {
             let base = layers_by_uuid
