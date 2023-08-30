@@ -117,16 +117,17 @@ with gzip.open(args.input, mode = "rt") if args.input.suffix == ".gz" else args.
                 pcount = len(line.split())
                 break
     
-    print(f"\t found {pcount} p-attrs")
-    corpus = [[] for _ in range(pcount)]
+    print(f"\t found {pcount} p-attrs in input")
+    assert len(p_attrs) <= pcount, "Not enough columns for specified p-attrs in input"
+    corpus = [[] for _ in range(len(p_attrs))]
     f.seek(0) # reset file to beginning
 
     for line in f:
         # p attrs
         if not line.startswith("<"):
             if line.strip():
-                pattrs = line.strip().split(maxsplit = pcount-1)
-                for i, attr in enumerate(pattrs):
+                pattrs = line.strip().split("\t", maxsplit = pcount-1)
+                for i, attr in enumerate(pattrs[:len(p_attrs)]):
                     corpus[i].append((attr).encode("utf-8"))
                 cpos += 1
 
