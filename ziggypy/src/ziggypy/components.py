@@ -157,7 +157,7 @@ class VectorComp(Component):
 
             blocks.append(b''.join(cols))
 
-        assert len(blocks) == m
+        assert len(blocks) == m, f"there should be m = {m} blocks but {len(blocks)} got encoded"
 
         # Sync offsets
         sync = [comp_start]
@@ -262,6 +262,12 @@ class StringList(Component):
             (n, 0)
         )
 
+    def strings(self):
+        start = 0
+        for i, char in enumerate(self.encoded):
+            if char == 0:
+                yield bytes(self.encoded[start:i])
+                start = i+1
 
     def bytelen(self):
         return len(self.encoded)

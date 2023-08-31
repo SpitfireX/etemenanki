@@ -1,5 +1,6 @@
 from abc import ABC
 from io import RawIOBase
+from typing import TextIO
 from itertools import chain, accumulate
 from uuid import UUID, uuid4
 from collections import Counter
@@ -39,7 +40,7 @@ class PlainStringVariable(Variable):
 
         # build OffsetStream [offset_to_next_string]
         print('Building OffsetStream')
-        offset_stream = list(accumulate(chain([0], strings), lambda x, y: x + len(y) + 1))
+        offset_stream = list(accumulate(chain([0], string_data.strings()), lambda x, y: x + len(y) + 1))
 
         if compressed:
             offset_stream = VectorDelta(offset_stream, 'OffsetStream', len(offset_stream))
@@ -49,7 +50,7 @@ class PlainStringVariable(Variable):
 
         # build StringHash [(hash, cpos)]
         print('Building StringHash')
-        string_pairs = [(fnv_hash(s), i) for i, s in enumerate(strings)]
+        string_pairs = [(fnv_hash(s), i) for i, s in enumerate(string_data.strings())]
 
         if compressed:
             string_hash = IndexCompressed(string_pairs, "StringHash", base_layer.n)
@@ -66,7 +67,7 @@ class PlainStringVariable(Variable):
 
 class IndexedStringVariable(Variable):
 
-    def __init__(self, base_layer: Layer, strings: Iterable[bytes], uuid: Optional[UUID] = None, compressed: bool = True):
+    def __init__(self, base_layer: Layer, strings: list[bytes], uuid: Optional[UUID] = None, compressed: bool = True):
         
         super().__init__(base_layer, uuid if uuid else uuid4())
 
@@ -93,6 +94,59 @@ class IndexedStringVariable(Variable):
             lexidstream = Vector(lexids, "LexIDStream", len(lexids))
 
         # inverted lookup index associating each lexicon ID with its positionso of occurence
+        invidx = InvertedIndex(list(lex), lexids, "LexIDIndex", lsize, 0)
+
+        p_vec = Vector(self.base_layer.partition, "Partition", len(self.base_layer.partition))
+
+        self.container = Container(
+            (lexicon, lexindex, p_vec, lexidstream, invidx),
+            'ZVx',
+            (self.base_layer.n, lsize),
+            self.uuid,
+            (base_layer.uuid, None)
+        )
+
+
+class FileIndexedStringVariable(Variable):
+    """Hacky copy pasted code to allow indexing without keeping all the tokens in RAM.
+    All of this needs to be thrown away and implemented proprely at some time actually using the proper
+    Ziggurat data structures."""
+
+    def __init__(self, base_layer: Layer, file: TextIO, uuid: Optional[UUID] = None, compressed: bool = True):
+        
+        super().__init__(base_layer, uuid if uuid else uuid4())
+
+        size = base_layer.n
+
+        # lexicon of unique strings, sorted by total occurence
+        strings = (line.strip().encode("utf-8") for line in file)
+        lex = Counter(strings)
+        lex = {x[0]: i for i, x in enumerate(lex.most_common())}
+
+        lsize = len(lex)
+        print("lexicon size:", lsize)
+
+        lexicon = StringVector(lex.keys(), "Lexicon", lsize)
+
+        # lexicon hashes
+        hashes = [(fnv_hash(l), i) for l, i in lex.items()]
+
+        lexindex = Index(hashes, "LexHash", lsize)
+
+        file.seek(0)
+        strings = (line.strip().encode("utf-8") for line in file)
+        lexids = [(lex[s],) for s in strings]
+
+        if compressed:
+            lexidstream = VectorComp(lexids, "LexIDStream", size)
+        else:
+            lexidstream = Vector(lexids, "LexIDStream", size)
+
+        # inverted lookup index associating each lexicon ID with its positions of occurence
+        file.seek(0)
+        strings = (line.strip().encode("utf-8") for line in file)
+        lexids = [(lex[s],) for s in strings]
+        
         invidx = InvertedIndex(list(lex), lexids, "LexIDIndex", lsize, 0)
 
         p_vec = Vector(self.base_layer.partition, "Partition", len(self.base_layer.partition))

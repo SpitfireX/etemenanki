@@ -3,6 +3,7 @@
 import argparse
 import xml.parsers.expat as expat
 import gzip
+import tempfile
 
 from ziggypy.components import *
 from ziggypy.layers import *
@@ -48,7 +49,9 @@ for p in args.p:
     else:
         name, type = p
     assert type in ("indexed", "plain"), f"Invalid variable type '{type}' for p-attribute '{name}'"
-    p_attrs.append((name, type))
+    # p-attr tokens get saved to a temporary file to avoid loading them into RAM
+    temp = tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", prefix=name+"_", suffix=".zigtmp")
+    p_attrs.append((name, type, temp))
 
 
 s_attrs = args.s
@@ -86,7 +89,6 @@ else:
 
 print("Processing VRT...")
 
-corpus = [] # list of lists for utf-8 encoded strings indexed by [p_attr_i][cpos]
 stack = [] # parsing stack for s attrs, list of openend tags (startpos, tagname, attrs)
 spans = dict() # keys are the different s attrs, values list of spans (startpos, endpos)
 span_attrs = dict() # same as above, but values are the associated attributes for each span 
@@ -119,16 +121,16 @@ with gzip.open(args.input, mode = "rt") if args.input.suffix == ".gz" else args.
     
     print(f"\t found {pcount} p-attrs in input")
     assert len(p_attrs) <= pcount, "Not enough columns for specified p-attrs in input"
-    corpus = [[] for _ in range(len(p_attrs))]
     f.seek(0) # reset file to beginning
 
     for line in f:
         # p attrs
         if not line.startswith("<"):
             if line.strip():
-                pattrs = line.strip().split("\t", maxsplit = pcount-1)
-                for i, attr in enumerate(pattrs[:len(p_attrs)]):
-                    corpus[i].append((attr).encode("utf-8"))
+                cols = line.strip().split("\t", maxsplit = pcount-1)
+                for i, token in enumerate(cols[:len(p_attrs)]):
+                    p_attrs[i][2].write(token)
+                    p_attrs[i][2].write("\n")
                 cpos += 1
 
         # s attrs
@@ -149,11 +151,8 @@ with gzip.open(args.input, mode = "rt") if args.input.suffix == ".gz" else args.
 
 print(f"\t found {len(spans.keys())} s-attrs: {tuple(spans.keys())}")
 
-# padding p_attrs with default values (numeric name and type indexed)
-# p_attrs.extend([(str(n+1), "indexed") for n in range(len(corpus))][len(p_attrs):])
-
 print("Encoding the following attributes:")
-for name, type in p_attrs:
+for name, type, _ in p_attrs:
     print(f"\tp-attribute '{name}' of type '{type}'")
 for name in s_attrs:
     print(f"\ts-attribute '{name}'", end="")
@@ -171,9 +170,6 @@ if not p_attrs and not s_attrs and not s_annos:
     exit()
 
 clen = cpos
-
-# double check dimensions
-assert all(len(p) == clen for p in corpus), "P attributes of supplied VRT don't have the same dimensions"
 
 print(f"Input corpus has {clen} corpus positions")
 
@@ -211,11 +207,13 @@ write_datastore_object(primary_layer, "primary_layer")
 
 ## Primary Layer Variables for p attributes
 
-for i, (name, type) in enumerate(p_attrs):
+for i, (name, type, temp) in enumerate(p_attrs):
     if type == "indexed":
-        variable = IndexedStringVariable(primary_layer, corpus[i], compressed = not args.uncompressed)
+        temp.file.seek(0)
+        variable = FileIndexedStringVariable(primary_layer, temp, compressed = not args.uncompressed)
     elif type == "plain":
-        variable = PlainStringVariable(primary_layer, corpus[i], compressed = not args.uncompressed)
+        temp.file.seek(0)
+        variable = PlainStringVariable(primary_layer, (line.strip().encode("utf-8") for line in temp), compressed = not args.uncompressed)
     else:
         print(f"Invalid type '{type}' for p attribute '{name}'")
         continue
