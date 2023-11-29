@@ -1,8 +1,8 @@
 #![feature(test)]
 
-use std::{ffi::CString, path::Path, sync::Mutex};
+use std::{ffi::{CString, CStr}, path::Path};
 
-use bindings::cl_delete_corpus;
+use bindings::{cl_delete_corpus, cl_first_corpus_property};
 
 mod bindings {
     #![allow(non_upper_case_globals)]
@@ -100,6 +100,29 @@ mod bindings {
     }
 }
 
+unsafe fn ptr_to_str<'c>(ptr: *mut i8) -> Option<&'c str> {
+    if ptr.is_null() {
+        None
+    } else {
+        let cs = CStr::from_ptr(ptr);
+        match cs.to_str() {
+            Ok(str) => Some(str),
+            Err(_) => None,
+        }
+
+    }
+}
+
+unsafe fn ptr_to_str_unchecked<'c>(ptr: *mut i8) -> Option<&'c str> {
+    if ptr.is_null() {
+        None
+    } else {
+        let cs = CStr::from_ptr(ptr);
+        let bytes = cs.to_bytes();
+        Some(std::str::from_utf8_unchecked(&bytes))
+    }
+}
+
 pub struct Corpus {
     ptr: *mut bindings::Corpus,
 }
@@ -126,6 +149,21 @@ impl Corpus {
             }
         }
     }
+
+    pub fn get_properties(&self) -> Vec<(&str, &str)> {
+        let mut props = Vec::new();
+        unsafe {
+            let mut prop = cl_first_corpus_property(self.ptr);
+            while !prop.is_null() {
+                let k = ptr_to_str((*prop).property).unwrap();
+                let v = ptr_to_str((*prop).value).unwrap();
+                props.push((k, v));
+                prop = (*prop).next;
+            }
+        }
+
+        props
+    }
 }
 
 impl Drop for Corpus {
@@ -142,8 +180,18 @@ mod tests {
 
     #[test]
     fn open_corpus() {
-        println!("{:?}", std::env::current_dir());
         let _ = Corpus::open("testdata/registry", "simpledickens")
             .expect("Could not open corpus");
+    }
+
+    #[test]
+    fn corpus_props() {
+        let c = Corpus::open("testdata/registry", "simpledickens")
+            .expect("Could not open corpus");
+
+        let props = c.get_properties();
+        assert!(props.len() == 2);
+        assert!(props[0] == ("language", "en"));
+        assert!(props[1] == ("charset", "utf8"));
     }
 }
