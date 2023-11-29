@@ -1,9 +1,15 @@
-#![allow(non_upper_case_globals)]
-#![allow(non_camel_case_types)]
-#![allow(non_snake_case)]
 #![feature(test)]
 
+use std::{ffi::CString, path::Path, sync::Mutex};
+
+use bindings::cl_delete_corpus;
+
 mod bindings {
+    #![allow(non_upper_case_globals)]
+    #![allow(non_camel_case_types)]
+    #![allow(non_snake_case)]
+    #![allow(dead_code)]
+
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
     #[cfg(test)]
@@ -91,5 +97,53 @@ mod bindings {
                 println!("total chars: {}", len);
             }
         }
+    }
+}
+
+pub struct Corpus {
+    ptr: *mut bindings::Corpus,
+}
+
+impl Corpus {
+    pub fn open<P: AsRef<Path>>(registry_dir: P, registry_name: &str) -> Result<Corpus, ()> {
+        let dir = CString::new(
+            registry_dir
+                .as_ref()
+                .to_str()
+                .unwrap()
+                .trim_end_matches("/"),
+        )
+        .unwrap();
+        let name = CString::new(registry_name).unwrap();
+
+        unsafe {
+            let c = bindings::cl_new_corpus(dir.as_ptr() as *mut i8, name.as_ptr() as *mut i8);
+
+            if c.is_null() {
+                Err(())
+            } else {
+                Ok(Corpus { ptr: c })
+            }
+        }
+    }
+}
+
+impl Drop for Corpus {
+    fn drop(&mut self) {
+        unsafe {
+            cl_delete_corpus(self.ptr);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn open_corpus() {
+        println!("{:?}", std::env::current_dir());
+        let _ = Corpus::open("testdata/registry", "simpledickens")
+            .expect("Could not open corpus");
     }
 }
