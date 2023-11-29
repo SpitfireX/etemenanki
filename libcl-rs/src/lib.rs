@@ -1,7 +1,6 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
-
 #![feature(test)]
 
 mod bindings {
@@ -10,11 +9,11 @@ mod bindings {
     #[cfg(test)]
     mod tests {
         extern crate test;
-        
+
         use super::*;
 
-        use std::ffi::CString;
         use libc::free;
+        use std::ffi::CString;
         use test::Bencher;
 
         #[test]
@@ -25,7 +24,8 @@ mod bindings {
                 let ptr = cl_malloc(len);
                 ptr.copy_from(test.as_ptr() as *const std::os::raw::c_void, len);
 
-                let s = std::str::from_utf8(std::slice::from_raw_parts(ptr as *const u8, len)).unwrap();
+                let s =
+                    std::str::from_utf8(std::slice::from_raw_parts(ptr as *const u8, len)).unwrap();
                 assert!(s == test);
 
                 free(ptr);
@@ -60,7 +60,6 @@ mod bindings {
                 cl_delete_corpus(c);
             }
         }
-
 
         #[bench]
         fn seqdecode(b: &mut Bencher) {
