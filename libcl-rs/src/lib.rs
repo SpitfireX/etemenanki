@@ -9,7 +9,7 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::{CString, CStr};
+    use std::ffi::CString;
 
     use super::*;
     use libc::free;
@@ -44,7 +44,7 @@ mod tests {
     fn open_corpus() {
         unsafe {
             // open test corpus
-            let path = CString::new("testdata").unwrap();
+            let path = CString::new("testdata/registry").unwrap();
             let name = CString::new("simpledickens").unwrap();
             let c = cl_new_corpus(path.as_ptr() as *mut i8, name.as_ptr() as *mut i8);
             assert!(!c.is_null());
@@ -59,11 +59,12 @@ mod tests {
         }
     }
 
+
     #[bench]
     fn seqdecode(b: &mut Bencher) {
         unsafe {
             // open test corpus
-            let path = CString::new("testdata").unwrap();
+            let path = CString::new("testdata/registry").unwrap();
             let name = CString::new("simpledickens").unwrap();
             let c = cl_new_corpus(path.as_ptr() as *mut i8, name.as_ptr() as *mut i8);
             assert!(!c.is_null());
