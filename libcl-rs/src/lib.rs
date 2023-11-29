@@ -2,6 +2,9 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
+#![feature(test)]
+extern crate test;
+
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 #[cfg(test)]
@@ -10,6 +13,7 @@ mod tests {
 
     use super::*;
     use libc::free;
+    use test::Bencher;
 
     #[test]
     fn malloc() {
@@ -27,7 +31,7 @@ mod tests {
     }
 
     #[test]
-    fn string() {
+    fn create_destroy_string() {
         unsafe {
             let astr = cl_autostring_new("Hello\0".as_bytes().as_ptr() as *const i8, 6);
             cl_autostring_concat(astr, " World!\0".as_bytes().as_ptr() as *mut i8);
@@ -37,30 +41,34 @@ mod tests {
     }
 
     #[test]
-    fn open() {
+    fn open_corpus() {
         unsafe {
-            let path = CString::new("/home/timm/Projekte/Programmieren/KLUE/soupchef-cwb/cwb/registry").unwrap();
-            let name = CString::new("chefkoch").unwrap();
+            // open test corpus
+            let path = CString::new("testdata").unwrap();
+            let name = CString::new("simpledickens").unwrap();
             let c = cl_new_corpus(path.as_ptr() as *mut i8, name.as_ptr() as *mut i8);
+            assert!(!c.is_null());
 
+            // check for attributes
             let attrs = cl_corpus_list_attributes(c, ATT_ALL as i32);
-            for i in 0..cl_string_list_size(attrs) {
-                let name = CStr::from_ptr(cl_string_list_get(attrs, i));
-                println!("{:?}", name);
-            }
+            assert!(!attrs.is_null());
+            assert!(cl_string_list_size(attrs) > 0);
             cl_delete_string_list(attrs);
 
             cl_delete_corpus(c);
         }
     }
 
-    #[test]
-    fn posdecode() {
+    #[bench]
+    fn seqdecode(b: &mut Bencher) {
         unsafe {
-            let path = CString::new("/home/timm/Projekte/Programmieren/KLUE/soupchef-cwb/cwb/registry").unwrap();
-            let name = CString::new("chefkoch").unwrap();
+            // open test corpus
+            let path = CString::new("testdata").unwrap();
+            let name = CString::new("simpledickens").unwrap();
             let c = cl_new_corpus(path.as_ptr() as *mut i8, name.as_ptr() as *mut i8);
+            assert!(!c.is_null());
 
+            // open p attribute
             let attr = cl_new_attribute(c, "word\0".as_ptr() as *const i8, ATT_POS as i32);
             assert!(!attr.is_null());
             assert!(cl_attribute_mother_corpus(attr) == c);
@@ -68,10 +76,17 @@ mod tests {
             let max = cl_max_cpos(attr);
             assert!(max > 0);
 
-            for i in 0..max {
-                let word = CStr::from_ptr(cl_cpos2str(attr, i));
-                println!("{}", word.to_str().unwrap());
-            }
+            let mut len = 0;
+
+            // decode complete attribute
+            b.iter(|| {
+                for i in 0..max {
+                    let str = cl_cpos2str(attr, i);
+                    len += libc::strlen(str);
+                }
+            });
+
+            println!("total chars: {}", len);
         }
     }
 }

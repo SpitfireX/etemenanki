@@ -1,0 +1,7 @@
+This directory contains a modified version of the DICKENS test corpus from the CWB repo.
+The main differences are:
+- fewer s attributes have been encoded
+- encoding has been changed to UTF-8
+
+Original data can be found here: https://sourceforge.net/p/cwb/code/HEAD/tree/doc/corpora/dickens/
+Encoded from "Dickens-1.0.xml.gz"
