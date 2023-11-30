@@ -280,6 +280,7 @@ macro_rules! cl_error_or {
 
 type AccessResult<T> = Result<T, DataAccessError>;
 
+#[derive(Debug)]
 pub struct MallocSlice<'c, T> {
     inner: &'c [T],
 }
@@ -378,25 +379,33 @@ impl<'c> PositionalAttribute<'c> {
         }
     }
 
-    pub fn regex2id(&self, pattern: &CStr, flags: i32) -> AccessResult<Option<MallocSlice<i32>>> {
+    pub fn regex2id(&self, pattern: &CStr, flags: i32) -> AccessResult<MallocSlice<i32>> {
         unsafe {
             let mut len = 0;
             let ptr = cl_regex2id(self.ptr, pattern.as_ptr() as *mut i8, flags, &mut len);
             if ptr.is_null() {
-                cl_error_or!(None)
+                // this is a hack for getting a freeable MallocSlice with size 0 when the
+                // LibCL returns a null pointer
+                // Rust slices mustn't use a null pointer for their data pointer
+                cl_error_or!(MallocSlice::from_raw_parts(libc::malloc(1) as *mut i32, len as usize))
             } else {
-                cl_error_or!(Some(MallocSlice::from_raw_parts(ptr, len as usize)))
+                cl_error_or!(MallocSlice::from_raw_parts(ptr, len as usize))
             }
         }
     }
 
     pub fn idlist2freq(&self, idlist: &[i32]) -> AccessResult<i32> {
         unsafe {
-            cl_error_or!(cl_idlist2freq(
-                self.ptr,
-                idlist.as_ptr() as *mut _,
-                idlist.len() as i32
-            ))
+            let freq = cl_idlist2freq(self.ptr, idlist.as_ptr() as *mut _, idlist.len() as i32);
+            if freq < 0 {
+                let error = DataAccessError::try_from(freq).expect("invalid cl_errno value");
+                match error {
+                    DataAccessError::OK => unreachable!("freq must be negative here"),
+                    _ => Err(error),
+                }
+            } else {
+                Ok(freq)
+            }
         }
     }
 
@@ -412,7 +421,14 @@ impl<'c> PositionalAttribute<'c> {
                 core::ptr::null_mut(),
                 0,
             );
-            cl_error_or!(MallocSlice::from_raw_parts(ptr, len as usize))
+            if ptr.is_null() {
+                // this is a hack for getting a freeable MallocSlice with size 0 when the
+                // LibCL returns a null pointer
+                // Rust slices mustn't use a null pointer for their data pointer
+                cl_error_or!(MallocSlice::from_raw_parts(libc::malloc(1) as *mut i32, len as usize))
+            } else {
+                cl_error_or!(MallocSlice::from_raw_parts(ptr, len as usize))
+            }
         }
     }
 }
@@ -498,21 +514,28 @@ mod tests {
         for i in 1337..2000 {
             let slc = word.id2cpos(i).unwrap();
             assert!(slc[0] > 0 && slc.len() > 0)
-        }
+        } // slc should be properly dropped here
     }
 
     #[test]
-    fn regex2id() {
+    fn simple_query() {
         let c = Corpus::new("testdata/registry", "simpledickens").expect("Could not open corpus");
 
         let word = c.get_p_attribute("word").unwrap();
 
-        let matches = word.regex2id(&CString::new(r"author.+s").unwrap(), 0).unwrap().unwrap();
+        let ids = word
+            .regex2id(&CString::new(r"author.+s").unwrap(), 0)
+            .unwrap();
 
-        println!();
+        let matches = word.idlist2cpos(&ids, true).unwrap();
+        assert!(matches.len() == 45);
+        assert!(matches.len() == word.idlist2freq(&ids).unwrap() as usize);
+        assert!(matches[0] == 70993);
+
+        println!("\nMatches:");
         for i in matches.iter() {
             print!("{}: ", i);
-            for c in i-5..i+6 {
+            for c in i - 5..i + 6 {
                 if c == *i {
                     print!("<{}> ", word.cpos2str(c).unwrap().to_str().unwrap());
                 } else {
@@ -521,5 +544,30 @@ mod tests {
             }
             println!();
         }
+
+        println!("Freqs:");
+        for id in ids.iter() {
+            let token = word.id2str(*id).unwrap().to_str().unwrap();
+            let freq = word.id2freq(*id).unwrap();
+            println!("{}: {}", token, freq);
+        }
+    }
+
+    #[test]
+    fn zero_size_lists() {
+        let c = Corpus::new("testdata/registry", "simpledickens").expect("Could not open corpus");
+
+        let word = c.get_p_attribute("word").unwrap();
+
+        let idlist = vec![];
+
+        let freq = word.idlist2freq(&idlist).unwrap();
+        assert!(freq == 0);
+
+        let cpos = word.idlist2cpos(&idlist, true).unwrap();
+        assert!(cpos.len() == 0);
+
+        let matches = word.regex2id(&CString::new(r"xlaoiersntyuoanrst").unwrap(), 0).unwrap();
+        assert!(matches.len() == 0);
     }
 }
