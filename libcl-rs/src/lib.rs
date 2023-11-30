@@ -1,8 +1,14 @@
 #![feature(test)]
 
-use std::{ffi::{CString, CStr}, path::Path};
+use std::{
+    ffi::{CStr, CString},
+    path::Path,
+};
 
-use bindings::{cl_delete_corpus, cl_first_corpus_property};
+use bindings::{
+    cl_corpus_list_attributes, cl_delete_corpus, cl_first_corpus_property, cl_string_list_get,
+    cl_string_list_size,
+};
 
 mod bindings {
     #![allow(non_upper_case_globals)]
@@ -109,7 +115,6 @@ unsafe fn ptr_to_str<'c>(ptr: *mut i8) -> Option<&'c str> {
             Ok(str) => Some(str),
             Err(_) => None,
         }
-
     }
 }
 
@@ -164,6 +169,31 @@ impl Corpus {
 
         props
     }
+
+    pub fn list_attributes(&self, attr_type: i32) -> Vec<&str> {
+        let mut names = Vec::new();
+        unsafe {
+            let attrs = cl_corpus_list_attributes(self.ptr, attr_type);
+            if !attrs.is_null() {
+                for i in 0..cl_string_list_size(attrs) {
+                    let sptr = cl_string_list_get(attrs, i);
+                    if let Some(str) = ptr_to_str(sptr) {
+                        names.push(str);
+                    }
+                }
+            }
+        }
+
+        names
+    }
+
+    pub fn list_p_attributes(&self) -> Vec<&str> {
+        self.list_attributes(bindings::ATT_POS as i32)
+    }
+
+    pub fn list_s_attributes(&self) -> Vec<&str> {
+        self.list_attributes(bindings::ATT_STRUC as i32)
+    }
 }
 
 impl Drop for Corpus {
@@ -180,18 +210,43 @@ mod tests {
 
     #[test]
     fn open_corpus() {
-        let _ = Corpus::open("testdata/registry", "simpledickens")
-            .expect("Could not open corpus");
+        let _ = Corpus::open("testdata/registry", "simpledickens").expect("Could not open corpus");
     }
 
     #[test]
     fn corpus_props() {
-        let c = Corpus::open("testdata/registry", "simpledickens")
-            .expect("Could not open corpus");
+        let c = Corpus::open("testdata/registry", "simpledickens").expect("Could not open corpus");
 
         let props = c.get_properties();
         assert!(props.len() == 2);
         assert!(props[0] == ("language", "en"));
         assert!(props[1] == ("charset", "utf8"));
+    }
+
+    #[test]
+    fn list_attrs() {
+        let c = Corpus::open("testdata/registry", "simpledickens").expect("Could not open corpus");
+
+        let pattrs = c.list_p_attributes();
+        assert!(pattrs == ["word", "pos", "lemma"]);
+
+        let sattrs = c.list_s_attributes();
+        assert!(
+            sattrs
+                == [
+                    "text",
+                    "text_id",
+                    "novel",
+                    "novel_title",
+                    "chapter",
+                    "chapter_num",
+                    "chapter_title",
+                    "p",
+                    "s"
+                ]
+        );
+
+        let nope = c.list_attributes(0);
+        assert!(nope.len() == 0);
     }
 }
