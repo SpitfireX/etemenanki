@@ -6,8 +6,8 @@ use std::{
 };
 
 use bindings::{
-    cl_corpus_list_attributes, cl_delete_corpus, cl_first_corpus_property, cl_max_cpos, cl_max_id,
-    cl_new_attribute, cl_string_list_get, cl_string_list_size, Attribute,
+    cl_corpus_list_attributes, cl_delete_corpus, cl_delete_string_list, cl_first_corpus_property,
+    cl_max_cpos, cl_max_id, cl_new_attribute, cl_string_list_get, cl_string_list_size,
 };
 
 mod bindings {
@@ -133,7 +133,7 @@ pub struct Corpus {
 }
 
 impl Corpus {
-    pub fn open<P: AsRef<Path>>(registry_dir: P, registry_name: &str) -> Result<Corpus, ()> {
+    pub fn new<P: AsRef<Path>>(registry_dir: P, registry_name: &str) -> Option<Corpus> {
         let dir = CString::new(
             registry_dir
                 .as_ref()
@@ -148,9 +148,9 @@ impl Corpus {
             let c = bindings::cl_new_corpus(dir.as_ptr() as *mut i8, name.as_ptr() as *mut i8);
 
             if c.is_null() {
-                Err(())
+                None
             } else {
-                Ok(Corpus { ptr: c })
+                Some(Corpus { ptr: c })
             }
         }
     }
@@ -182,6 +182,7 @@ impl Corpus {
                     }
                 }
             }
+            cl_delete_string_list(attrs);
         }
 
         names
@@ -240,12 +241,12 @@ mod tests {
 
     #[test]
     fn open_corpus() {
-        let _ = Corpus::open("testdata/registry", "simpledickens").expect("Could not open corpus");
+        let _ = Corpus::new("testdata/registry", "simpledickens").expect("Could not open corpus");
     }
 
     #[test]
     fn corpus_props() {
-        let c = Corpus::open("testdata/registry", "simpledickens").expect("Could not open corpus");
+        let c = Corpus::new("testdata/registry", "simpledickens").expect("Could not open corpus");
 
         let props = c.get_properties();
         assert!(props.len() == 2);
@@ -255,7 +256,7 @@ mod tests {
 
     #[test]
     fn list_attrs() {
-        let c = Corpus::open("testdata/registry", "simpledickens").expect("Could not open corpus");
+        let c = Corpus::new("testdata/registry", "simpledickens").expect("Could not open corpus");
 
         let pattrs = c.list_p_attributes();
         assert!(pattrs == ["word", "pos", "lemma"]);
@@ -282,7 +283,7 @@ mod tests {
 
     #[test]
     fn open_pattrs() {
-        let c = Corpus::open("testdata/registry", "simpledickens").expect("Could not open corpus");
+        let c = Corpus::new("testdata/registry", "simpledickens").expect("Could not open corpus");
 
         let word = c.get_p_attribute("word").unwrap();
         assert!((word.max_cpos(), word.max_id()) == (3407085, 57568));
@@ -292,6 +293,5 @@ mod tests {
 
         let lemma = c.get_p_attribute("lemma").unwrap();
         assert!((lemma.max_cpos(), lemma.max_id()) == (3407085, 41222));
-
     }
 }
