@@ -476,4 +476,50 @@ mod tests {
         let lemma = c.get_p_attribute("lemma").unwrap();
         assert!((lemma.max_cpos().unwrap(), lemma.max_id().unwrap()) == (3407085, 41222));
     }
+
+    #[test]
+    fn lexicon() {
+        let c = Corpus::new("testdata/registry", "simpledickens").expect("Could not open corpus");
+
+        let word = c.get_p_attribute("word").unwrap();
+
+        let size = word.max_id().unwrap();
+        for i in 0..size {
+            word.id2str(i).unwrap();
+        }
+    }
+
+    #[test]
+    fn malloc_slice() {
+        let c = Corpus::new("testdata/registry", "simpledickens").expect("Could not open corpus");
+
+        let word = c.get_p_attribute("word").unwrap();
+
+        for i in 1337..2000 {
+            let slc = word.id2cpos(i).unwrap();
+            assert!(slc[0] > 0 && slc.len() > 0)
+        }
+    }
+
+    #[test]
+    fn regex2id() {
+        let c = Corpus::new("testdata/registry", "simpledickens").expect("Could not open corpus");
+
+        let word = c.get_p_attribute("word").unwrap();
+
+        let matches = word.regex2id(&CString::new(r"author.+s").unwrap(), 0).unwrap().unwrap();
+
+        println!();
+        for i in matches.iter() {
+            print!("{}: ", i);
+            for c in i-5..i+6 {
+                if c == *i {
+                    print!("<{}> ", word.cpos2str(c).unwrap().to_str().unwrap());
+                } else {
+                    print!("{} ", word.cpos2str(c).unwrap().to_str().unwrap());
+                }
+            }
+            println!();
+        }
+    }
 }
