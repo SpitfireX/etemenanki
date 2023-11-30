@@ -6,8 +6,8 @@ use std::{
 };
 
 use bindings::{
-    cl_corpus_list_attributes, cl_delete_corpus, cl_first_corpus_property, cl_string_list_get,
-    cl_string_list_size,
+    cl_corpus_list_attributes, cl_delete_corpus, cl_first_corpus_property, cl_max_cpos, cl_max_id,
+    cl_new_attribute, cl_string_list_get, cl_string_list_size, Attribute,
 };
 
 mod bindings {
@@ -194,6 +194,21 @@ impl Corpus {
     pub fn list_s_attributes(&self) -> Vec<&str> {
         self.list_attributes(bindings::ATT_STRUC as i32)
     }
+
+    pub fn get_p_attribute(&self, name: &str) -> Option<PositionalAttribute> {
+        let cname = CString::new(name).unwrap();
+        unsafe {
+            let attr = cl_new_attribute(self.ptr, cname.as_ptr(), bindings::ATT_POS as i32);
+            if attr.is_null() {
+                None
+            } else {
+                Some(PositionalAttribute {
+                    ptr: attr,
+                    _parent: self,
+                })
+            }
+        }
+    }
 }
 
 impl Drop for Corpus {
@@ -201,6 +216,21 @@ impl Drop for Corpus {
         unsafe {
             cl_delete_corpus(self.ptr);
         }
+    }
+}
+
+pub struct PositionalAttribute<'c> {
+    ptr: *mut bindings::Attribute,
+    _parent: &'c Corpus,
+}
+
+impl<'c> PositionalAttribute<'c> {
+    pub fn max_cpos(&self) -> usize {
+        unsafe { cl_max_cpos(self.ptr) as usize }
+    }
+
+    pub fn max_id(&self) -> usize {
+        unsafe { cl_max_id(self.ptr) as usize }
     }
 }
 
@@ -248,5 +278,20 @@ mod tests {
 
         let nope = c.list_attributes(0);
         assert!(nope.len() == 0);
+    }
+
+    #[test]
+    fn open_pattrs() {
+        let c = Corpus::open("testdata/registry", "simpledickens").expect("Could not open corpus");
+
+        let word = c.get_p_attribute("word").unwrap();
+        assert!((word.max_cpos(), word.max_id()) == (3407085, 57568));
+
+        let pos = c.get_p_attribute("pos").unwrap();
+        assert!((pos.max_cpos(), pos.max_id()) == (3407085, 43));
+
+        let lemma = c.get_p_attribute("lemma").unwrap();
+        assert!((lemma.max_cpos(), lemma.max_id()) == (3407085, 41222));
+
     }
 }
