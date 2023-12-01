@@ -211,6 +211,21 @@ impl Corpus {
             }
         }
     }
+
+    pub fn get_s_attribute(&self, name: &str) -> Option<StructuralAttribute> {
+        let cname = CString::new(name).unwrap();
+        unsafe {
+            let attr = cl_new_attribute(self.ptr, cname.as_ptr(), bindings::ATT_STRUC as i32);
+            if attr.is_null() {
+                None
+            } else {
+                Some(StructuralAttribute {
+                    ptr: attr,
+                    _parent: self,
+                })
+            }
+        }
+    }
 }
 
 impl Drop for Corpus {
@@ -221,7 +236,7 @@ impl Drop for Corpus {
     }
 }
 
-#[derive(Clone, Copy, Debug, TryFromPrimitive)]
+#[derive(Clone, Copy, Debug, PartialEq, TryFromPrimitive)]
 #[repr(i32)]
 pub enum DataAccessError {
     OK = 0,                    // everything is fine; actual error values are all less than 0
@@ -433,6 +448,73 @@ impl<'c> PositionalAttribute<'c> {
     }
 }
 
+pub struct StructuralAttribute<'c> {
+    ptr: *mut bindings::Attribute,
+    _parent: &'c Corpus,
+}
+
+impl<'c> StructuralAttribute<'c> {
+    pub fn cpos2struc2cpos(&self, position: i32) -> AccessResult<(i32, i32)> {
+        unsafe {
+            let mut start = 0;
+            let mut end = 0;
+            cl_cpos2struc2cpos(self.ptr, position, &mut start, &mut end);
+            cl_error_or!((start, end))
+        }
+    }
+
+    pub fn cpos2struc(&self, cpos: i32) -> AccessResult<i32> {
+        unsafe {
+            cl_error_or!(cl_cpos2struc(self.ptr, cpos))
+        }
+    }
+
+    pub fn cpos2boundary(&self, cpos: i32) -> AccessResult<u32> {
+        unsafe {
+            cl_error_or!(cl_cpos2boundary(self.ptr, cpos) as u32)
+        }
+    }
+
+    pub fn struc2cpos(&self, struc_num: i32) -> AccessResult<(i32, i32)> {
+        unsafe {
+            let mut start = 0;
+            let mut end = 0;
+            cl_struc2cpos(self.ptr, struc_num, &mut start, &mut end);
+            cl_error_or!((start, end))
+        }
+    }
+
+    pub fn max_struc(&self) -> AccessResult<i32> {
+        unsafe {
+            cl_error_or!(cl_max_struc(self.ptr))
+        }
+    }
+
+    pub fn struc_values(&self) -> AccessResult<bool> {
+        unsafe {
+            cl_error_or!(cl_struc_values(self.ptr) != 0)
+        }
+    }
+
+    pub fn struc2str(&self, struc_num: i32) -> AccessResult<&'c CStr> {
+        unsafe {
+            if self.struc_values()? {
+                let ptr = cl_struc2str(self.ptr, struc_num);
+                cl_error_or!(CStr::from_ptr(ptr))
+            } else {
+                Err(DataAccessError::ENOSTRING)
+            }
+        }
+    }
+
+    pub fn cpos2struc2str(&self, position: i32) -> AccessResult<&'c CStr> {
+        unsafe {
+            let ptr = cl_struc2str(self.ptr, position);
+            cl_error_or!(CStr::from_ptr(ptr))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -569,5 +651,51 @@ mod tests {
 
         let matches = word.regex2id(&CString::new(r"xlaoiersntyuoanrst").unwrap(), 0).unwrap();
         assert!(matches.len() == 0);
+    }
+
+    #[test]
+    fn open_sattrs() {
+        let c = Corpus::new("testdata/registry", "simpledickens").expect("Could not open corpus");
+
+        let expected = vec![
+            (14, false),
+            (14, true),
+            (14, false),
+            (14, true),
+            (696, false),
+            (696, true),
+            (696, true),
+            (61177, false),
+            (152455, false),
+        ];
+
+        for (name, (max, has_vals)) in c.list_s_attributes().iter().zip(expected.iter()) {
+            let sattr = c.get_s_attribute(name).unwrap();
+            assert!(sattr.max_struc().unwrap() == *max);
+            assert!(sattr.struc_values().unwrap() == *has_vals);
+        }
+    }
+
+    #[test]
+    fn struc2str_no_values() {
+        let c = Corpus::new("testdata/registry", "simpledickens").expect("Could not open corpus");
+
+        let text = c.get_s_attribute("text").unwrap();
+
+        let str = text.struc2str(0);
+        assert!(str == Err(DataAccessError::ENOSTRING));
+    }
+
+    #[test]
+    fn decode_sattr_values() {
+        let c = Corpus::new("testdata/registry", "simpledickens").expect("Could not open corpus");
+
+        let chapter_title = c.get_s_attribute("chapter_title").unwrap();
+        let len = chapter_title.max_struc().unwrap();
+
+        println!();
+        for i in 0..len {
+            let _ = chapter_title.struc2str(i).unwrap();
+        }
     }
 }
