@@ -293,7 +293,7 @@ macro_rules! cl_error_or {
     }};
 }
 
-type AccessResult<T> = Result<T, DataAccessError>;
+pub type AccessResult<T> = Result<T, DataAccessError>;
 
 #[derive(Debug)]
 pub struct MallocSlice<'c, T> {
@@ -471,7 +471,12 @@ impl<'c> StructuralAttribute<'c> {
 
     pub fn cpos2boundary(&self, cpos: i32) -> AccessResult<u32> {
         unsafe {
-            cl_error_or!(cl_cpos2boundary(self.ptr, cpos) as u32)
+            let boundary = cl_cpos2boundary(self.ptr, cpos);
+            if boundary >= 0 {
+                Ok(boundary as u32)
+            } else {
+                Err(DataAccessError::try_from(boundary).unwrap())
+            }
         }
     }
 
