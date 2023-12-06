@@ -119,7 +119,7 @@ unsafe fn ptr_to_str<'c>(ptr: *mut i8) -> Option<&'c str> {
     }
 }
 
-unsafe fn ptr_to_str_unchecked<'c>(ptr: *mut i8) -> Option<&'c str> {
+unsafe fn _ptr_to_str_unchecked<'c>(ptr: *mut i8) -> Option<&'c str> {
     if ptr.is_null() {
         None
     } else {

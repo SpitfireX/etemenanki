@@ -10,6 +10,3 @@ crate-type = ["lib", "cdylib"]
 
 [dependencies]
 pyo3 = "0.18.3"
-
-[env]
-PYO3_PYTHON = "/usr/bin/python3"

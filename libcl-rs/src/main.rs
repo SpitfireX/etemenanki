@@ -1,12 +1,16 @@
-use std::env;
+use std::error::Error;
+use std::io::{BufWriter, Write};
+use std::{env, io};
 
 use libcl_rs::*;
 
 // simple example implementation of cwb-decode
-fn main() -> AccessResult<()> {
+// running this program on a corpus should be eqivalent to
+// cwb-decode -Cn -r <registry> <corpus> -ALL
+fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = env::args().collect();
     if args.len() != 3 {
-        println!("Usage: cwb-decode <registry folder> <corpus name>");
+        eprintln!("Usage: cwb-decode <registry folder> <corpus name>");
         return Ok(());
     }
 
@@ -25,6 +29,7 @@ fn main() -> AccessResult<()> {
         .collect();
 
     let clen = pattrs[0].max_cpos()?;
+    let mut stdout = BufWriter::new(io::stdout().lock());
 
     for i in 0..clen {
         // print s attr start tags
@@ -32,9 +37,9 @@ fn main() -> AccessResult<()> {
             let bound = sattr.cpos2boundary(i)?;
             if bound & 2 == 2 {
                 if let Ok(value) = sattr.cpos2struc2str(i) {
-                    println!("<{} {}>", name, value.to_str().unwrap());
+                    writeln!(stdout, "<{} {}>", name, value.to_str().unwrap())?;
                 } else {
-                    println!("<{}>", name);
+                    writeln!(stdout, "<{}>", name)?;
                 }
             }
         }
@@ -44,13 +49,13 @@ fn main() -> AccessResult<()> {
             .iter()
             .map(|attr| attr.cpos2str(i).unwrap().to_str().unwrap())
             .collect();
-        println!("{}\t{}", i, strs.join("\t"));
+        writeln!(stdout, "{}\t{}", i, strs.join("\t"))?;
 
         // print s attr end tags
         for (name, sattr) in sattrs.iter() {
             let bound = sattr.cpos2boundary(i)?;
             if bound & 4 == 4 {
-                println!("</{}>", name);
+                writeln!(stdout, "</{}>", name)?;
             }
         }
     }
