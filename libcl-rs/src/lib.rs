@@ -513,15 +513,15 @@ impl<'c> StructuralAttribute<'c> {
     }
 
     pub fn cpos2struc2str(&self, position: i32) -> AccessResult<&'c CStr> {
-        unsafe {
-            let ptr = cl_struc2str(self.ptr, position);
-            cl_error_or!(CStr::from_ptr(ptr))
-        }
+        let struc = self.cpos2struc(position)?;
+        self.struc2str(struc)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    extern crate test;
+
     use super::*;
 
     #[test]
@@ -702,5 +702,28 @@ mod tests {
         for i in 0..len {
             let _ = chapter_title.struc2str(i).unwrap();
         }
+    }
+
+    #[bench]
+    fn seqdecode(b: &mut test::Bencher) {
+        // open test corpus
+        let c = Corpus::new("testdata/registry", "simpledickens").expect("Could not open corpus");
+
+        // open p attribute
+        let attr = c.get_p_attribute("word").unwrap();
+
+        let max = attr.max_cpos().unwrap();
+
+        let mut len = 0;
+
+        // decode complete attribute
+        b.iter(|| {
+            for i in 0..max {
+                let str = attr.cpos2str(i).unwrap();
+                len += str.to_bytes().len();
+            }
+        });
+
+        println!("total chars: {}", len);
     }
 }
