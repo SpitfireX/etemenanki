@@ -1,21 +1,22 @@
+#pragma endian little
+
 struct ContainerHeader {
     char magic[8];
-    char version[4];
+    char version[3];
     char family;
     char class;
     char type;
-    char newline;
-    char uuid[36];
-    char lfeot[4];
     u8 allocated_components;
     u8 used_components;
-    padding[6];
+    be u128 uuid;
+    be u128 base1_uuid;
+    be u128 base2_uuid;
+
     s64 dim1;
     s64 dim2;
-    char base1_uuid[36];
-    padding[4];
-    char base2_uuid[36];
-    padding[4];
+    s64 extensions;
+    
+    char comment[72];
 };
 
 struct String {
@@ -93,6 +94,5 @@ fn m(s64 size) {
 };
 
 ContainerHeader header @ 0x00;
-BOMEntry bom[header.used_components] @ 160;
-
+BOMEntry bom[header.allocated_components] @ 0xA0;
 

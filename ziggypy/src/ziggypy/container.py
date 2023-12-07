@@ -52,7 +52,7 @@ def align_offset(o: int) -> int:
 class Container():
     """Instances of the Container class represent a Ziggurat container file."""
 
-    def __init__(self, components: Sequence[Component], container_type: str, dimensions: Tuple[int, int], uuid: UUID, base_uuids: Tuple[Optional[UUID], Optional[UUID]] = (None, None)) -> None:
+    def __init__(self, components: Sequence[Component], container_type: str, dimensions: Tuple[int, int], uuid: UUID, base_uuids: Tuple[Optional[UUID], Optional[UUID]] = (None, None), comment: str = "") -> None:
         """
         Instantiates a new Container object with all necessary data.
 
@@ -82,6 +82,9 @@ class Container():
         self.uuid = uuid
         self.base_uuids = base_uuids
 
+        assert len((comment + "\0").encode()) <= 72, "Comment exceeding maximum length"
+        self.comment = (comment + "\0").encode()
+
 
     def write_header(self, f: RawIOBase) -> None:
         """
@@ -99,38 +102,40 @@ class Container():
         f.write(self.container_type[0].encode('ascii')) # container family
         f.write(self.container_type[1].encode('ascii')) # container class
         f.write(self.container_type[2].encode('ascii')) # container type
-        f.write('\n'.encode('ascii')) # LF
-
-        f.write(str(self.uuid).encode('ascii')) # uuid as ASCII (36 bytes)
-        f.write('\n\x04\0\0'.encode('ascii')) # LF EOT 0 0
 
         # components meta
         f.write(pack('B', len(self.components))) #allocated
         f.write(pack('B', len(self.components))) #used
 
-        f.write(bytes(6)) # padding
+        # container UUID
+        f.write(self.uuid.bytes)
+
+        # referenced base layers
+        if self.base_uuids[0]:
+            u = self.base_uuids[0].bytes
+        else:
+            u = bytes(16) # padding
+        assert len(u) == 16, "UUID must be 16 bytes long"
+        f.write(u)
+        
+        if self.base_uuids[1]:
+            u = self.base_uuids[1].bytes
+        else:
+            u = bytes(16) # padding
+        assert len(u) == 16, "UUID must be 16 bytes long"
+        f.write(u)
 
         # dimensions
         f.write(pack('<q', self.dimensions[0])) # dim1
         f.write(pack('<q', self.dimensions[1])) # dim2
 
-        # referenced base layers
-        if self.base_uuids[0]:
-            s = str(self.base_uuids[0]).encode('ascii')
-            assert len(s) == 36, "UUID must be 36 bytes long"
-            f.write(s)
-        else:
-            f.write(bytes(36)) # base1_uuid + padding
-        f.write(bytes(4)) # padding
-        
-        if self.base_uuids[1]:
-            s = str(self.base_uuids[1]).encode('ascii')
-            assert len(s) == 36, "UUID must be 36 bytes long"
-            f.write(s)
-        else:
-            f.write(bytes(36)) # base2_uuid + padding
-        f.write(bytes(4)) # padding
+        # extensions
+        f.write(bytes(8)) # unused for now
 
+        # comment
+        f.write(self.comment.ljust(72, b"\0"))
+
+        # BOM
         # file offsets
         self.offsets = [data_start(len(self.components))]
         for i, c in enumerate(self.components[:-1], start=1):
