@@ -82,8 +82,9 @@ class Container():
         self.uuid = uuid
         self.base_uuids = base_uuids
 
-        assert len((comment + "\0").encode()) <= 72, "Comment exceeding maximum length"
-        self.comment = (comment + "\0").encode()
+        self.comment = comment.encode('utf-8')
+        self.comment += " encoded using ZiggyPy".encode('utf-8')
+        assert len(self.comment) < 72, "Comment exceeding maximum length"
 
 
     def write_header(self, f: RawIOBase) -> None:
@@ -98,7 +99,7 @@ class Container():
 
         # consts
         f.write('Ziggurat'.encode('ascii')) # magic
-        f.write('1.0\t'.encode('ascii')) # version
+        f.write('1.0'.encode('ascii')) # version
         f.write(self.container_type[0].encode('ascii')) # container family
         f.write(self.container_type[1].encode('ascii')) # container class
         f.write(self.container_type[2].encode('ascii')) # container type

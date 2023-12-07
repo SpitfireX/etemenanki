@@ -29,7 +29,7 @@ class Variable(ABC):
 
 class PlainStringVariable(Variable):
 
-    def __init__(self, base_layer: Layer, strings: Iterable[bytes], uuid: Optional[UUID] = None, compressed: bool = True):
+    def __init__(self, base_layer: Layer, strings: Iterable[bytes], uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
         
         super().__init__(base_layer, uuid if uuid else uuid4())
 
@@ -61,13 +61,14 @@ class PlainStringVariable(Variable):
             'ZVc',
             (base_layer.n, 0),
             self.uuid,
-            (base_layer.uuid, None)
+            (base_layer.uuid, None),
+            comment,
         )
 
 
 class IndexedStringVariable(Variable):
 
-    def __init__(self, base_layer: Layer, strings: list[bytes], uuid: Optional[UUID] = None, compressed: bool = True):
+    def __init__(self, base_layer: Layer, strings: list[bytes], uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
         
         super().__init__(base_layer, uuid if uuid else uuid4())
 
@@ -103,7 +104,8 @@ class IndexedStringVariable(Variable):
             'ZVx',
             (self.base_layer.n, lsize),
             self.uuid,
-            (base_layer.uuid, None)
+            (base_layer.uuid, None),
+            comment,
         )
 
 
@@ -112,7 +114,7 @@ class FileIndexedStringVariable(Variable):
     All of this needs to be thrown away and implemented proprely at some time actually using the proper
     Ziggurat data structures."""
 
-    def __init__(self, base_layer: Layer, file: TextIO, uuid: Optional[UUID] = None, compressed: bool = True):
+    def __init__(self, base_layer: Layer, file: TextIO, uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
         
         super().__init__(base_layer, uuid if uuid else uuid4())
 
@@ -156,13 +158,14 @@ class FileIndexedStringVariable(Variable):
             'ZVx',
             (self.base_layer.n, lsize),
             self.uuid,
-            (base_layer.uuid, None)
+            (base_layer.uuid, None),
+            comment,
         )
 
 
 class IntegerVariable(Variable):
 
-    def __init__(self, base_layer: Layer, ints: Sequence[int], b: int = 1, uuid: Optional[UUID] = None, compressed: bool = True, delta: bool = False):
+    def __init__(self, base_layer: Layer, ints: Sequence[int], b: int = 1, uuid: Optional[UUID] = None, compressed: bool = True, delta: bool = False, comment: str = ""):
     
         super().__init__(base_layer, uuid if uuid else uuid4())
 
@@ -192,12 +195,13 @@ class IntegerVariable(Variable):
             'ZVi',
             (self.base_layer.n, b),
             self.uuid,
-            (base_layer.uuid, None)
+            (base_layer.uuid, None),
+            comment,
         )
 
 
 class SetVariable(Variable):
-    def __init__(self, base_layer: Layer, sets: Sequence[set[bytes]], uuid: Optional[UUID] = None):
+    def __init__(self, base_layer: Layer, sets: Sequence[set[bytes]], uuid: Optional[UUID] = None, comment: str = ""):
 
         super().__init__(base_layer, uuid if uuid else uuid4())
 
@@ -239,5 +243,6 @@ class SetVariable(Variable):
             'ZVs',
             (n, v),
             self.uuid,
-            (base_layer.uuid, None)
+            (base_layer.uuid, None),
+            comment,
         )

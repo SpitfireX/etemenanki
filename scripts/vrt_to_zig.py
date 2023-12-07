@@ -194,6 +194,7 @@ def write_datastore_object(obj, filename):
     ztype = obj.__class__.__name__
     ext = ".zigl" if isinstance(obj, Layer) else ".zigv"
     p = args.output / (filename + ext)
+    p.parent.mkdir(parents=True, exist_ok=True)
 
     print(f"Writing {ztype} '{filename}' to file {p}")
     with p.open(mode = "wb") as f:
@@ -201,8 +202,8 @@ def write_datastore_object(obj, filename):
 
 
 ## Primary Layer with corpus dimensions
-primary_layer = PrimaryLayer(clen, partitions)
-write_datastore_object(primary_layer, "primary_layer")
+primary_layer = PrimaryLayer(clen, partitions, comment = f"{args.input.name}")
+write_datastore_object(primary_layer, "primary")
 
 
 ## Primary Layer Variables for p attributes
@@ -210,15 +211,15 @@ write_datastore_object(primary_layer, "primary_layer")
 for i, (name, type, temp) in enumerate(p_attrs):
     if type == "indexed":
         temp.file.seek(0)
-        variable = FileIndexedStringVariable(primary_layer, temp, compressed = not args.uncompressed)
+        variable = FileIndexedStringVariable(primary_layer, temp, compressed = not args.uncompressed, comment = f"p-attr {attr}")
     elif type == "plain":
         temp.file.seek(0)
-        variable = PlainStringVariable(primary_layer, (line.strip().encode("utf-8") for line in temp), compressed = not args.uncompressed)
+        variable = PlainStringVariable(primary_layer, (line.strip().encode("utf-8") for line in temp), compressed = not args.uncompressed, comment = f"p-attr {attr}")
     else:
         print(f"Invalid type '{type}' for p attribute '{name}'")
         continue
     
-    write_datastore_object(variable, "pattr_" + name)
+    write_datastore_object(variable, name)
 
 
 s_attr_layers = dict()
@@ -227,10 +228,10 @@ s_attr_layers = dict()
 
 for attr in s_attrs:
     slen = len(spans[attr])
-    layer = SegmentationLayer(primary_layer, slen, (0, slen), spans[attr], compressed = not args.uncompressed)
+    layer = SegmentationLayer(primary_layer, slen, (0, slen), spans[attr], compressed = not args.uncompressed, comment = f"s-attr {attr}")
 
     s_attr_layers[attr] = layer
-    write_datastore_object(layer, "sattr_" + attr)
+    write_datastore_object(layer, attr + "/segmentation")
 
 
 ## Variables for s attribute annotations
@@ -243,16 +244,18 @@ for attr, annos in s_annos.items():
         data = [attrs[anno] for attrs in span_attrs[attr]]
         assert len(data) == base_layer.n, f"Inconsistend number of annotations for annotation '{anno}' for s attribute '{attr}'"
 
+        c = f"s-attr {attr}_{anno}"
+
         if type == "indexed":
-            variable = IndexedStringVariable(base_layer, [s.encode("utf-8") for s in data], compressed = not args.uncompressed)
+            variable = IndexedStringVariable(base_layer, [s.encode("utf-8") for s in data], compressed = not args.uncompressed, comment = c)
         elif type == "plain":
-            variable = PlainStringVariable(base_layer, [s.encode("utf-8") for s in data], compressed = not args.uncompressed)
+            variable = PlainStringVariable(base_layer, [s.encode("utf-8") for s in data], compressed = not args.uncompressed, comment = c)
         elif type == "int":
-            variable = IntegerVariable(base_layer, [int(s) for s in data], compressed = not args.uncompressed)
+            variable = IntegerVariable(base_layer, [int(s) for s in data], compressed = not args.uncompressed, comment = c)
         elif type == "set":
-            variable = SetVariable(base_layer, [set(x.encode("utf-8") for x in s.split("|") if x) for s in data])
+            variable = SetVariable(base_layer, [set(x.encode("utf-8") for x in s.split("|") if x) for s in data], comment = c)
         else:
-            print(f"Invalid type '{type}' for annotation '{anno}' of s attribute '{attr}'")
+            print(f"Invalid type '{type}' for annotation '{anno}' of s attribute '{attr}'", comment = c)
             continue
 
-        write_datastore_object(variable, f"sattr_{attr}_{anno}")
+        write_datastore_object(variable, f"{attr}/{anno}")

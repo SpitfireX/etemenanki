@@ -23,7 +23,7 @@ class Layer(ABC):
 
 class PrimaryLayer(Layer):
 
-    def __init__(self, n: int, partition: Sequence[int], uuid: Optional[UUID] = None):
+    def __init__(self, n: int, partition: Sequence[int], uuid: Optional[UUID] = None, comment: str = ""):
         
         super().__init__(n, partition, uuid if uuid else uuid4())
 
@@ -33,13 +33,14 @@ class PrimaryLayer(Layer):
             (p_vec,),
             "ZLp",
             (self.n, 0),
-            self.uuid
+            self.uuid,
+            comment=comment,
         )
 
 
 class SegmentationLayer(Layer):
 
-    def __init__(self, base_layer: Layer, n: int, partition: Sequence[int], ranges: Iterable[Tuple[int, int]], uuid: Optional[UUID] = None, compressed: bool = True):
+    def __init__(self, base_layer: Layer, n: int, partition: Sequence[int], ranges: Iterable[Tuple[int, int]], uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
 
         super().__init__(n, partition, uuid if uuid else uuid4())
 
@@ -71,4 +72,5 @@ class SegmentationLayer(Layer):
             (self.n, 0),
             self.uuid,
             base_uuids=(base_layer.uuid, None),
+            comment=comment,
         )
