@@ -32,21 +32,19 @@ pub enum Type {
 #[derive(Debug, Clone, Copy)]
 pub struct RawHeader {
     magic: [u8; 8],
-    version: [u8; 4],
+    version: [u8; 3],
     family: u8,
     class: u8,
     ctype: u8,
-    lf: u8,
-    uuid: [u8; 36],
-    lfeot: [u8; 4],
     allocated: u8,
     used: u8,
-    padding: [u8; 6],
+    uuid: [u8; 16],
+    base1_uuid: [u8; 16],
+    base2_uuid: [u8; 16],
     dim1: i64,
     dim2: i64,
-    base1_uuid: [u8; 36],
-    padding1: [u8; 4],
-    base2_uuid: [u8; 36],
+    extensions: i64,
+    comment: [u8; 72],
 }
 
 #[repr(C, packed)]
@@ -69,13 +67,15 @@ pub struct Header<'map> {
     pub raw_class: char,
     pub raw_type: char,
     pub container_type: Type,
-    pub uuid: Uuid,
     pub allocated_components: u8,
     pub used_components: u8,
-    pub dim1: usize,
-    pub dim2: usize,
+    pub uuid: Uuid,
     pub base1_uuid: Option<Uuid>,
     pub base2_uuid: Option<Uuid>,
+    pub dim1: usize,
+    pub dim2: usize,
+    pub extensions: i64,
+    pub comment: &'map str,
 }
 
 #[derive(Debug)]
@@ -105,7 +105,7 @@ impl<'map> Container<'map> {
             return Err(Error::FormatError("Invalid magic string"));
         }
 
-        let version = str::from_utf8(&header.version[..3])?;
+        let version = str::from_utf8(&header.version)?;
         if !(version == "1.0") {
             return Err(Error::FormatError("Invalid container version"));
         }
@@ -118,24 +118,16 @@ impl<'map> Container<'map> {
             (((header.family as u64) << 16) | ((header.class as u64) << 8) | header.ctype as u64)
                 .try_into()?;
 
-        let uuid: Uuid = str::from_utf8(&header.uuid)?.parse()?;
+        let uuid = Uuid::from_bytes(header.uuid);
 
-        let base1_uuid: Option<Uuid> = {
-            let s = str::from_utf8(&header.base1_uuid)?;
-            if s.contains("\0") {
-                None
-            } else {
-                Some(s.parse()?)
-            }
+        let base1_uuid = {
+            let uuid = Uuid::from_bytes(header.base1_uuid);
+            (!uuid.is_nil()).then_some(uuid)
         };
 
-        let base2_uuid: Option<Uuid> = {
-            let s = str::from_utf8(&header.base2_uuid)?;
-            if s.contains("\0") {
-                None
-            } else {
-                Some(s.parse()?)
-            }
+        let base2_uuid = {
+            let uuid = Uuid::from_bytes(header.base2_uuid);
+            (!uuid.is_nil()).then_some(uuid)
         };
 
         let bom = unsafe {
@@ -149,6 +141,8 @@ impl<'map> Container<'map> {
                 Err(Error::Memory("BOM out of bounds"))
             }
         }?;
+
+        let comment = std::str::from_utf8(&header.comment)?;
 
         let mut components = HashMap::new();
 
@@ -181,13 +175,15 @@ impl<'map> Container<'map> {
                 raw_class,
                 raw_type,
                 container_type,
-                uuid,
                 allocated_components: header.allocated,
                 used_components: header.used,
-                dim1: header.dim1 as usize,
-                dim2: header.dim2 as usize,
+                uuid,
                 base1_uuid,
                 base2_uuid,
+                dim1: header.dim1 as usize,
+                dim2: header.dim2 as usize,
+                extensions: header.extensions,
+                comment,
             },
             components,
         })

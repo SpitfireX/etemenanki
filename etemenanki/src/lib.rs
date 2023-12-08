@@ -4,9 +4,7 @@
 
 use std::{
     collections::{hash_map, HashMap},
-    error,
-    ffi::OsStr,
-    fmt,
+    error, fmt,
     fs::File,
     io, ops,
     path::{Path, PathBuf},
@@ -28,6 +26,22 @@ pub struct Datastore<'map> {
     path: PathBuf,
     layers_by_uuid: HashMap<Uuid, layers::Layer<'map>>,
     uuids_by_name: HashMap<String, Uuid>,
+}
+
+fn find_objects(path: &Path, valid_paths: &mut Vec<PathBuf>) -> io::Result<()> {
+    for entry in path.read_dir()? {
+        let e = entry?.path();
+        if e.is_file() {
+            if e.extension().is_some_and(|e| e == "zigv")
+                || e.extension().is_some_and(|e| e == "zigl")
+            {
+                valid_paths.push(e);
+            }
+        } else {
+            find_objects(&e, valid_paths)?;
+        }
+    }
+    Ok(())
 }
 
 impl<'map> Datastore<'map> {
@@ -54,39 +68,25 @@ impl<'map> Datastore<'map> {
         let path = path.as_ref().to_owned();
         let mut containers = HashMap::new();
 
-        for entry in path.read_dir()? {
-            let path = entry?.path();
-            let filename = path.file_name().and_then(OsStr::to_str);
+        let mut paths = Vec::new();
+        find_objects(&path, &mut paths)?;
 
-            if let Some(filename) = filename {
-                if let Some(ext) = path.extension().and_then(OsStr::to_str) {
-                    match ext {
-                        "zigv" | "zigl" => {
-                            let file = File::open(&path)?;
-                            let mmap = unsafe { Mmap::map(&file)? };
-                            let name = filename
-                                .strip_suffix(ext)
-                                .unwrap()
-                                .strip_suffix(".")
-                                .unwrap()
-                                .to_owned();
-                            let container = Container::from_mmap(mmap, name)?;
+        for path in paths {
+            let file = File::open(&path)?;
+            let mmap = unsafe { Mmap::map(&file)? };
+            let name = path.file_stem().unwrap().to_str().unwrap().to_owned();
+            let container = Container::from_mmap(mmap, name)?;
 
-                            containers.insert(container.header.uuid, container);
-                        }
-                        _ => (),
-                    }
-                }
-            }
+            containers.insert(container.header.uuid, container);
         }
 
         let mut layers_by_uuid = HashMap::new();
         let mut uuids_by_name = HashMap::new();
 
-        let players = containers
-            .extract_if(|_, c| c.header.container_type == container::Type::PrimaryLayer);
-
-        for (uuid, container) in players {
+        // instantiate all primary layers
+        for (uuid, container) in
+            containers.extract_if(|_, c| c.header.container_type == container::Type::PrimaryLayer)
+        {
             let name = container.name.clone();
             let primarylayer = container.try_into()?;
             let layer = layers::Layer::new_primary(primarylayer);
@@ -95,6 +95,7 @@ impl<'map> Datastore<'map> {
             uuids_by_name.insert(name, uuid);
         }
 
+        // next instantiate all segmentation layers (that are on top of the primary layers)
         while containers
             .values()
             .any(|c| c.header.container_type == container::Type::SegmentationLayer)

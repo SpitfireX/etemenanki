@@ -10,18 +10,18 @@ use etemenanki::Datastore;
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
 
-    let datastore = Datastore::open(&args[1]).unwrap();
+    let datastore = Datastore::open(&args[1]).expect("could not open datastore");
 
-    let strings = datastore["primary_layer"]["pattr_token"]
+    let strings = datastore["primary"]["token"]
         .as_indexed_string()
         .unwrap();
 
-    let pos = datastore["primary_layer"]["pattr_pos"]
+    let pos = datastore["primary"]["pos"]
         .as_indexed_string()
         .unwrap();
 
-    let s = datastore["sattr_s"].as_segmentation().unwrap();
-    let text = datastore["sattr_text"].as_segmentation().unwrap();
+    let s = datastore["s"].as_segmentation().unwrap();
+    let text = datastore["text"].as_segmentation().unwrap();
 
     let tests = [
         "Schinken",
@@ -67,15 +67,15 @@ fn main() -> Result<()> {
                         println!("{}", surface);
 
                         let tid = text.find_containing(p).unwrap();
-                        let title = &text["sattr_text_title"].as_plain_string().unwrap()[tid];
-                        let author = &text["sattr_text_author"].as_indexed_string().unwrap()[tid];
-                        let url = &text["sattr_text_url"].as_plain_string().unwrap()[tid];
-                        let year = &text["sattr_text_year"]
+                        let title = &text["title"].as_plain_string().unwrap()[tid];
+                        let author = &text["author"].as_indexed_string().unwrap()[tid];
+                        let url = &text["url"].as_plain_string().unwrap()[tid];
+                        let year = &text["year"]
                             .as_integer()
                             .unwrap()
                             .get_unchecked(tid);
-                        let keywords = &text["sattr_text_keywords"].as_set().unwrap().get_unchecked(tid);
-                        let ingredients = &text["sattr_text_ingredients"].as_set().unwrap().get_unchecked(tid);
+                        let keywords = &text["keywords"].as_set().unwrap().get_unchecked(tid);
+                        let ingredients = &text["ingredients"].as_set().unwrap().get_unchecked(tid);
                         println!(
                             "text {} with title \"{}\" from {} by {} at url {} with keywords {:?} using ingredients {:?}\n",
                             tid, title, year, author, url, keywords, ingredients
@@ -93,7 +93,7 @@ fn main() -> Result<()> {
         }
     }
 
-    let all2016: Vec<_> = text.variable_by_name("sattr_text_year")
+    let all2016: Vec<_> = text.variable_by_name("year")
         .unwrap()
         .as_integer()
         .unwrap()

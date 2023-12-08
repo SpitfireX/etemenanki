@@ -231,7 +231,7 @@ for attr in s_attrs:
     layer = SegmentationLayer(primary_layer, slen, (0, slen), spans[attr], compressed = not args.uncompressed, comment = f"s-attr {attr}")
 
     s_attr_layers[attr] = layer
-    write_datastore_object(layer, attr + "/segmentation")
+    write_datastore_object(layer, f"{attr}/{attr}")
 
 
 ## Variables for s attribute annotations
