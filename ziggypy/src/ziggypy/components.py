@@ -528,6 +528,8 @@ class InvertedIndex(Component):
             (k, p)
         )
 
+        # build postings lists
+
         postings = [[] for _ in types]
         for i, occurences in enumerate(positions):
             for t in occurences:
@@ -541,18 +543,19 @@ class InvertedIndex(Component):
             sub = np.append(np.array([0], dtype=np.int64), delta[:-1])
             delta -= sub
 
-            block = b"\x00" # jump table offset for now always zero TODO
-            block += encode_varint_block(delta)
-                
-            postings_encoded.append(block)
+            postings_encoded.append(encode_varint_block(delta))
 
         self.encoded = b''
 
-        offset = k * 16
+        # write typeinfo vector
+
+        offset = 0
         for t, e in zip(postings, postings_encoded):
             self.encoded += pack('<q', len(t)) # type frequency
             self.encoded += pack('<q', offset) # offset for postings list
             offset += len(e)
+
+        # write postings lists
 
         self.encoded += b''.join(postings_encoded)
 

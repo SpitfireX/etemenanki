@@ -29,7 +29,7 @@ impl<'map> InvertedIndex<'map> {
     /// Returns the start offset of the postings list for type `i`
     /// within the `data` component
     pub fn offset(&self, i: usize) -> usize {
-        self.typeinfo[i].1 as usize - (self.n_types() * 16)
+        self.typeinfo[i].1 as usize
     }
 
     /// Returns an iterator over the postings for type `i`
@@ -40,16 +40,12 @@ impl<'map> InvertedIndex<'map> {
             &self.data[self.offset(i)..]
         };
 
-        let (value, readlen) = ziggurat_varint::decode(&slice);
-        let slice = &slice[readlen..];
-
         PostingsIterator {
             data: slice,
             len: self.frequency(i),
             i: 0,
             offset: 0,
             value: 0,
-            jtable_offset: value as usize,
         }
     }
 }
@@ -60,7 +56,6 @@ pub struct PostingsIterator<'map> {
     i: usize,
     offset: usize,
     value: usize,
-    jtable_offset: usize,
 }
 
 impl<'map> Iterator for PostingsIterator<'map> {
