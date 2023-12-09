@@ -27,10 +27,8 @@ class PrimaryLayer(Layer):
         
         super().__init__(n, partition, uuid if uuid else uuid4())
 
-        p_vec = Vector(self.partition, "Partition", len(self.partition))
-
         self.container = Container(
-            (p_vec,),
+            (),
             "ZLp",
             (self.n, 0),
             self.uuid,
@@ -43,8 +41,6 @@ class SegmentationLayer(Layer):
     def __init__(self, base_layer: Layer, n: int, partition: Sequence[int], ranges: Iterable[Tuple[int, int]], uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
 
         super().__init__(n, partition, uuid if uuid else uuid4())
-
-        p_vec = Vector(self.partition, "Partition", len(self.partition))
 
         ranges = np.atleast_2d(np.array(ranges, dtype=np.int64))
         ranges.shape = (n, 2)
@@ -63,7 +59,6 @@ class SegmentationLayer(Layer):
 
         self.container = Container(
             (
-                p_vec,
                 range_stream,
                 start_sort,
                 end_sort

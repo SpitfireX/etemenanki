@@ -137,7 +137,6 @@ pub struct PrimaryLayer<'map> {
     mmap: Mmap,
     pub name: String,
     pub header: container::Header<'map>,
-    partition: components::Vector<'map>,
 }
 
 impl<'map> PrimaryLayer<'map> {
@@ -155,23 +154,16 @@ impl<'map> TryFrom<Container<'map>> for PrimaryLayer<'map> {
             mmap,
             name,
             header,
-            mut components,
+            components: _,
         } = container;
 
         match header.container_type {
             container::Type::PrimaryLayer => {
-                let partition = check_and_return_component!(components, "Partition", Vector)?;
-
-                if partition.len() < 2 || partition.width() != 1 {
-                    Err(Self::Error::WrongComponentDimensions("Partition"))
-                } else {
-                    Ok(Self {
-                        mmap,
-                        name,
-                        header,
-                        partition,
-                    })
-                }
+                Ok(Self {
+                    mmap,
+                    name,
+                    header,
+                })
             }
 
             _ => Err(Self::Error::WrongContainerType),
@@ -185,7 +177,6 @@ pub struct SegmentationLayer<'map> {
     mmap: Mmap,
     pub name: String,
     pub header: container::Header<'map>,
-    partition: components::Vector<'map>,
     range_stream: components::Vector<'map>,
     start_sort: components::Index<'map>,
     end_sort: components::Index<'map>,
@@ -322,11 +313,6 @@ impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {
             container::Type::SegmentationLayer => {
                 let base = get_container_base!(header, SegmentationLayer);
 
-                let partition = check_and_return_component!(components, "Partition", Vector)?;
-                if partition.len() < 2 || partition.width() != 1 {
-                    return Err(Self::Error::WrongComponentDimensions("Partition"));
-                }
-
                 let range_stream =
                     check_and_return_component!(components, "RangeStream", Vector)?;
                 if range_stream.width() != 2 || range_stream.len() != header.dim1 {
@@ -348,7 +334,6 @@ impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {
                     mmap,
                     name,
                     header,
-                    partition,
                     range_stream,
                     start_sort,
                     end_sort,
