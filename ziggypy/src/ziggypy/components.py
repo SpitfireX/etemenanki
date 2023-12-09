@@ -457,7 +457,6 @@ class IndexCompressed(Component):
         r = len(blocks) * 16 - block_padding   # number of regular items in blocks
         o = len(data) - r                      # number of overflow items
         mr = int((r - 1) / 16) + 1             # number of sync blocks
-        data_offset = mr*16+8                   # start offset of data in compontent
 
         assert mr == len(blocks)
     
@@ -491,7 +490,7 @@ class IndexCompressed(Component):
         assert mr == len(packed_blocks)
         assert mr == len(block_keys)
 
-        offsets = [data_offset]
+        offsets = [0]
         for i, b in enumerate(packed_blocks[:-1], start=1):
             offsets.append(offsets[i-1] + len(b))
 

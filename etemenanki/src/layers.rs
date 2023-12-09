@@ -212,7 +212,7 @@ impl<'map> SegmentationLayer<'map> {
                 };
 
                 if bi < sync.len() {
-                    let mut offset = sync[bi].1 - (8 + (sync.len()*16));
+                    let mut offset = sync[bi].1;
 
                     // read o
                     let (_, readlen) = ziggurat_varint::decode(&data[offset..]);

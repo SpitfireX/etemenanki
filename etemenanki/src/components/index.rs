@@ -129,7 +129,7 @@ impl<'map> IndexIterator<'map> {
                 data,
             } => {
                 let bi = Index::block_position(sync, key);
-                let mut offset = sync[bi].1 as usize - (8 + (sync.len() * 16));
+                let mut offset = sync[bi].1 as usize;
 
                 // number of overflow items
                 let (o, readlen) = ziggurat_varint::decode(&data[offset..]);
