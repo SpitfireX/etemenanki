@@ -11,7 +11,6 @@ pub enum Vector<'map> {
     Compressed {
         length: usize,
         width: usize,
-        n_blocks: usize,
         sync: &'map [i64],
         data: &'map [u8],
     },
@@ -19,7 +18,6 @@ pub enum Vector<'map> {
     Delta {
         length: usize,
         width: usize,
-        n_blocks: usize,
         sync: &'map [i64],
         data: &'map [u8],
     },
@@ -80,8 +78,8 @@ impl<'map> Vector<'map> {
                 data[index]
             }
 
-            Self::Compressed { length: _, width, n_blocks: _, sync: _, data: _ } |
-            Self::Delta { length: _, width, n_blocks: _, sync: _, data: _ } => {
+            Self::Compressed { length: _, width, sync: _, data: _ } |
+            Self::Delta { length: _, width, sync: _, data: _ } => {
                 let ri = index / width;
                 let ci = index % width;
                 self.get_row_unchecked(ri)[ci]
@@ -112,25 +110,23 @@ impl<'map> Vector<'map> {
                 Self::Uncompressed { length: _, width, data } => {
                     VecSlice::Borrowed(&data[index..index+width])
                 }
-    
-                Self::Compressed { length: _, width, n_blocks, sync, data } |
-                Self::Delta { length: _, width, n_blocks, sync, data } => {
+
+                Self::Compressed { length: _, width, sync, data } |
+                Self::Delta { length: _, width, sync, data } => {
                     let bi = index/16;
-    
-                    // offset in sync vector is from start of the component, so we need
-                    // to compensate for that by subtracting the len of the sync vector
-                    let offset = (sync[bi] as usize) - (n_blocks * 8);
+
+                    let offset = sync[bi] as usize;
                     let block = match self {
                         Vector::Uncompressed { .. } => unreachable!("unreachable because of previous match block"),
                         Vector::Compressed { .. } => Self::decode_compressed_block(width, &data[offset..]),
                         Vector::Delta { .. } => Self::decode_delta_block(width, &data[offset..]),
                     };
-                    
+
                     let mut slice = vec![0i64; width];
                     for i in 0..width {
                         slice[i] = block[i][index % 16];
                     }
-    
+
                     VecSlice::Owned(slice)
             }
         }
@@ -160,7 +156,6 @@ impl<'map> Vector<'map> {
         Self::Delta {
             length: n,
             width: d,
-            n_blocks: sync.len(),
             sync,
             data,
         }
@@ -170,7 +165,6 @@ impl<'map> Vector<'map> {
         Self::Compressed {
             length: n,
             width: d,
-            n_blocks: sync.len(),
             sync,
             data,
         }
@@ -242,17 +236,15 @@ impl<'map> VectorReader<'map> {
                 &data[index..index+width]
             }
 
-            Vector::Compressed { length: _, width, n_blocks, sync, data } |
-            Vector::Delta { length: _, width, n_blocks, sync, data } => {
+            Vector::Compressed { length: _, width, sync, data } |
+            Vector::Delta { length: _, width, sync, data } => {
                 let bi = index/16;
-                if bi > n_blocks {
+                if bi > sync.len() {
                     panic!("block index out of range");
                 }
 
                 if bi != self.last_block_index || self.last_block == None {
-                    // offset in sync vector is from start of the component, so we need
-                    // to compensate for that by subtracting the len of the sync vector
-                    let offset = (sync[bi] as usize) - (n_blocks * 8);
+                    let offset = sync[bi] as usize;
 
                     self.last_block = match self.vector {
                         Vector::Uncompressed { .. } => unreachable!("unreachable because of previous match block"),

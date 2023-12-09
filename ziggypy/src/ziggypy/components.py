@@ -136,7 +136,6 @@ class VectorComp(Component):
         # compress data
 
         m = int((n - 1) / BLOCKSIZE) + 1
-        comp_start = m*8
 
         # VarInt encoded blocks
         blocks = []
@@ -160,7 +159,7 @@ class VectorComp(Component):
         assert len(blocks) == m, f"there should be m = {m} blocks but {len(blocks)} got encoded"
 
         # Sync offsets
-        sync = [comp_start]
+        sync = [0]
         for i, b in enumerate(blocks[:-1], start=1):
             sync.append(sync[i-1] + len(b))
         
@@ -196,7 +195,6 @@ class VectorDelta(Component):
         # compress data
 
         m = int((n - 1) / BLOCKSIZE) + 1
-        delta_start = m*8
 
         # VarInt encoded blocks
         blocks = []
@@ -226,7 +224,7 @@ class VectorDelta(Component):
         assert len(blocks) == m
 
         # Sync offsets
-        sync = [delta_start]
+        sync = [0]
         for i, b in enumerate(blocks[:-1], start=1):
             sync.append(sync[i-1] + len(b))
 
