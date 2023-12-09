@@ -68,9 +68,8 @@ impl<'map> StringVector<'map> {
     }
 
     pub fn get_unchecked(&self, index: usize) -> &str {
-        let len_offsets = (self.len() + 1) * 8;
-        let start = (self.offsets[index] as usize) - len_offsets;
-        let end = (self.offsets[index + 1] as usize) - len_offsets;
+        let start = self.offsets[index] as usize;
+        let end = self.offsets[index + 1] as usize;
         unsafe { std::str::from_utf8_unchecked(&self.data[start..end - 1]) }
     }
 

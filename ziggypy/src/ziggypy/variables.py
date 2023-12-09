@@ -57,7 +57,8 @@ class PlainStringVariable(Variable):
         else:
             string_hash = Index(string_pairs, "StringHash", base_layer.n)
 
-        self.container = Container((string_data, offset_stream, string_hash),
+        self.container = Container(
+            (string_data, offset_stream, string_hash),
             'ZVc',
             (base_layer.n, 0),
             self.uuid,

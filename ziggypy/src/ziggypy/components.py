@@ -289,9 +289,9 @@ class StringVector(Component):
         for s in islice(strings, n):
             self.encoded.extend(s)
             self.encoded.extend(b'\0')
-            self.offsets.append(offset + ((n+1)*8))
+            self.offsets.append(offset)
             offset += len(s)+1
-        self.offsets.append(offset + ((n+1)*8) + 1)
+        self.offsets.append(offset + 1)
 
         super().__init__(
             0x03,
