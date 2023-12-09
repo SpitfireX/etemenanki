@@ -9,12 +9,9 @@ from .components import *
 
 class Layer(ABC):
 
-    def __init__(self, n: int, partition: Iterable[int], uuid: UUID):
+    def __init__(self, n: int, uuid: UUID):
         self.n = n
-        self.partition = list(partition)
         self.uuid = uuid
-
-        assert len(self.partition) >= 2, "A layer needs at least one partition spanning all positions, i.e. (0, n)"
 
 
     def write(self, f: RawIOBase):
@@ -23,9 +20,9 @@ class Layer(ABC):
 
 class PrimaryLayer(Layer):
 
-    def __init__(self, n: int, partition: Sequence[int], uuid: Optional[UUID] = None, comment: str = ""):
+    def __init__(self, n: int, uuid: Optional[UUID] = None, comment: str = ""):
         
-        super().__init__(n, partition, uuid if uuid else uuid4())
+        super().__init__(n, uuid if uuid else uuid4())
 
         self.container = Container(
             (),
@@ -38,9 +35,9 @@ class PrimaryLayer(Layer):
 
 class SegmentationLayer(Layer):
 
-    def __init__(self, base_layer: Layer, n: int, partition: Sequence[int], ranges: Iterable[Tuple[int, int]], uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
+    def __init__(self, base_layer: Layer, n: int, ranges: Iterable[Tuple[int, int]], uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
 
-        super().__init__(n, partition, uuid if uuid else uuid4())
+        super().__init__(n, uuid if uuid else uuid4())
 
         ranges = np.atleast_2d(np.array(ranges, dtype=np.int64))
         ranges.shape = (n, 2)

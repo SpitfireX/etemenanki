@@ -58,7 +58,6 @@ pub struct IndexedStringVariable<'map> {
     pub header: container::Header<'map>,
     lexicon: components::StringVector<'map>,
     lex_hash: components::Index<'map>,
-    partition: components::Vector<'map>,
     lex_id_stream: components::Vector<'map>,
     lex_id_index: components::InvertedIndex<'map>,
 }
@@ -162,9 +161,6 @@ impl<'map> TryFrom<Container<'map>> for IndexedStringVariable<'map> {
                     return Err(Self::Error::WrongComponentDimensions("LexHash"));
                 }
 
-                let partition = check_and_return_component!(components, "Partition", Vector)?;
-                // consistency gets checked at datastore creation
-
                 let lex_id_stream = check_and_return_component!(components, "LexIDStream", Vector)?;
                 if lex_id_stream.len() != n || lex_id_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("LexIDStream"));
@@ -183,7 +179,6 @@ impl<'map> TryFrom<Container<'map>> for IndexedStringVariable<'map> {
                     header,
                     lexicon,
                     lex_hash,
-                    partition,
                     lex_id_stream,
                     lex_id_index,
                 })
@@ -480,7 +475,6 @@ pub struct SetVariable<'map> {
     pub header: container::Header<'map>,
     lexicon: components::StringVector<'map>,
     lex_hash: components::Index<'map>,
-    partition: components::Vector<'map>,
     id_set_stream: components::Set<'map>,
     id_set_index: components::InvertedIndex<'map>,
 }
@@ -539,9 +533,6 @@ impl<'map> TryFrom<Container<'map>> for SetVariable<'map> {
                     return Err(Self::Error::WrongComponentDimensions("LexHash"));
                 }
 
-                let partition = check_and_return_component!(components, "Partition", Vector)?;
-                // consistency gets checked at datastore creation
-
                 let id_set_stream = check_and_return_component!(components, "IDSetStream", Set)?;
                 if id_set_stream.len() != n {
                     return Err(Self::Error::WrongComponentDimensions("IDSetStream"));
@@ -560,7 +551,6 @@ impl<'map> TryFrom<Container<'map>> for SetVariable<'map> {
                     header,
                     lexicon,
                     lex_hash,
-                    partition,
                     id_set_stream,
                     id_set_index,
                 })

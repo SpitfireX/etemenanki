@@ -98,10 +98,8 @@ class IndexedStringVariable(Variable):
         # inverted lookup index associating each lexicon ID with its positionso of occurence
         invidx = InvertedIndex(list(lex), lexids, "LexIDIndex", lsize, 0)
 
-        p_vec = Vector(self.base_layer.partition, "Partition", len(self.base_layer.partition))
-
         self.container = Container(
-            (lexicon, lexindex, p_vec, lexidstream, invidx),
+            (lexicon, lexindex, lexidstream, invidx),
             'ZVx',
             (self.base_layer.n, lsize),
             self.uuid,
@@ -152,10 +150,8 @@ class FileIndexedStringVariable(Variable):
         
         invidx = InvertedIndex(list(lex), lexids, "LexIDIndex", lsize, 0)
 
-        p_vec = Vector(self.base_layer.partition, "Partition", len(self.base_layer.partition))
-
         self.container = Container(
-            (lexicon, lexindex, p_vec, lexidstream, invidx),
+            (lexicon, lexindex, lexidstream, invidx),
             'ZVx',
             (self.base_layer.n, lsize),
             self.uuid,
@@ -230,14 +226,10 @@ class SetVariable(Variable):
         # index of type occurrences in sets, associates types with set IDs/layer positions
         id_set_index = InvertedIndex(list(types), id_sets, "IDSetIndex", v, 0)
 
-        # partition
-        p_vec = Vector(self.base_layer.partition, "Partition", len(self.base_layer.partition))
-
         self.container = Container(
             (
                 lexicon,
                 lexhash,
-                p_vec,
                 id_set_stream,
                 id_set_index,
             ),

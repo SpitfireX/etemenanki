@@ -184,11 +184,6 @@ print("Building Ziggurat datastore...")
 # layers that can reference layers below them.
 # All these containers are linked via UUIDs.
 
-# partition vector:
-# no partition = 1 partition spanning the entire corpus
-# with boundaries (0, clen)
-partitions = [0, clen]
-
 
 def write_datastore_object(obj, filename):
     ztype = obj.__class__.__name__
@@ -202,7 +197,7 @@ def write_datastore_object(obj, filename):
 
 
 ## Primary Layer with corpus dimensions
-primary_layer = PrimaryLayer(clen, partitions, comment = f"{args.input.name}")
+primary_layer = PrimaryLayer(clen, comment = f"{args.input.name}")
 write_datastore_object(primary_layer, "primary")
 
 
@@ -228,7 +223,7 @@ s_attr_layers = dict()
 
 for attr in s_attrs:
     slen = len(spans[attr])
-    layer = SegmentationLayer(primary_layer, slen, (0, slen), spans[attr], compressed = not args.uncompressed, comment = f"s-attr {attr}")
+    layer = SegmentationLayer(primary_layer, slen, spans[attr], compressed = not args.uncompressed, comment = f"s-attr {attr}")
 
     s_attr_layers[attr] = layer
     write_datastore_object(layer, f"{attr}/{attr}")
