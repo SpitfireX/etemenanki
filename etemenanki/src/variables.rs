@@ -534,7 +534,8 @@ impl<'map> TryFrom<Container<'map>> for SetVariable<'map> {
                 }
 
                 let id_set_stream = check_and_return_component!(components, "IDSetStream", Set)?;
-                if id_set_stream.len() != n {
+                if id_set_stream.len() != n ||
+                    id_set_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("IDSetStream"));
                 }
 

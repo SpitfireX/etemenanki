@@ -82,6 +82,9 @@ impl<'map> Component<'map> {
             ComponentType::Vector => {
                 let n = be.param1 as usize;
                 let d = be.param2 as usize;
+                if d == 0 {
+                    return Err(ComponentError::InvalidDimension("d must be > 0"));
+                }
                 let data_ptr = start_ptr as *const i64;
                 let data = unsafe { std::slice::from_raw_parts(data_ptr, n * d) };
                 Component::Vector(Vector::uncompressed_from_parts(n, d, data))
@@ -91,6 +94,10 @@ impl<'map> Component<'map> {
                 let n = be.param1 as usize;
                 let d = be.param2 as usize;
                 let m = ((n - 1) / 16) + 1;
+
+                if d == 0 {
+                    return Err(ComponentError::InvalidDimension("d must be > 0"));
+                }
 
                 // check if sync array is in bounds
                 let len = be.size as usize;
@@ -113,6 +120,10 @@ impl<'map> Component<'map> {
                 let d = be.param2 as usize;
                 let m = ((n - 1) / 16) + 1;
 
+                if d == 0 {
+                    return Err(ComponentError::InvalidDimension("d must be > 0"));
+                }
+
                 // check if sync array is in bounds
                 let len = be.size as usize;
                 let len_sync = m * 8;
@@ -131,7 +142,12 @@ impl<'map> Component<'map> {
 
             ComponentType::Set => {
                 let n = be.param1 as usize;
+                let p = be.param2 as usize;
                 let m = ((n - 1) / 16) + 1;
+
+                if p == 0 {
+                    return Err(ComponentError::InvalidDimension("p must be > 0"));
+                }
 
                 // check if sync array is in bounds
                 let len = be.size as usize;
@@ -144,7 +160,7 @@ impl<'map> Component<'map> {
                         let data_ptr = start_ptr.offset(len_sync as isize);
                         let data = std::slice::from_raw_parts(data_ptr, len - len_sync);
 
-                        Component::Set(Set::from_parts(n, sync, data))
+                        Component::Set(Set::from_parts(n, p, sync, data))
                     }
                 }
             }
@@ -205,6 +221,7 @@ pub enum ComponentError {
     InvalidType(u16),
     NullPtr,
     OutOfBounds(&'static str),
+    InvalidDimension(&'static str),
 }
 
 impl From<TryFromPrimitiveError<ComponentType>> for ComponentError {
@@ -219,6 +236,7 @@ impl fmt::Display for ComponentError {
             Self::InvalidType(t) => write!(f, "invalid container type {}", t),
             Self::NullPtr => write!(f, "given pointer is a null pointer"),
             Self::OutOfBounds(s) => write!(f, "component is out of bounds: {}", s),
+            Self::InvalidDimension(s) => write!(f, "component has invalid dimension: {}", s),
         }
     }
 }

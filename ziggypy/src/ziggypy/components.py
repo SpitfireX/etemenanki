@@ -1,3 +1,6 @@
+import numbers
+import collections
+
 import numpy as np
 
 try:
@@ -310,13 +313,15 @@ class StringVector(Component):
 
 class Set(Component):
 
-    def __init__(self, sets: Iterable[Sequence[int]], name: str, n: int):
+    def __init__(self, sets: Iterable[Sequence[Any]], name: str, n: int, p: int = 1):
+
+        assert p > 0, "p must be > 0"
 
         super().__init__(
             0x05,
             0x01,
             name,
-            (n, 2)
+            (n, p)
         )
 
         blocks = []
@@ -330,13 +335,16 @@ class Set(Component):
             # delta encode each set
             itemoffset = 0
             for set in batch:
-                set = list(set)
-                delta = [set[0]] if len(set) > 0 else []
-                for i in range(1, len(set)):
-                    delta.append(set[i] - set[i-1])
+                if len(set) > 0:
+                    if isinstance(set[0], numbers.Integral):
+                        encoded = encode_varint_block(set)
+                    elif isinstance(set[0], collections.abc.Sequence):
+                        encoded = b"".join(encode_varint_block(t) for t in set)
+                    else:
+                        raise Exception("individual sets must be a (sequence) of ints")
+                else:
+                    encoded = b""
 
-                encoded = encode_varint_block(delta)
-                
                 offsets.append(itemoffset)
                 lengths.append(len(set))
                 encoded_items += encoded

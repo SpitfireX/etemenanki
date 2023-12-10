@@ -221,7 +221,7 @@ class SetVariable(Variable):
         # sets of type ids
         id_sets = [ sorted([types[i] for i in s]) for s in sets ]
         
-        id_set_stream = Set(id_sets, "IDSetStream", n)
+        id_set_stream = Set(id_sets, "IDSetStream", n, 1)
 
         # index of type occurrences in sets, associates types with set IDs/layer positions
         id_set_index = InvertedIndex(list(types), id_sets, "IDSetIndex", v)

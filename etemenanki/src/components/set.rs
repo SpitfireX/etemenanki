@@ -3,14 +3,17 @@ use core::panic;
 #[derive(Debug, Clone, Copy)]
 pub struct Set<'map> {
     length: usize,
+    width: usize,
     sync: &'map [i64],
     data: &'map [u8],
 }
 
 impl<'map> Set<'map> {
-    pub fn from_parts(n: usize, sync: &'map [i64], data: &'map [u8]) -> Self {
+    pub fn from_parts(n: usize, p: usize, sync: &'map [i64], data: &'map [u8]) -> Self {
+        assert!(p == 1, "Set with p > 1 not yet supported");
         Self {
             length: n,
+            width: p,
             sync,
             data,
         }
@@ -41,11 +44,15 @@ impl<'map> Set<'map> {
 
         let item_offset = offset + item_offsets[ii] as usize;
         let item_len = item_lens[ii] as usize;
-        let (set, _) = ziggurat_varint::decode_fixed_delta_block(&self.data[item_offset..], item_len);
+        let (set, _) = ziggurat_varint::decode_fixed_block(&self.data[item_offset..], item_len);
         set
     }
 
     pub fn len(&self) -> usize {
         self.length
+    }
+
+    pub fn width(&self) -> usize {
+        self.width
     }
 }
