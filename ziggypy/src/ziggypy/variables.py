@@ -96,7 +96,7 @@ class IndexedStringVariable(Variable):
             lexidstream = Vector(lexids, "LexIDStream", len(lexids))
 
         # inverted lookup index associating each lexicon ID with its positionso of occurence
-        invidx = InvertedIndex(list(lex), lexids, "LexIDIndex", lsize, 0)
+        invidx = InvertedIndex(list(lex), lexids, "LexIDIndex", lsize)
 
         self.container = Container(
             (lexicon, lexindex, lexidstream, invidx),
@@ -148,7 +148,7 @@ class FileIndexedStringVariable(Variable):
         strings = (line.strip().encode("utf-8") for line in file)
         lexids = [(lex[s],) for s in strings]
         
-        invidx = InvertedIndex(list(lex), lexids, "LexIDIndex", lsize, 0)
+        invidx = InvertedIndex(list(lex), lexids, "LexIDIndex", lsize)
 
         self.container = Container(
             (lexicon, lexindex, lexidstream, invidx),
@@ -224,7 +224,7 @@ class SetVariable(Variable):
         id_set_stream = Set(id_sets, "IDSetStream", n)
 
         # index of type occurrences in sets, associates types with set IDs/layer positions
-        id_set_index = InvertedIndex(list(types), id_sets, "IDSetIndex", v, 0)
+        id_set_index = InvertedIndex(list(types), id_sets, "IDSetIndex", v)
 
         self.container = Container(
             (

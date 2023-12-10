@@ -180,7 +180,6 @@ impl<'map> Component<'map> {
 
             ComponentType::InvertedIndex => {
                 let k = be.param1 as usize;
-                let p = be.param2 as usize;
 
                 // check if typeinfo array is in bounds
                 let len = be.size as usize;
@@ -193,7 +192,7 @@ impl<'map> Component<'map> {
                         let data_ptr = start_ptr.offset((len_typeinfo) as isize);
                         let data = std::slice::from_raw_parts(data_ptr, len - len_typeinfo);
 
-                        Component::InvertedIndex(InvertedIndex::from_parts(k, p, typeinfo, data))
+                        Component::InvertedIndex(InvertedIndex::from_parts(k, typeinfo, data))
                     }
                 }
             }

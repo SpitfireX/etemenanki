@@ -516,16 +516,14 @@ class IndexCompressed(Component):
 
 class InvertedIndex(Component):
 
-    def __init__(self, types: Sequence[Any], positions: Iterable[Iterable[int]], name: str, k: int, p: int):
+    def __init__(self, types: Sequence[Any], positions: Iterable[Iterable[int]], name: str, k: int):
         """positions: sequence of lists of lexicon positions for each corpus position"""
-
-        assert p == 0, "jump tables for inverted index are not implemented yet"
 
         super().__init__(
             0x07,
             0x01,
             name,
-            (k, p)
+            (k, 0)
         )
 
         # build postings lists

@@ -1,16 +1,14 @@
 #[derive(Debug, Clone, Copy)]
 pub struct InvertedIndex<'map> {
     types: usize,
-    jtable_length: usize,
     typeinfo: &'map [(i64, i64)],
     data: &'map [u8],
 }
 
 impl<'map> InvertedIndex<'map> {
-    pub fn from_parts(k: usize, p: usize, typeinfo: &'map [(i64, i64)], data: &'map [u8]) -> Self {
+    pub fn from_parts(k: usize, typeinfo: &'map [(i64, i64)], data: &'map [u8]) -> Self {
         Self {
             types: k,
-            jtable_length: p,
             typeinfo,
             data,
         }
