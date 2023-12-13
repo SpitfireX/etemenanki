@@ -24,7 +24,8 @@ parser.add_argument("-p", action="append", metavar="p_attribute_name", default=[
                     help="""Declares and names a p-attribute. Order of declaration must correspond to order of columns in input.
                     P-attributes are encoded as variables on the primary layer of the corpus.
                     Variable type can be specified with a colon after the name, i.e. 'pos:indexed'.
-                    Valid variable types are: indexed, plain.""")
+                    Valid variable types are: indexed, plain, int, set, skip.
+                    The type "skip" denotes that a column should be skipped and not encoded.""")
 parser.add_argument("-s", action="append", metavar="s_attribute_name", default=[],
                     help="""Declares an s-attribute. The attribute name must correspond to the attribute's XML tag in the input.
                     S-attributes are encoded as segmentation layers and thus only store the start and end positions of the spans
@@ -48,7 +49,7 @@ for p in args.p:
         name, type = p[0], "indexed"
     else:
         name, type = p
-    assert type in ("indexed", "plain"), f"Invalid variable type '{type}' for p-attribute '{name}'"
+    assert type in ("indexed", "plain", "int", "set", "skip"), f"Invalid variable type '{type}' for p-attribute '{name}'"
     # p-attr tokens get saved to a temporary file to avoid loading them into RAM
     temp = tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", prefix=name+"_", suffix=".zigtmp")
     p_attrs.append((name, type, temp))
@@ -141,8 +142,8 @@ with gzip.open(args.input, mode = "rt") if args.input.suffix == ".gz" else args.
             if not is_closing_tag:
                 stack.append((cpos, tagname, attrs))
             else:
-                startpos, start_tagname, attrs = stack.pop()
-                if tagname == start_tagname:
+                if len(stack) > 0 and stack[-1][1] == tagname:
+                    startpos, start_tagname, attrs = stack.pop()
                     if tagname not in spans.keys():
                         spans[tagname] = []
                         span_attrs[tagname] = []
@@ -196,6 +197,9 @@ def write_datastore_object(obj, filename):
         obj.write(f)
 
 
+def parse_set(str):
+    return set(s.encode("utf-8") for s in str.strip().split("|") if s)
+
 ## Primary Layer with corpus dimensions
 primary_layer = PrimaryLayer(clen, comment = f"{args.input.name}")
 write_datastore_object(primary_layer, "primary")
@@ -204,16 +208,27 @@ write_datastore_object(primary_layer, "primary")
 ## Primary Layer Variables for p attributes
 
 for i, (name, type, temp) in enumerate(p_attrs):
-    if type == "indexed":
-        temp.file.seek(0)
-        variable = FileIndexedStringVariable(primary_layer, temp, compressed = not args.uncompressed, comment = f"p-attr {name}")
-    elif type == "plain":
-        temp.file.seek(0)
-        variable = PlainStringVariable(primary_layer, (line.strip() for line in temp), compressed = not args.uncompressed, comment = f"p-attr {name}")
-    else:
-        print(f"Invalid type '{type}' for p attribute '{name}'")
-        continue
-    
+    temp.file.seek(0)
+    c = f"p-attr {name}"
+
+    try:
+        if type == "indexed":
+            variable = FileIndexedStringVariable(primary_layer, temp, compressed = not args.uncompressed, comment = c)
+        elif type == "plain":
+            variable = PlainStringVariable(primary_layer, (line.strip() for line in temp), compressed = not args.uncompressed, comment = c)
+        elif type == "int":
+            variable = IntegerVariable(primary_layer, [int(s) for s in temp], compressed = not args.uncompressed, comment = c)
+        elif type == "set":
+            variable = SetVariable(primary_layer, [parse_set(s) for s in temp], comment = c)
+        elif type == "skip":
+            continue
+        else:
+            print(f"Invalid type '{type}' for p attribute '{name}'")
+            continue
+    except Exception as e:
+        print(f"Error while encoding p attribute '{name}': {e}")
+        exit()
+
     write_datastore_object(variable, name)
 
 
@@ -248,7 +263,7 @@ for attr, annos in s_annos.items():
         elif type == "int":
             variable = IntegerVariable(base_layer, [int(s) for s in data], compressed = not args.uncompressed, comment = c)
         elif type == "set":
-            variable = SetVariable(base_layer, [set(x.encode("utf-8") for x in s.split("|") if x) for s in data], comment = c)
+            variable = SetVariable(base_layer, [parse_set(s) for s in data], comment = c)
         else:
             print(f"Invalid type '{type}' for annotation '{anno}' of s attribute '{attr}'")
             continue
