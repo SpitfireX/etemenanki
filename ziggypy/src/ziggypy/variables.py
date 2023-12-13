@@ -29,14 +29,14 @@ class Variable(ABC):
 
 class PlainStringVariable(Variable):
 
-    def __init__(self, base_layer: Layer, strings: Iterable[bytes], uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
+    def __init__(self, base_layer: Layer, strings: Iterable[str], uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
         
         super().__init__(base_layer, uuid if uuid else uuid4())
 
         # build StringData [string]
         print('Building StringData')
 
-        string_data = StringList(strings, 'StringData', base_layer.n)
+        string_data = StringList((s.encode("utf-8") for s in strings), 'StringData', base_layer.n)
 
         # build OffsetStream [offset_to_next_string]
         print('Building OffsetStream')

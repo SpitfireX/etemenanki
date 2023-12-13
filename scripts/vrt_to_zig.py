@@ -206,10 +206,10 @@ write_datastore_object(primary_layer, "primary")
 for i, (name, type, temp) in enumerate(p_attrs):
     if type == "indexed":
         temp.file.seek(0)
-        variable = FileIndexedStringVariable(primary_layer, temp, compressed = not args.uncompressed, comment = f"p-attr {attr}")
+        variable = FileIndexedStringVariable(primary_layer, temp, compressed = not args.uncompressed, comment = f"p-attr {name}")
     elif type == "plain":
         temp.file.seek(0)
-        variable = PlainStringVariable(primary_layer, (line.strip().encode("utf-8") for line in temp), compressed = not args.uncompressed, comment = f"p-attr {attr}")
+        variable = PlainStringVariable(primary_layer, (line.strip() for line in temp), compressed = not args.uncompressed, comment = f"p-attr {name}")
     else:
         print(f"Invalid type '{type}' for p attribute '{name}'")
         continue
@@ -244,13 +244,13 @@ for attr, annos in s_annos.items():
         if type == "indexed":
             variable = IndexedStringVariable(base_layer, [s.encode("utf-8") for s in data], compressed = not args.uncompressed, comment = c)
         elif type == "plain":
-            variable = PlainStringVariable(base_layer, [s.encode("utf-8") for s in data], compressed = not args.uncompressed, comment = c)
+            variable = PlainStringVariable(base_layer, data, compressed = not args.uncompressed, comment = c)
         elif type == "int":
             variable = IntegerVariable(base_layer, [int(s) for s in data], compressed = not args.uncompressed, comment = c)
         elif type == "set":
             variable = SetVariable(base_layer, [set(x.encode("utf-8") for x in s.split("|") if x) for s in data], comment = c)
         else:
-            print(f"Invalid type '{type}' for annotation '{anno}' of s attribute '{attr}'", comment = c)
+            print(f"Invalid type '{type}' for annotation '{anno}' of s attribute '{attr}'")
             continue
 
         write_datastore_object(variable, f"{attr}/{anno}")
