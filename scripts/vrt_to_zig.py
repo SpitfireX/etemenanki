@@ -39,6 +39,9 @@ parser.add_argument("-a", action="append", metavar="s_annotation_spec", default=
                     e.g. '-a text+url:plain'.
                     Valid variable types are: indexed, plain, int, set.
                     """)
+parser.add_argument("--int-default", type=int, metavar="int_default",
+                    help="""The default value used when an invalid integer value is encountered while encoding an attribute.
+                    If no default is given, the encoder will exit with an error (default behavior).""")
 
 args = parser.parse_args()
 
@@ -200,6 +203,16 @@ def write_datastore_object(obj, filename):
 def parse_set(str):
     return set(s.encode("utf-8") for s in str.strip().split("|") if s)
 
+def parse_int(str):
+    try:
+        return int(str)
+    except Exception as e:
+        if args.int_default:
+            return args.int_default
+        else:
+            raise e
+
+
 ## Primary Layer with corpus dimensions
 primary_layer = PrimaryLayer(clen, comment = f"{args.input.name}")
 write_datastore_object(primary_layer, "primary")
@@ -217,7 +230,7 @@ for i, (name, type, temp) in enumerate(p_attrs):
         elif type == "plain":
             variable = PlainStringVariable(primary_layer, (line.strip() for line in temp), compressed = not args.uncompressed, comment = c)
         elif type == "int":
-            variable = IntegerVariable(primary_layer, [int(s) for s in temp], compressed = not args.uncompressed, comment = c)
+            variable = IntegerVariable(primary_layer, [parse_int(s) for s in temp], compressed = not args.uncompressed, comment = c)
         elif type == "set":
             variable = SetVariable(primary_layer, [parse_set(s) for s in temp], comment = c)
         elif type == "skip":
@@ -256,16 +269,20 @@ for attr, annos in s_annos.items():
 
         c = f"s-attr {attr}_{anno}"
 
-        if type == "indexed":
-            variable = IndexedStringVariable(base_layer, [s.encode("utf-8") for s in data], compressed = not args.uncompressed, comment = c)
-        elif type == "plain":
-            variable = PlainStringVariable(base_layer, data, compressed = not args.uncompressed, comment = c)
-        elif type == "int":
-            variable = IntegerVariable(base_layer, [int(s) for s in data], compressed = not args.uncompressed, comment = c)
-        elif type == "set":
-            variable = SetVariable(base_layer, [parse_set(s) for s in data], comment = c)
-        else:
-            print(f"Invalid type '{type}' for annotation '{anno}' of s attribute '{attr}'")
-            continue
+        try:
+            if type == "indexed":
+                variable = IndexedStringVariable(base_layer, [s.encode("utf-8") for s in data], compressed = not args.uncompressed, comment = c)
+            elif type == "plain":
+                variable = PlainStringVariable(base_layer, data, compressed = not args.uncompressed, comment = c)
+            elif type == "int":
+                variable = IntegerVariable(base_layer, [parse_int(s) for s in data], compressed = not args.uncompressed, comment = c)
+            elif type == "set":
+                variable = SetVariable(base_layer, [parse_set(s) for s in data], comment = c)
+            else:
+                print(f"Invalid type '{type}' for annotation '{anno}' of s attribute '{attr}'")
+                continue
+        except Exception as e:
+            print(f"Error while encoding annotation {anno} for s attribute '{attr}': {e}")
+            exit()
 
         write_datastore_object(variable, f"{attr}/{anno}")
