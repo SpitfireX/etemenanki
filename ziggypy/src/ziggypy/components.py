@@ -251,10 +251,12 @@ class StringList(Component):
         """strings: series of utf-8 encoded null terminated strings"""
 
         self.encoded = bytearray()
+        self.len = 0
 
         for s in islice(strings, n):
             self.encoded.extend(s)
             self.encoded.extend(b'\0')
+            self.len += 1
         
         super().__init__(
             0x02,
@@ -262,6 +264,9 @@ class StringList(Component):
             name,
             (n, 0)
         )
+
+    def __len__(self):
+        return self.len
 
     def strings(self):
         start = 0
@@ -399,7 +404,7 @@ class Index(Component):
             0x06,
             0x00,
             name,
-            (n, 2)
+            (n, 0)
         )
         
         self.data = np.array(pairs, dtype=np.int64)

@@ -37,6 +37,7 @@ class PlainStringVariable(Variable):
         print('Building StringData')
 
         string_data = StringList((s.encode("utf-8") for s in strings), 'StringData', base_layer.n)
+        assert len(string_data) == base_layer.n, "variable must be of same size as its base layer"
 
         # build OffsetStream [offset_to_next_string]
         print('Building OffsetStream')
@@ -69,9 +70,11 @@ class PlainStringVariable(Variable):
 
 class IndexedStringVariable(Variable):
 
-    def __init__(self, base_layer: Layer, strings: list[bytes], uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
+    def __init__(self, base_layer: Layer, strings: Sequence[bytes], uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
         
         super().__init__(base_layer, uuid if uuid else uuid4())
+
+        assert len(strings) == base_layer.n, "variable must be of same size as its base layer"
 
         # lexicon of unique strings, sorted by total occurence
         lex = Counter(strings)
@@ -166,6 +169,8 @@ class IntegerVariable(Variable):
     
         super().__init__(base_layer, uuid if uuid else uuid4())
 
+        assert len(ints) == base_layer.n, "variable must be of same size as its base layer"
+
         # stream of integers
 
         if compressed:
@@ -201,6 +206,8 @@ class SetVariable(Variable):
     def __init__(self, base_layer: Layer, sets: Sequence[set[bytes]], uuid: Optional[UUID] = None, comment: str = ""):
 
         super().__init__(base_layer, uuid if uuid else uuid4())
+
+        assert len(sets) == base_layer.n, "variable must be of same size as its base layer"
 
         # global lexicon of types 
         types = Counter()
