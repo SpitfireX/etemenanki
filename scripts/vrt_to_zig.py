@@ -24,7 +24,7 @@ parser.add_argument("-p", action="append", metavar="p_attribute_name", default=[
                     help="""Declares and names a p-attribute. Order of declaration must correspond to order of columns in input.
                     P-attributes are encoded as variables on the primary layer of the corpus.
                     Variable type can be specified with a colon after the name, i.e. 'pos:indexed'.
-                    Valid variable types are: indexed, plain, int, set, skip.
+                    Valid variable types are: indexed, plain, int, delta, set, skip.
                     The type "skip" denotes that a column should be skipped and not encoded.""")
 parser.add_argument("-s", action="append", metavar="s_attribute_name", default=[],
                     help="""Declares an s-attribute. The attribute name must correspond to the attribute's XML tag in the input.
@@ -37,7 +37,7 @@ parser.add_argument("-a", action="append", metavar="s_annotation_spec", default=
                     with the attributes of the s-attribute's XML tags. Annotations consist of three parts: The s-attribute's name,
                     the annotation's name, and a Ziggurat variable type. This takes the form 's_attr+name:type',
                     e.g. '-a text+url:plain'.
-                    Valid variable types are: indexed, plain, int, set.
+                    Valid variable types are: indexed, plain, int, delta, set.
                     """)
 parser.add_argument("--int-default", type=int, metavar="int_default",
                     help="""The default value used when an invalid integer value is encountered while encoding an attribute.
@@ -52,7 +52,7 @@ for p in args.p:
         name, type = p[0], "indexed"
     else:
         name, type = p
-    assert type in ("indexed", "plain", "int", "set", "skip"), f"Invalid variable type '{type}' for p-attribute '{name}'"
+    assert type in ("indexed", "plain", "int", "delta", "set", "skip"), f"Invalid variable type '{type}' for p-attribute '{name}'"
     # p-attr tokens get saved to a temporary file to avoid loading them into RAM
     temp = tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", prefix=name+"_", suffix=".zigtmp")
     p_attrs.append((name, type, temp))
@@ -66,7 +66,7 @@ for a in args.a:
     try:
         attr, anno = a.split("+")
         anno, type = anno.split(":")
-        assert type in ("indexed", "plain", "int", "set")
+        assert type in ("indexed", "plain", "int", "delta", "set"), f"Invalid variable type '{type}' for annotation {anno} for s-attribute '{attr}'"
         if attr not in s_annos.keys():
             s_annos[attr] = []
         s_annos[attr].append((anno, type))
@@ -231,6 +231,8 @@ for i, (name, type, temp) in enumerate(p_attrs):
             variable = PlainStringVariable(primary_layer, (line.strip() for line in temp), compressed = not args.uncompressed, comment = c)
         elif type == "int":
             variable = IntegerVariable(primary_layer, [parse_int(s) for s in temp], compressed = not args.uncompressed, comment = c)
+        elif type == "delta":
+            variable = IntegerVariable(primary_layer, [parse_int(s) for s in temp], compressed = not args.uncompressed, delta= True, comment = c)
         elif type == "set":
             variable = SetVariable(primary_layer, [parse_set(s) for s in temp], comment = c)
         elif type == "skip":
@@ -276,6 +278,8 @@ for attr, annos in s_annos.items():
                 variable = PlainStringVariable(base_layer, data, compressed = not args.uncompressed, comment = c)
             elif type == "int":
                 variable = IntegerVariable(base_layer, [parse_int(s) for s in data], compressed = not args.uncompressed, comment = c)
+            elif type == "delta":
+                variable = IntegerVariable(base_layer, [parse_int(s) for s in data], compressed = not args.uncompressed, delta=True, comment = c)
             elif type == "set":
                 variable = SetVariable(base_layer, [parse_set(s) for s in data], comment = c)
             else:
