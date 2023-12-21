@@ -246,3 +246,37 @@ class SetVariable(Variable):
             (base_layer.uuid, None),
             comment,
         )
+
+
+class PointerVariable(Variable):
+    def __init__(self, base_layer: Layer, heads: Sequence[int], uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
+
+        super().__init__(base_layer, uuid if uuid else uuid4())
+
+        assert len(heads) == base_layer.n, "variable must be of same size as its base layer"
+        assert all(h >= -1 and h < len(heads) for h in heads), "Head pointers must fall into the range [-1, N-1]"
+
+        # stream of heads
+        head_stream = VectorDelta(heads, "HeadStream", len(heads))
+
+        # sort index
+
+        pairs = [(n, i) for i, n in enumerate(heads)]
+        pairs.sort(key = lambda x: x[0])
+
+        if compressed:
+            head_sort = IndexCompressed(pairs, "HeadSort", len(heads))
+        else:
+            head_sort = Index(pairs, "HeadSort", len(heads))
+        
+        self.container = Container(
+            (
+                head_stream,
+                head_sort,
+            ),
+            "ZVp",
+            (len(heads), 0),
+            self.uuid,
+            (base_layer.uuid, None),
+            comment,
+        )
