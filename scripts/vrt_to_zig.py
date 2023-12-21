@@ -24,7 +24,9 @@ parser.add_argument("-p", action="append", metavar="p_attribute_name", default=[
                     help="""Declares and names a p-attribute. Order of declaration must correspond to order of columns in input.
                     P-attributes are encoded as variables on the primary layer of the corpus.
                     Variable type can be specified with a colon after the name, i.e. 'pos:indexed'.
-                    Valid variable types are: indexed, plain, int, delta, set, skip.
+                    Valid variable types are: indexed, plain, int, delta, set, ptr, skip.
+                    The type "ptr" as of now only works for a singluar ptr attribute per encoding run and is intended to encode
+                    universal dependencies style dependency relations. See "--ptr-base" below for more details. 
                     The type "skip" denotes that a column should be skipped and not encoded.""")
 parser.add_argument("-s", action="append", metavar="s_attribute_name", default=[],
                     help="""Declares an s-attribute. The attribute name must correspond to the attribute's XML tag in the input.
@@ -42,6 +44,12 @@ parser.add_argument("-a", action="append", metavar="s_annotation_spec", default=
 parser.add_argument("--int-default", type=int, metavar="int_default",
                     help="""The default value used when an invalid integer value is encountered while encoding an attribute.
                     If no default is given, the encoder will exit with an error (default behavior).""")
+parser.add_argument("--ptr-base", type=str, metavar="ptr_base",
+                    help="""This argument denotes the name of a p-attribute for use as a reference for pointer calculation in 
+                    combination with the "ptr" attribute type. Said p-attribute needs to be specified with the "-p" flag and may
+                    be of type "skip", but the actual data in the input file must be ints.
+                    Assuming the arguments "-p index:skip -p head:ptr --ptr-base index"
+                    pointers are calculated via the following formula: corpus_position + (head - index)""")
 
 args = parser.parse_args()
 
@@ -52,14 +60,24 @@ for p in args.p:
         name, type = p[0], "indexed"
     else:
         name, type = p
-    assert type in ("indexed", "plain", "int", "delta", "set", "skip"), f"Invalid variable type '{type}' for p-attribute '{name}'"
+    assert type in ("indexed", "plain", "int", "delta", "set", "ptr", "skip"), f"Invalid variable type '{type}' for p-attribute '{name}'"
     # p-attr tokens get saved to a temporary file to avoid loading them into RAM
     temp = tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", prefix=name+"_", suffix=".zigtmp")
     p_attrs.append((name, type, temp))
 
+# validation just for ptr variables
+ptrcount = [p[1] for p in p_attrs].count("ptr")
+assert  ptrcount <= 1, "maximum of one pointer variable can be encoded at the same time"
+if ptrcount > 0:
+    assert args.ptr_base, "--ptr-base must be specified for encoding pointer variables"
+    try:
+        next(f for (n, _, f) in p_attrs if n == args.ptr_base)
+    except:
+        raise ValueError(f"specified ptr-base '{args.ptr_base}' does not exist in specified p-attributes"
+)
+
 
 s_attrs = args.s
-
 
 s_annos = dict()
 for a in args.a:
@@ -73,20 +91,6 @@ for a in args.a:
     except:
         print(f"Invalid s-attribute annotation spec '{a}'")
         exit()
-
-
-# output file handling
-
-if not args.output:
-    args.output = Path(args.input.stem)
-
-if args.output.exists() and not args.force:
-    print(f"Output directory {args.output} exists, aborting.")
-    exit()
-else:
-    print(f"Using output directory {args.output}")
-    if not args.output.exists():
-        args.output.mkdir()
 
 
 ### VRT processing
@@ -157,7 +161,10 @@ print(f"\t found {len(spans.keys())} s-attrs: {tuple(spans.keys())}")
 
 print("Encoding the following attributes:")
 for name, type, _ in p_attrs:
-    print(f"\tp-attribute '{name}' of type '{type}'")
+    if type == "ptr":
+        print(f"\tp-attribute '{name}' of type '{type}' with base '{args.ptr_base}'")
+    elif type != "skip":
+        print(f"\tp-attribute '{name}' of type '{type}'")
 for name in s_attrs:
     print(f"\ts-attribute '{name}'", end="")
     if name in s_annos.keys() and len(s_annos[name]) > 0:
@@ -176,6 +183,20 @@ if not p_attrs and not s_attrs and not s_annos:
 clen = cpos
 
 print(f"Input corpus has {clen} corpus positions")
+
+
+# output file handling
+
+if not args.output:
+    args.output = Path(args.input.stem)
+
+if args.output.exists() and not args.force:
+    print(f"Output directory {args.output} exists, aborting.")
+    exit()
+else:
+    print(f"Using output directory {args.output}")
+    if not args.output.exists():
+        args.output.mkdir()
 
 
 ### Datastore creation
@@ -203,14 +224,25 @@ def write_datastore_object(obj, filename):
 def parse_set(str):
     return set(s.encode("utf-8") for s in str.strip().split("|") if s)
 
-def parse_int(str):
+def parse_int(str, default=None):
     try:
         return int(str)
     except Exception as e:
-        if args.int_default:
-            return args.int_default
-        else:
+        if default is None:
             raise e
+        else:
+            return default
+
+def parse_ptr(cpos: int, base: str, head: str):
+    try:
+        h = int(head)
+        if h == 0:
+            return cpos
+        else:
+            b = int(base)
+            return cpos + (h - b)
+    except:
+        return -1
 
 
 ## Primary Layer with corpus dimensions
@@ -221,7 +253,7 @@ write_datastore_object(primary_layer, "primary")
 ## Primary Layer Variables for p attributes
 
 for i, (name, type, temp) in enumerate(p_attrs):
-    temp.file.seek(0)
+    temp.seek(0)
     c = f"p-attr {name}"
 
     try:
@@ -230,11 +262,15 @@ for i, (name, type, temp) in enumerate(p_attrs):
         elif type == "plain":
             variable = PlainStringVariable(primary_layer, (line.strip() for line in temp), compressed = not args.uncompressed, comment = c)
         elif type == "int":
-            variable = IntegerVariable(primary_layer, [parse_int(s) for s in temp], compressed = not args.uncompressed, comment = c)
+            variable = IntegerVariable(primary_layer, [parse_int(s, default=args.int_default) for s in temp], compressed = not args.uncompressed, comment = c)
         elif type == "delta":
-            variable = IntegerVariable(primary_layer, [parse_int(s) for s in temp], compressed = not args.uncompressed, delta= True, comment = c)
+            variable = IntegerVariable(primary_layer, [parse_int(s, default=args.int_default) for s in temp], compressed = not args.uncompressed, delta= True, comment = c)
         elif type == "set":
             variable = SetVariable(primary_layer, [parse_set(s) for s in temp], comment = c)
+        elif type == "ptr":
+            base = next(f for (n, _, f) in p_attrs if n == args.ptr_base)
+            base.seek(0)
+            variable = PointerVariable(primary_layer, [parse_ptr(cpos, b, h) for cpos, (b, h) in enumerate(zip(base, temp))], compressed = not args.uncompressed, comment = c)
         elif type == "skip":
             continue
         else:
@@ -277,9 +313,9 @@ for attr, annos in s_annos.items():
             elif type == "plain":
                 variable = PlainStringVariable(base_layer, data, compressed = not args.uncompressed, comment = c)
             elif type == "int":
-                variable = IntegerVariable(base_layer, [parse_int(s) for s in data], compressed = not args.uncompressed, comment = c)
+                variable = IntegerVariable(base_layer, [parse_int(s, default=args.int_default) for s in data], compressed = not args.uncompressed, comment = c)
             elif type == "delta":
-                variable = IntegerVariable(base_layer, [parse_int(s) for s in data], compressed = not args.uncompressed, delta=True, comment = c)
+                variable = IntegerVariable(base_layer, [parse_int(s, default=args.int_default) for s in data], compressed = not args.uncompressed, delta=True, comment = c)
             elif type == "set":
                 variable = SetVariable(base_layer, [parse_set(s) for s in data], comment = c)
             else:
