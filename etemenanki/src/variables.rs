@@ -14,7 +14,7 @@ pub enum Variable<'map> {
     IndexedString(IndexedStringVariable<'map>),
     PlainString(PlainStringVariable<'map>),
     Integer(IntegerVariable<'map>),
-    Pointer,
+    Pointer(PointerVariable<'map>),
     ExternalPointer,
     Set(SetVariable<'map>),
     Hash,
@@ -37,7 +37,9 @@ impl<'map> TryFrom<Container<'map>> for Variable<'map> {
                 Ok(Self::Integer(IntegerVariable::try_from(container)?))
             }
 
-            container::Type::PointerVariable => todo!(),
+            container::Type::PointerVariable => {
+                Ok(Self::Pointer(PointerVariable::try_from(container)?))
+            }
 
             container::Type::ExternalPointerVariable => todo!(),
 
@@ -554,6 +556,89 @@ impl<'map> TryFrom<Container<'map>> for SetVariable<'map> {
                     lex_hash,
                     id_set_stream,
                     id_set_index,
+                })
+            }
+
+            _ => Err(Self::Error::WrongContainerType),
+        }
+    }
+}
+
+
+#[derive(Debug)]
+pub struct PointerVariable<'map> {
+    base: Uuid,
+    mmap: Mmap,
+    pub name: String,
+    pub header: container::Header<'map>,
+    head_stream: components::Vector<'map>,
+    head_sort: components::Index<'map>,
+}
+
+impl<'map> PointerVariable<'map> {
+    pub fn get(&self, tail: usize) -> Option<usize> {
+        if tail < self.len() {
+            self.get_unchecked(tail)
+        } else {
+            None
+        }
+    }
+
+    pub fn tail_positions(&self, head: usize) -> Option<components::IndexIterator<'_>>{
+        if head < self.len() {
+            Some(self.head_sort.get_all(head as i64))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_unchecked(&self, index: usize) -> Option<usize> {
+        let head = self.head_stream.get_unchecked(index);
+        if head.is_negative() {
+            None
+        } else {
+            Some(head as usize)
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.header.dim1
+    }
+}
+
+impl<'map> TryFrom<Container<'map>> for PointerVariable<'map> {
+    type Error = container::TryFromError;
+
+    fn try_from(container: Container<'map>) -> Result<Self, Self::Error> {
+        let Container {
+            mmap,
+            name,
+            header,
+            mut components,
+        } = container;
+
+        match header.container_type {
+            container::Type::PointerVariable => {
+                let base = get_container_base!(header, PlainStringVariable);
+                let n = header.dim1;
+
+                let head_stream = check_and_return_component!(components, "HeadStream", Vector)?;
+                if head_stream.len() != n || head_stream.width() != 1 {
+                    return Err(Self::Error::WrongComponentDimensions("HeadStream"));
+                }
+
+                let head_sort = check_and_return_component!(components, "HeadSort", Index)?;
+                if head_sort.len() != n {
+                    return Err(Self::Error::WrongComponentDimensions("HeadSort"));
+                }
+
+                Ok(Self {
+                    base,
+                    mmap,
+                    name,
+                    header,
+                    head_stream,
+                    head_sort,
                 })
             }
 

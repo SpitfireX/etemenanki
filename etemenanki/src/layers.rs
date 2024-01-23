@@ -48,7 +48,7 @@ impl<'map> Layer<'map> {
             Variable::IndexedString(v) => v.len(),
             Variable::PlainString(v) => v.len(),
             Variable::Integer(v) => v.len(),
-            Variable::Pointer => todo!(),
+            Variable::Pointer(v) => v.len(),
             Variable::ExternalPointer => todo!(),
             Variable::Set(v) => v.len(),
             Variable::Hash => todo!(),
