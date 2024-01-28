@@ -24,6 +24,7 @@ pub enum Vector<'map> {
 }
 
 impl<'map> Vector<'map> {
+    /// Decodes a whole block and returns a vector of its columns
     fn decode_compressed_block(d: usize, raw_data: &[u8]) -> Vec<[i64; 16]> {
         let mut block = vec![[0i64; 16]; d];
 
@@ -82,7 +83,7 @@ impl<'map> Vector<'map> {
             Self::Delta { length: _, width, sync: _, data: _ } => {
                 let ri = index / width;
                 let ci = index % width;
-                self.get_row_unchecked(ri)[ci]
+                self.get_row_unchecked(ri)[ci]  
             }
         }
     }

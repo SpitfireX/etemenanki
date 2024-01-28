@@ -12,6 +12,7 @@ use etemenanki::container::Container;
 use etemenanki::{container, Datastore};
 use lru::LruCache;
 use memmap2::Mmap;
+use streaming_iterator::StreamingIteratorMut;
 
 fn main() -> Result<()> {
     // let args: Vec<String> = env::args().collect();
@@ -180,7 +181,7 @@ impl<'map> CachedVector<'map> {
         for i in 0..d {
             for j in 0..16 {
                 let (int, len) = ziggurat_varint::decode(&raw_data[offset..]);
-                block[(j*d) + i] = int; // wonky becaus conversion from col-major to row-major
+                block[(j*d) + i] = int; // wonky because conversion from col-major to row-major
                 offset += len;
             }
         }
@@ -220,8 +221,6 @@ impl<'map> CachedVector<'map> {
             };
 
             self.cache.put(block_index, block);
-        } else {
-            println!("cache hit: {}", block_index);
         }
 
         let cached_block = self
@@ -257,5 +256,24 @@ impl<'map> CachedVector<'map> {
                 &block[start..end]
             }
         }
+    }
+
+    pub fn iter(&mut self) -> CachedIter {
+        CachedIter {
+            cvec: self,
+            position: 0,
+            end: 10,
+        }
+    }
+}
+
+struct CachedIter<'cv, 'map> {
+    cvec: &'cv mut CachedVector<'map>,
+    position: usize,
+    end: usize,
+}
+impl<'cv, 'map> StreamingIteratorMut for CachedIter<'cv, 'map> {
+    fn get_mut(&mut self) -> Option<&mut Self::Item> {
+        todo!()
     }
 }
