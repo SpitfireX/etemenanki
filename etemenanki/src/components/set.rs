@@ -39,7 +39,7 @@ impl<'map> Set<'map> {
         let (item_offsets, readlen) = ziggurat_varint::decode_delta_array::<16>(&self.data[offset..]);
         offset += readlen;
 
-        let (item_lens, _) = ziggurat_varint::decode_array::<16>(&self.data[offset..]);
+        let (item_lens, readlen) = ziggurat_varint::decode_array::<16>(&self.data[offset..]);
         offset += readlen;
 
         let item_offset = offset + item_offsets[ii] as usize;
