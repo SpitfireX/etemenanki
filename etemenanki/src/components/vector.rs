@@ -457,16 +457,16 @@ impl<'map> CachedVector<'map> {
                 // decode and cache block if needed
                 if !self.cache.contains(&bi) {
                     let block = match self.inner {
-                        Vector::Uncompressed { .. } => panic!("n/a for uncompressed vector"),
+                        Vector::Uncompressed { .. } => unreachable!("unreachable because of previous match block"),
                         
-                        Vector::Compressed { length: _, width: _, sync, data } => {
-                            let block_start = sync[bi] as usize;
-                            Self::decode_compressed_block(self.width(), &data[block_start..])
+                        Vector::Compressed { length: _, width, sync, data } => {
+                            let offset = sync[bi] as usize;
+                            Self::decode_compressed_block(width, &data[offset..])
                         }
 
-                        Vector::Delta { length: _, width: _, sync, data } => {
-                            let block_start = sync[bi] as usize;
-                            Self::decode_delta_block(self.width(), &data[block_start..])
+                        Vector::Delta { length: _, width, sync, data } => {
+                            let offset = sync[bi] as usize;
+                            Self::decode_delta_block(width, &data[offset..])
                         }
                     };
 
@@ -486,13 +486,10 @@ impl<'map> CachedVector<'map> {
     // else None. This method never decodes any new blocks and doesn't modify the cache's LRU list.
     fn peek_row(&self, index: usize) -> Option<&[i64]> {
         match self.inner {
-            Vector::Uncompressed { .. } => {
-                let row = self.inner.get_row_unchecked(index);
-                if let VecSlice::Borrowed(s) = row {
-                    Some(s)
-                } else {
-                    panic!("in case of uncompressed vec the row must be a slice into the mmap");
-                }
+            Vector::Uncompressed { length: _, width, data } => {
+                let start = index * width;
+                let end = start + width;
+                Some(&data[start..end])
             }
 
             Vector::Compressed { .. } | Vector::Delta { .. } => {
