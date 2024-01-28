@@ -3,44 +3,6 @@ use std::{num::NonZeroUsize, ops};
 use lru::LruCache;
 use streaming_iterator::StreamingIterator;
 
-/// Decodes a compressed block and returns it as a contiguous Vec of dimension n*d in row major order.
-fn decode_compressed_block(d: usize, raw_data: &[u8]) -> Vec<i64> {
-    let mut block = vec![0i64; d * 16];
-    let mut offset = 0;
-
-    for i in 0..d {
-        for j in 0..16 {
-            let (int, len) = ziggurat_varint::decode(&raw_data[offset..]);
-            block[(j * d) + i] = int; // wonky because conversion from col-major to row-major
-            offset += len;
-        }
-    }
-
-    block
-}
-
-/// Decodes a delta compressed block and returns it as a contiguous Vec of dimension n*d in row-major order.
-fn decode_delta_block(d: usize, raw_data: &[u8]) -> Vec<i64> {
-    let mut delta_block = vec![0i64; d * 16];
-    let mut offset = 0;
-
-    for i in 0..d {
-        for j in 0..16 {
-            let (int, len) = ziggurat_varint::decode(&raw_data[offset..]);
-            let current = (j * d) + i;
-            if j == 0 {
-                delta_block[current] = int; // initial seed values
-            } else {
-                let last = ((j - 1) * d) + i;
-                delta_block[current] = delta_block[last] + int;
-            }
-            offset += len;
-        }
-    }
-
-    delta_block
-}
-
 #[derive(Debug, Clone, Copy)]
 pub enum Vector<'map> {
     Uncompressed {
@@ -65,15 +27,15 @@ pub enum Vector<'map> {
 }
 
 impl<'map> Vector<'map> {
-    /// Decodes a whole block and returns a vector of its columns
-    fn decode_compressed_block(d: usize, raw_data: &[u8]) -> Vec<[i64; 16]> {
-        let mut block = vec![[0i64; 16]; d];
-
+    /// Decodes a compressed block and returns it as a contiguous Vec of dimension n*d in row major order.
+    fn decode_compressed_block(d: usize, raw_data: &[u8]) -> Vec<i64> {
+        let mut block = vec![0i64; d * 16];
         let mut offset = 0;
+
         for i in 0..d {
             for j in 0..16 {
                 let (int, len) = ziggurat_varint::decode(&raw_data[offset..]);
-                block[i][j] = int;
+                block[(j * d) + i] = int; // wonky because conversion from col-major to row-major
                 offset += len;
             }
         }
@@ -81,20 +43,34 @@ impl<'map> Vector<'map> {
         block
     }
 
-    /// Decodes a whole delta block and returns a vector of its columns
-    fn decode_delta_block(d: usize, raw_data: &[u8]) -> Vec<[i64; 16]> {
-        let block_delta = Self::decode_compressed_block(d, raw_data);
-        let mut block = vec![[0i64; 16]; d];
+    /// Decodes a delta compressed block and returns it as a contiguous Vec of dimension n*d in row-major order.
+    fn decode_delta_block(d: usize, raw_data: &[u8]) -> Vec<i64> {
+        let mut delta_block = vec![0i64; d * 16];
+        let mut offset = 0;
 
         for i in 0..d {
-            block[i][0] = block_delta[i][0];
-
-            for j in 1..16 {
-                block[i][j] = block[i][j - 1] + block_delta[i][j];
+            for j in 0..16 {
+                let (int, len) = ziggurat_varint::decode(&raw_data[offset..]);
+                let current = (j * d) + i;
+                if j == 0 {
+                    delta_block[current] = int; // initial seed values
+                } else {
+                    let last = ((j - 1) * d) + i;
+                    delta_block[current] = delta_block[last] + int;
+                }
+                offset += len;
             }
         }
 
-        block
+        delta_block
+    }
+
+    /// Returns a tuple (block_index, row_start, row_end) for a given row index.
+    fn row_index_to_block_offsets(width: usize, index: usize) -> (usize, usize, usize) {
+        let bi = index / 16;
+        let start = (index % 16) * width;
+        let end = start + width;
+        (bi, start, end)
     }
 
     /// Gets the value with `index` < `self.len()`*`self.width()`.
@@ -156,7 +132,7 @@ impl<'map> Vector<'map> {
 
                 Self::Compressed { length: _, width, sync, data } |
                 Self::Delta { length: _, width, sync, data } => {
-                    let bi = index/16;
+                    let (bi, start, end) = Vector::row_index_to_block_offsets(width, index);
 
                     let offset = sync[bi] as usize;
                     let block = match self {
@@ -165,12 +141,7 @@ impl<'map> Vector<'map> {
                         Vector::Delta { .. } => Self::decode_delta_block(width, &data[offset..]),
                     };
 
-                    let mut slice = vec![0i64; width];
-                    for i in 0..width {
-                        slice[i] = block[i][index % 16];
-                    }
-
-                    VecSlice::Owned(slice)
+                    VecSlice::Owned(block[start..end].to_owned())
             }
         }
     }
@@ -221,10 +192,9 @@ impl<'map> Vector<'map> {
 #[derive(Debug)]
 pub struct VectorReader<'map> {
     vector: Vector<'map>,
-    last_block: Option<Vec<[i64; 16]>>,
+    last_block: Option<Vec<i64>>,
     last_block_index: usize,
     last_row: usize,
-    slice_buffer: Vec<i64>,
 }
 
 impl<'map> VectorReader<'map> {
@@ -234,7 +204,6 @@ impl<'map> VectorReader<'map> {
             last_block: None,
             last_block_index: 0,
             last_row: 0,
-            slice_buffer: vec![0; vector.width()],
         }
     }
 
@@ -279,10 +248,7 @@ impl<'map> VectorReader<'map> {
 
             Vector::Compressed { length: _, width, sync, data } |
             Vector::Delta { length: _, width, sync, data } => {
-                let bi = index/16;
-                if bi > sync.len() {
-                    panic!("block index out of range");
-                }
+                let (bi, start, end) = Vector::row_index_to_block_offsets(width, index);
 
                 if bi != self.last_block_index || self.last_block == None {
                     let offset = sync[bi] as usize;
@@ -297,14 +263,10 @@ impl<'map> VectorReader<'map> {
                 }
 
                 if let Some(block) = self.last_block.as_ref() {
-                    for i in 0..width {
-                        self.slice_buffer[i] = block[i][index % 16];
-                    }
+                    &block[start..end]
                 } else {
                     panic!("last_block should not be uninitialized");
                 }
-
-                &self.slice_buffer
             }
         }
     }
@@ -369,56 +331,13 @@ impl<'map> ToOwned for VecSlice<'map> {
     }
 }
 
+#[derive(Debug)]
 pub struct CachedVector<'map> {
     inner: Vector<'map>,
     cache: LruCache<usize, Vec<i64>>,
 }
 
 impl<'map> CachedVector<'map> {
-    /// Decodes a compressed block and returns it as a contiguous Vec of dimension n*d in row major order.
-    fn decode_compressed_block(d: usize, raw_data: &[u8]) -> Vec<i64> {
-        let mut block = vec![0i64; d * 16];
-        let mut offset = 0;
-
-        for i in 0..d {
-            for j in 0..16 {
-                let (int, len) = ziggurat_varint::decode(&raw_data[offset..]);
-                block[(j * d) + i] = int; // wonky because conversion from col-major to row-major
-                offset += len;
-            }
-        }
-
-        block
-    }
-
-    /// Decodes a delta compressed block and returns it as a contiguous Vec of dimension n*d in row-major order.
-    fn decode_delta_block(d: usize, raw_data: &[u8]) -> Vec<i64> {
-        let mut delta_block = vec![0i64; d * 16];
-        let mut offset = 0;
-
-        for i in 0..d {
-            for j in 0..16 {
-                let (int, len) = ziggurat_varint::decode(&raw_data[offset..]);
-                let current = (j * d) + i;
-                if j == 0 {
-                    delta_block[current] = int; // initial seed values
-                } else {
-                    let last = ((j - 1) * d) + i;
-                    delta_block[current] = delta_block[last] + int;
-                }
-                offset += len;
-            }
-        }
-
-        delta_block
-    }
-
-    fn row_index_to_block_offsets(&self, index: usize) -> (usize, usize, usize) {
-        let bi = index / 16;
-        let start = (index % 16) * self.width();
-        let end = start + self.width();
-        (bi, start, end)
-    }
 
     pub fn new(vector: Vector<'map>) -> Self {
         Self {
@@ -451,22 +370,23 @@ impl<'map> CachedVector<'map> {
                 &data[start..end]
             }
 
-            Vector::Delta { .. } | Vector::Compressed { .. } => {
-                let (bi, start, end) = self.row_index_to_block_offsets(index);
+            Vector::Delta { length: _, width, sync, data } |
+            Vector::Compressed { length: _, width, sync, data } => {
+                let (bi, start, end) = Vector::row_index_to_block_offsets(width, index);
 
                 // decode and cache block if needed
                 if !self.cache.contains(&bi) {
                     let block = match self.inner {
                         Vector::Uncompressed { .. } => unreachable!("unreachable because of previous match block"),
                         
-                        Vector::Compressed { length: _, width, sync, data } => {
+                        Vector::Compressed { .. } => {
                             let offset = sync[bi] as usize;
-                            Self::decode_compressed_block(width, &data[offset..])
+                            Vector::decode_compressed_block(width, &data[offset..])
                         }
 
-                        Vector::Delta { length: _, width, sync, data } => {
+                        Vector::Delta { .. } => {
                             let offset = sync[bi] as usize;
-                            Self::decode_delta_block(width, &data[offset..])
+                            Vector::decode_delta_block(width, &data[offset..])
                         }
                     };
 
@@ -492,8 +412,9 @@ impl<'map> CachedVector<'map> {
                 Some(&data[start..end])
             }
 
-            Vector::Compressed { .. } | Vector::Delta { .. } => {
-                let (bi, start, end) = self.row_index_to_block_offsets(index);
+            Vector::Compressed { length: _, width, .. } |
+            Vector::Delta { length: _, width, .. } => {
+                let (bi, start, end) = Vector::row_index_to_block_offsets(width, index);
                 self.cache.peek(&bi)
                     .map(|b| &b[start..end])
             }
@@ -577,7 +498,8 @@ impl <'cv, 'map> StreamingIterator for ColumnIter<'cv, 'map> {
 
     fn get(&self) -> Option<&Self::Item> {
         if self.position <= self.end {
-            let (bi, start, _) = self.cvec.row_index_to_block_offsets(self.position - 1);
+            let width = self.cvec.width();
+            let (bi, start, _) = Vector::row_index_to_block_offsets(width, self.position - 1);
             self.cvec
                 .cache.peek(&bi)
                 .map(|b| &b[start + self.col])
