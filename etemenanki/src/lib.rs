@@ -1,6 +1,9 @@
 #![allow(dead_code)]
 #![feature(hash_extract_if)]
 #![feature(pattern)]
+#![feature(test)]
+
+extern crate test;
 
 use std::{
     collections::{hash_map, HashMap},
