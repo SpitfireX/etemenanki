@@ -194,6 +194,7 @@ impl<'map> Vector<'map> {
     }
 }
 
+#[deprecated]
 #[derive(Debug)]
 pub struct VectorReader<'map> {
     vector: Vector<'map>,
@@ -202,6 +203,7 @@ pub struct VectorReader<'map> {
     last_row: usize,
 }
 
+#[allow(deprecated)]
 impl<'map> VectorReader<'map> {
     pub fn from_vector(vector: Vector<'map>) -> Self {
         Self {
@@ -285,6 +287,7 @@ impl<'map> VectorReader<'map> {
     }
 }
 
+#[allow(deprecated)]
 impl<'map> Iterator for VectorReader<'map> {
     type Item = Vec<i64>;
 
@@ -299,6 +302,7 @@ impl<'map> Iterator for VectorReader<'map> {
     }
 }
 
+#[allow(deprecated)]
 impl<'map> IntoIterator for Vector<'map> {
     type Item = Vec<i64>;
     type IntoIter = VectorReader<'map>;
