@@ -48,14 +48,14 @@ fn find_objects(path: &Path, valid_paths: &mut Vec<PathBuf>) -> io::Result<()> {
 }
 
 impl<'map> Datastore<'map> {
-    pub fn layer_by_name<S: AsRef<str>>(&'map self, name: S) -> Option<&layers::Layer<'map>> {
+    pub fn layer_by_name<S: AsRef<str>>(&self, name: S) -> Option<&layers::Layer<'map>> {
         match self.uuids_by_name.get(name.as_ref()) {
             Some(u) => self.layers_by_uuid.get(u),
             None => None,
         }
     }
 
-    pub fn layer_by_uuid(&'map self, uuid: &Uuid) -> Option<&layers::Layer<'map>> {
+    pub fn layer_by_uuid(&self, uuid: &Uuid) -> Option<&layers::Layer<'map>> {
         self.layers_by_uuid.get(uuid)
     }
 
@@ -63,11 +63,11 @@ impl<'map> Datastore<'map> {
         self.uuids_by_name.keys()
     }
 
-    pub fn layer_uuids(&'map self) -> hash_map::Keys<Uuid, layers::Layer<'map>> {
+    pub fn layer_uuids(&self) -> hash_map::Keys<Uuid, layers::Layer<'map>> {
         self.layers_by_uuid.keys()
     }
 
-    pub fn open<P: AsRef<Path>>(path: P) -> Result<Self, DatastoreError> {
+    pub fn open<P: AsRef<Path>>(path: P) -> Result<Datastore<'map>, DatastoreError> {
         let path = path.as_ref().to_owned();
         let mut containers = HashMap::new();
 

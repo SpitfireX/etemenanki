@@ -18,7 +18,7 @@ use crate::{components, variables};
 pub struct LayerData<'map, T>(T, LayerVariables<'map>);
 
 impl<'map, T> LayerData<'map, T> {
-    pub fn variable_by_name<S: AsRef<str>>(&self, name: S) -> Option<&variables::Variable> {
+    pub fn variable_by_name<S: AsRef<str>>(&self, name: S) -> Option<&variables::Variable<'map>> {
         self.1.variables.get(name.as_ref())
     }
 }
@@ -46,7 +46,7 @@ pub enum Layer<'map> {
 }
 
 impl<'map> Layer<'map> {
-    pub fn add_variable(&mut self, name: String, var: Variable<'map>) -> Result<(), Variable> {
+    pub fn add_variable(&mut self, name: String, var: Variable<'map>) -> Result<(), Variable<'map>> {
         let varlen = match &var {
             Variable::IndexedString(v) => v.len(),
             Variable::PlainString(v) => v.len(),
@@ -67,7 +67,7 @@ impl<'map> Layer<'map> {
         }
     }
 
-    pub fn variable_by_name<S: AsRef<str>>(&self, name: S) -> Option<&variables::Variable> {
+    pub fn variable_by_name<S: AsRef<str>>(&self, name: S) -> Option<&variables::Variable<'map>> {
         match self {
             Layer::Primary(LayerData(_, vars)) => vars.variables.get(name.as_ref()),
             Layer::Segmentation(LayerData(_, vars)) => vars.variables.get(name.as_ref()),
@@ -96,7 +96,7 @@ impl<'map> Layer<'map> {
         }
     }
 
-    pub fn variable_names(&self) -> hash_map::Keys<String, variables::Variable> {
+    pub fn variable_names(&self) -> hash_map::Keys<String, variables::Variable<'map>> {
         match self {
             Layer::Primary(LayerData(_, vars)) => vars.variables.keys(),
             Layer::Segmentation(LayerData(_, vars)) => vars.variables.keys(),
@@ -121,7 +121,7 @@ pub struct LayerVariables<'map> {
 }
 
 impl<'map> LayerVariables<'map> {
-    pub fn add_variable(&mut self, name: String, var: Variable<'map>) -> Result<(), Variable> {
+    pub fn add_variable(&mut self, name: String, var: Variable<'map>) -> Result<(), Variable<'map>> {
         if self.variables.contains_key(&name) {
             Err(var)
         } else {

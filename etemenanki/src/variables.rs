@@ -1,11 +1,13 @@
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::ops;
+use std::rc::Rc;
 
 use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use uuid::Uuid;
 
-use crate::components::{self, VectorReader};
+use crate::components::{self, CachedVector, VectorReader};
 use crate::container::{self, Container};
 use crate::macros::{check_and_return_component, get_container_base};
 
@@ -60,13 +62,14 @@ pub struct IndexedStringVariable<'map> {
     pub header: container::Header<'map>,
     lexicon: components::StringVector<'map>,
     lex_hash: components::Index<'map>,
-    lex_id_stream: components::Vector<'map>,
+    lex_id_stream: Rc<RefCell<components::CachedVector<'map>>>,
     lex_id_index: components::InvertedIndex<'map>,
 }
 
 impl<'map> IndexedStringVariable<'map> {
     pub fn get(&self, index: usize) -> Option<&str> {
-        if index < self.lex_id_stream.len() {
+        let lex_id_stream = self.lex_id_stream.borrow();
+        if index < lex_id_stream.len() {
             Some(self.get_unchecked(index))
         } else {
             None
@@ -74,12 +77,14 @@ impl<'map> IndexedStringVariable<'map> {
     }
 
     pub fn get_unchecked(&self, index: usize) -> &str {
-        let ti = self.lex_id_stream.get_unchecked(index);
+        let mut lex_id_stream = self.lex_id_stream.borrow_mut();
+        let ti = lex_id_stream.get_row_unchecked(index)[0];
         &self.lexicon[ti as usize]
     }
 
     pub fn get_id(&self, index: usize) -> Option<usize> {
-        if index < self.lex_id_stream.len() {
+        let lex_id_stream = self.lex_id_stream.borrow();
+        if index < lex_id_stream.len() {
             Some(self.get_id_unchecked(index))
         } else {
             None
@@ -87,20 +92,21 @@ impl<'map> IndexedStringVariable<'map> {
     }
 
     pub fn get_id_unchecked(&self, index: usize) -> usize {
-        self.lex_id_stream.get_unchecked(index) as usize
+        let mut lex_id_stream = self.lex_id_stream.borrow_mut();
+        lex_id_stream.get_row_unchecked(index)[0] as usize
     }
 
-    pub fn get_range(&self, start: usize, end: usize) -> IndexedStringIterator {
+    pub fn get_range(&'map self, start: usize, end: usize) -> IndexedStringIterator<'map> {
         IndexedStringIterator {
             var: self,
-            id_stream_reader: self.lex_id_stream.into_iter(),
+            id_stream: self.lex_id_stream.clone(),
             index: start,
             end,
         }
     }
 
-    pub fn id_stream(&self) -> components::Vector {
-        self.lex_id_stream
+    pub fn id_stream(&'map self) -> Rc<RefCell<components::CachedVector<'map>>> {
+        self.lex_id_stream.clone()
     }
 
     pub fn index(&self) -> components::Index {
@@ -111,7 +117,7 @@ impl<'map> IndexedStringVariable<'map> {
         self.lex_id_index
     }
 
-    pub fn iter(&self) -> IndexedStringIterator {
+    pub fn iter(&'map self) -> IndexedStringIterator<'map> {
         self.into_iter()
     }
 
@@ -167,6 +173,7 @@ impl<'map> TryFrom<Container<'map>> for IndexedStringVariable<'map> {
                 if lex_id_stream.len() != n || lex_id_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("LexIDStream"));
                 }
+                let lex_id_stream = Rc::new(RefCell::new(CachedVector::new(lex_id_stream)));
 
                 let lex_id_index =
                     check_and_return_component!(components, "LexIDIndex", InvertedIndex)?;
@@ -193,7 +200,7 @@ impl<'map> TryFrom<Container<'map>> for IndexedStringVariable<'map> {
 
 pub struct IndexedStringIterator<'map> {
     var: &'map IndexedStringVariable<'map>,
-    id_stream_reader: components::VectorReader<'map>,
+    id_stream: Rc<RefCell<components::CachedVector<'map>>>,
     index: usize,
     end: usize,
 }
@@ -203,7 +210,8 @@ impl<'map> Iterator for IndexedStringIterator<'map> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.end {
-            let lexid = self.id_stream_reader.get_unchecked(self.index) as usize;
+            let mut id_stream = self.id_stream.borrow_mut();
+            let lexid = id_stream.get_row_unchecked(self.index)[0] as usize;
             self.index += 1;
 
             Some(&self.var.lexicon[lexid])
@@ -220,7 +228,7 @@ impl<'map> IntoIterator for &'map IndexedStringVariable<'map> {
     fn into_iter(self) -> Self::IntoIter {
         IndexedStringIterator {
             var: self,
-            id_stream_reader: self.lex_id_stream.into_iter(),
+            id_stream: self.lex_id_stream.clone(),
             index: 0,
             end: self.len(),
         }
