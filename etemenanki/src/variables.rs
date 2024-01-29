@@ -242,13 +242,14 @@ pub struct PlainStringVariable<'map> {
     pub name: String,
     pub header: container::Header<'map>,
     string_data: components::StringList<'map>,
-    offset_stream: components::Vector<'map>,
+    offset_stream: Rc<RefCell<components::CachedVector<'map>>>,
     string_hash: components::Index<'map>,
 }
 
 impl<'map> PlainStringVariable<'map> {
     pub fn get(&self, index: usize) -> Option<&str> {
-        if index + 1 < self.offset_stream.len() {
+        let offset_stream = self.offset_stream.borrow();
+        if index + 1 < offset_stream.len() {
             Some(self.get_unchecked(index))
         } else {
             None
@@ -256,13 +257,14 @@ impl<'map> PlainStringVariable<'map> {
     }
 
     pub fn get_unchecked(&self, index: usize) -> &str {
-        let start = self.offset_stream.get_unchecked(index) as usize;
-        let end = self.offset_stream.get_unchecked(index + 1) as usize;
+        let mut offset_stream = self.offset_stream.borrow_mut();
+        let start = offset_stream.get_row_unchecked(index)[0] as usize;
+        let end = offset_stream.get_row_unchecked(index + 1)[0] as usize;
 
         unsafe { std::str::from_utf8_unchecked(&self.string_data[start..end - 1]) }
     }
 
-    pub fn iter(&self) -> PlainStringIterator {
+    pub fn iter(&'map self) -> PlainStringIterator<'map> {
         self.into_iter()
     }
 
@@ -306,6 +308,7 @@ impl<'map> TryFrom<Container<'map>> for PlainStringVariable<'map> {
                 if offset_stream.len() != n + 1 || offset_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("OffsetStream"));
                 }
+                let offset_stream = Rc::new(RefCell::new(CachedVector::new(offset_stream)));
 
                 let string_hash = check_and_return_component!(components, "StringHash", Index)?;
                 if string_hash.len() != n {
@@ -330,7 +333,7 @@ impl<'map> TryFrom<Container<'map>> for PlainStringVariable<'map> {
 
 pub struct PlainStringIterator<'map> {
     var: &'map PlainStringVariable<'map>,
-    offset_reader: components::VectorReader<'map>,
+    offset_stream: Rc<RefCell<components::CachedVector<'map>>>,
     len: usize,
     index: usize,
 }
@@ -340,8 +343,9 @@ impl<'map> Iterator for PlainStringIterator<'map> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.len {
-            let start = self.offset_reader.get_unchecked(self.index) as usize;
-            let end = self.offset_reader.get_unchecked(self.index + 1) as usize;
+            let mut offset_stream = self.offset_stream.borrow_mut();
+            let start = offset_stream.get_row_unchecked(self.index)[0] as usize;
+            let end = offset_stream.get_row_unchecked(self.index + 1)[0] as usize;
             self.index += 1;
 
             Some(unsafe { std::str::from_utf8_unchecked(&self.var.string_data[start..end - 1]) })
@@ -358,7 +362,7 @@ impl<'map> IntoIterator for &'map PlainStringVariable<'map> {
     fn into_iter(self) -> Self::IntoIter {
         PlainStringIterator {
             var: self,
-            offset_reader: self.offset_stream.into_iter(),
+            offset_stream: self.offset_stream.clone(),
             len: self.len(),
             index: 0,
         }
