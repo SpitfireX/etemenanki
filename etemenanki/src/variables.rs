@@ -7,7 +7,7 @@ use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use uuid::Uuid;
 
-use crate::components::{self, CachedVector, VectorReader};
+use crate::components::{self, CachedVector};
 use crate::container::{self, Container};
 use crate::macros::{check_and_return_component, get_container_base};
 
@@ -375,7 +375,7 @@ pub struct IntegerVariable<'map> {
     mmap: Mmap,
     pub name: String,
     pub header: container::Header<'map>,
-    int_stream: components::Vector<'map>,
+    int_stream: Rc<RefCell<components::CachedVector<'map>>>,
     int_sort: components::Index<'map>,
 }
 
@@ -393,10 +393,11 @@ impl<'map> IntegerVariable<'map> {
     }
 
     pub fn get_unchecked(&self, index: usize) -> i64 {
-        self.int_stream.get_unchecked(index)
+        let mut int_stream = self.int_stream.borrow_mut();
+        int_stream.get_row_unchecked(index)[0]
     }
 
-    pub fn iter(&self) -> IntegerIterator {
+    pub fn iter(&'map self) -> IntegerIterator<'map> {
         self.into_iter()
     }
 
@@ -429,6 +430,7 @@ impl<'map> TryFrom<Container<'map>> for IntegerVariable<'map> {
                 if int_stream.len() != n || int_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("IntStream"));
                 }
+                let int_stream = Rc::new(RefCell::new(CachedVector::new(int_stream)));
 
                 let int_sort = check_and_return_component!(components, "IntSort", Index)?;
                 if int_sort.len() != n {
@@ -451,7 +453,7 @@ impl<'map> TryFrom<Container<'map>> for IntegerVariable<'map> {
 }
 
 pub struct IntegerIterator<'map> {
-    reader: VectorReader<'map>,
+    int_stream: Rc<RefCell<CachedVector<'map>>>,
     index: usize,
 }
 
@@ -459,8 +461,9 @@ impl<'map> Iterator for IntegerIterator<'map> {
     type Item = i64;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.reader.len() {
-            let value = self.reader.get_unchecked(self.index);
+        let mut int_stream = self.int_stream.borrow_mut();
+        if self.index < int_stream.len() {
+            let value = int_stream.get_row_unchecked(self.index)[0];
             self.index += 1;
             Some(value)
         } else {
@@ -475,7 +478,7 @@ impl<'map> IntoIterator for &'map IntegerVariable<'map> {
 
     fn into_iter(self) -> Self::IntoIter {
         IntegerIterator {
-            reader: self.int_stream.into_iter(),
+            int_stream: self.int_stream.clone(),
             index: 0,
         }
     }
