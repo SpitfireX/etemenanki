@@ -2,10 +2,13 @@ use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use uuid::Uuid;
 
+use std::cell::RefCell;
 use std::cmp::min;
 use std::collections::{hash_map, HashMap};
 use std::ops;
+use std::rc::Rc;
 
+use crate::components::CachedVector;
 use crate::container::{self, Container};
 use crate::macros::{check_and_return_component, get_container_base};
 use crate::variables::Variable;
@@ -177,7 +180,7 @@ pub struct SegmentationLayer<'map> {
     mmap: Mmap,
     pub name: String,
     pub header: container::Header<'map>,
-    range_stream: components::Vector<'map>,
+    range_stream: Rc<RefCell<components::CachedVector<'map>>>,
     start_sort: components::Index<'map>,
     end_sort: components::Index<'map>,
 }
@@ -277,11 +280,12 @@ impl<'map> SegmentationLayer<'map> {
     }
 
     pub fn get_unchecked(&self, index: usize) -> (usize, usize) {
-        let row = self.range_stream.get_row_unchecked(index);
+        let mut range_stream = self.range_stream.borrow_mut();
+        let row = range_stream.get_row_unchecked(index);
         (row[0] as usize, row[1] as usize)
     }
 
-    pub fn iter(&self) -> SegmentationLayerIterator {
+    pub fn iter(&'map self) -> SegmentationLayerIterator<'map> {
         self.into_iter()
     }
 
@@ -318,6 +322,7 @@ impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {
                 if range_stream.width() != 2 || range_stream.len() != header.dim1 {
                     return Err(Self::Error::WrongComponentDimensions("RangeStream"));
                 }
+                let range_stream = Rc::new(RefCell::new(CachedVector::new(range_stream)));
 
                 let start_sort = check_and_return_component!(components, "StartSort", Index)?;
                 if start_sort.len() != header.dim1 {
@@ -346,7 +351,7 @@ impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {
 }
 
 pub struct SegmentationLayerIterator<'map> {
-    ranges: components::VectorReader<'map>,
+    ranges: Rc<RefCell<components::CachedVector<'map>>>,
     index: usize,
 }
 
@@ -354,8 +359,9 @@ impl<'map> Iterator for SegmentationLayerIterator<'map> {
     type Item = (usize, usize);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.ranges.len() {
-            let row = self.ranges.get_row_unchecked(self.index);
+        let mut ranges = self.ranges.borrow_mut();
+        if self.index < ranges.len() {
+            let row = ranges.get_row_unchecked(self.index);
             self.index += 1;
             Some((row[0] as usize, row[1] as usize))
         } else {
@@ -370,7 +376,7 @@ impl<'map> IntoIterator for &'map SegmentationLayer<'map> {
 
     fn into_iter(self) -> Self::IntoIter {
         SegmentationLayerIterator {
-            ranges: self.range_stream.into_iter(),
+            ranges: self.range_stream.clone(),
             index: 0,
         }
     }
