@@ -74,9 +74,12 @@ impl<'map> Vector<'map> {
     }
 
     /// Gets the value with `index` < `self.len()`*`self.width()`.
+    /// Use get_row instead. 
     ///
     /// This always triggers a full block decode on compressed Vectors,
-    /// for efficient sequential access use `VectorReader`.
+    /// for efficient block cached access use `CachedVector`.
+    #[deprecated]
+    #[allow(deprecated)]
     pub fn get(&self, index: usize) -> Option<i64> {
         if index < self.len() * self.width() {
             Some(self.get_unchecked(index))
@@ -87,9 +90,11 @@ impl<'map> Vector<'map> {
 
     /// Gets the value with `index` < `self.len()`*`self.width()`.
     /// Panics if index is out of bounds.
+    /// Use get_row_unchecked instead.
     ///
     /// This always triggers a full block decode on compressed Vectors,
-    /// for efficient sequential access use `VectorReader`.
+    /// for efficient block cached access use `CachedVector`.
+    #[deprecated]
     pub fn get_unchecked(&self, index: usize) -> i64 {
         match *self {
             Self::Uncompressed { length: _, width: _, data } => {
@@ -108,7 +113,7 @@ impl<'map> Vector<'map> {
     /// Gets the column with `index` < `self.len()`.
     ///
     /// This always triggers a full block decode on compressed Vectors,
-    /// for efficient sequential access use `VectorReader`.
+    /// for efficient block cached access use `CachedVector`.
     pub fn get_row(&self, index: usize) -> Option<VecSlice> {
         if index < self.len() {
             Some(self.get_row_unchecked(index))
@@ -121,7 +126,7 @@ impl<'map> Vector<'map> {
     /// Panics if index is out of bounds.
     ///
     /// This always triggers a full block decode on compressed Vectors,
-    /// for efficient sequential access use `VectorReader`.
+    /// for efficient block cached access use `CachedVector`.
     pub fn get_row_unchecked(&self, index: usize) -> VecSlice {
         match *self {
                 Self::Uncompressed { length: _, width, data } => {

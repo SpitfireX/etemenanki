@@ -586,7 +586,7 @@ pub struct PointerVariable<'map> {
     mmap: Mmap,
     pub name: String,
     pub header: container::Header<'map>,
-    head_stream: components::Vector<'map>,
+    head_stream: Rc<RefCell<components::CachedVector<'map>>>,
     head_sort: components::Index<'map>,
 }
 
@@ -608,7 +608,8 @@ impl<'map> PointerVariable<'map> {
     }
 
     pub fn get_unchecked(&self, index: usize) -> Option<usize> {
-        let head = self.head_stream.get_unchecked(index);
+        let mut head_stream = self.head_stream.borrow_mut();
+        let head = head_stream.get_row_unchecked(index)[0];
         if head.is_negative() {
             None
         } else {
@@ -641,6 +642,7 @@ impl<'map> TryFrom<Container<'map>> for PointerVariable<'map> {
                 if head_stream.len() != n || head_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("HeadStream"));
                 }
+                let head_stream = Rc::new(RefCell::new(CachedVector::new(head_stream)));
 
                 let head_sort = check_and_return_component!(components, "HeadSort", Index)?;
                 if head_sort.len() != n {
