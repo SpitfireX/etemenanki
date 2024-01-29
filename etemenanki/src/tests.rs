@@ -3,7 +3,7 @@ use std::fs::File;
 use memmap2::Mmap;
 use streaming_iterator::StreamingIterator;
 use test::{Bencher, black_box};
-use rand::{distributions::{Distribution, Uniform}, rngs::StdRng, Rng, SeedableRng};
+use rand::{distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
 
 use crate::{components::{CachedVector, Vector, VectorReader}, container::Container};
 
@@ -31,9 +31,8 @@ fn vec_setup() -> (Vector<'static>, Container<'static>) {
 #[test]
 fn vec() {
     let (vec, _c) = vec_setup();
-    println!("{}", vec.len());
-    assert!(vec.len() == 273);
-    println!("{:?}", vec.get_row(10));
+    assert!(vec.len() == 3508);
+    assert!(vec.get_row(10).unwrap()[0] == 31);
 }
 
 #[bench]
