@@ -141,33 +141,33 @@ impl<'map> IndexIterator<'map> {
                 let (keys, readlen) = ziggurat_varint::decode_delta_array::<16>(&data[offset..]);
                 offset += readlen;
 
-                match keys[..klen].binary_search(&key) {
+                let p = keys[..klen].partition_point(|&x| x < key);
+                if p == klen {
                     // key not in block
-                    Err(_) => Self::None,
+                    Self::None
+                } else {
+                    // key potentially in block at i
 
-                    // key in block at i
-                    Ok(ki) => {
-                        // determine number of elements with key in block
-                        let mut len = keys.iter().filter(|&x| *x == key).count();
-                        // add overflow items if key is the last in block
-                        if keys[keys.len() - 1] == key {
-                            len += o as usize;
-                        }
+                    // determine number of elements with key in block
+                    let mut len = keys.iter().filter(|&x| *x == key).count();
+                    // add overflow items if key is the last in block
+                    if keys[keys.len() - 1] == key {
+                        len += o as usize;
+                    }
 
-                        // discard first ki values in block
-                        let mut start = 0;
-                        for _ in 0..ki {
-                            let (v, readlen) = ziggurat_varint::decode(&data[offset..]);
-                            start += v;
-                            offset += readlen;
-                        }
+                    // discard first ki values in block
+                    let mut start = 0;
+                    for _ in 0..p {
+                        let (v, readlen) = ziggurat_varint::decode(&data[offset..]);
+                        start += v;
+                        offset += readlen;
+                    }
 
-                        Self::Compressed {
-                            data: &data[offset..],
-                            position: 0,
-                            len,
-                            last_value: start,
-                        }
+                    Self::Compressed {
+                        data: &data[offset..],
+                        position: 0,
+                        len,
+                        last_value: start,
                     }
                 }
             }
@@ -312,7 +312,8 @@ impl<'map> IndexBlock<'map> {
                 for _ in 0..decode_len {
                     let (i, readlen) = ziggurat_varint::decode(self.overflow_data);
                     self.overflow_data = &self.overflow_data[readlen..]; // move slice to new beginning of undecoded data
-                    self.positions.push(i);
+                    let last = self.positions.last().copied().unwrap_or(0);
+                    self.positions.push(last + i);
                 }
             }
 
