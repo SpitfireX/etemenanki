@@ -5,16 +5,12 @@ use streaming_iterator::StreamingIterator;
 use test::{Bencher, black_box};
 use rand::{distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
 
-use crate::{components::{CachedVector, Vector, VectorReader}, container::Container};
+use crate::{components::{CachedIndex, CachedVector, Index, IndexBlock, Vector, VectorReader}, container::Container};
 
-#[test]
-fn hello() {
-    println!("Hello!");
-}
+const DATASTORE_PATH: &'static str = "../scripts/recipes4000/";
 
 fn vec_setup() -> (Vector<'static>, Container<'static>) {
-    let filename = "../scripts/recipes4000/token.zigv";
-    let file = File::open(filename).unwrap();
+    let file = File::open(DATASTORE_PATH.to_owned() + "token.zigv").unwrap();
     let mmap = unsafe { Mmap::map(&file) }.unwrap();
     let container = Container::from_mmap(mmap, "word".to_owned()).unwrap();
 
@@ -130,4 +126,66 @@ fn vec_rand_cached(b: &mut Bencher) {
             black_box(cached.get_row(*i));
         }
     })
+}
+
+fn idxcmp_setup(filename: &'static str, component_name: &'static str) -> (Index<'static>, Container<'static>) {
+    let file = File::open(DATASTORE_PATH.to_owned() + filename).unwrap();
+    let mmap = unsafe { Mmap::map(&file) }.unwrap();
+    let container = Container::from_mmap(mmap, "word".to_owned()).unwrap();
+
+    let index = *container
+        .components
+        .get(component_name)
+        .unwrap()
+        .as_index()
+        .unwrap();
+
+    (index, container)
+}
+
+#[test]
+fn idxcmp_block() {
+    let (index, _container) = idxcmp_setup("text/year.zigv", "IntSort");
+    if let Index::Compressed { length, r, sync, data } = index {
+        println!("\n index len {} with r {}", length, r);
+        for (i, (_, o)) in sync.iter().enumerate(){
+            println!();
+
+            let br = if i < sync.len()-1 {
+                16
+            } else {
+                ((r - 1) & 0x0f) + 1
+            };
+            let mut block = IndexBlock::decode(&data[*o..], br);
+            
+            println!("block {}: r {}, o {}", i, block.regular_items(), block.overflow_items());
+            println!("keys: {:?}", block.keys());
+            println!("positions: {:?}", block.get_all_position_());
+        }
+    } else {
+        panic!("index not compressed");
+    }
+}
+
+#[test]
+fn idx_iter() {
+    let (index, _container) = idxcmp_setup("text/year.zigv", "IntSort");
+    println!();
+    println!("{:?}", index.get_all(0).collect::<Vec<_>>());
+    println!("{:?}", index.get_all(3).collect::<Vec<_>>());
+    println!("{:?}", index.get_all(2002).collect::<Vec<_>>());
+    println!("{:?}", index.get_all(2003).collect::<Vec<_>>());
+    println!("{:?}", index.get_all(9001).collect::<Vec<_>>());
+}
+
+#[test]
+fn cachedidx_iter() {
+    let (index, _container) = idxcmp_setup("text/year.zigv", "IntSort");
+    let mut cidx = CachedIndex::new(index);
+    println!();
+    println!("{:?}", cidx.get_all(0).collect::<Vec<_>>());
+    println!("{:?}", cidx.get_all(3).collect::<Vec<_>>());
+    println!("{:?}", cidx.get_all(2002).collect::<Vec<_>>());
+    println!("{:?}", cidx.get_all(2003).collect::<Vec<_>>());
+    println!("{:?}", cidx.get_all(9001).collect::<Vec<_>>());
 }
