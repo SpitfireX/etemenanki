@@ -225,6 +225,7 @@ impl<'map> Iterator for IndexIterator<'map> {
     }
 }
 
+#[derive(Debug)]
 pub struct IndexBlock<'map> {
     regular_items: usize,
     overflow_items: usize,
@@ -349,6 +350,7 @@ impl<'map> IndexBlock<'map> {
 /// WrapperType for `Index` implementing efficient cached access.
 /// Compressed index blocks are stored in an LRU cache and only decoded
 /// as needed.
+#[derive(Debug)]
 pub struct CachedIndex<'map> {
     inner: Index<'map>,
     cache: LruCache<usize, IndexBlock<'map>>,
@@ -367,7 +369,9 @@ impl<'map> CachedIndex<'map> {
         self.get_first(key).is_some()
     }
 
-    fn get_block(&mut self, block_index: usize) -> &mut IndexBlock<'map> {
+    /// Returns the reference to a cached IndexBlock.
+    /// If the is not yet in the cache it will be decoded.
+    pub fn get_block(&mut self, block_index: usize) -> &mut IndexBlock<'map> {
         if let Index::Compressed { length: _, r, sync, data } = self.inner {
             if !self.cache.contains(&block_index) {
                 let offset = sync[block_index].1 as usize;
@@ -390,6 +394,10 @@ impl<'map> CachedIndex<'map> {
 
     pub fn get_first(&mut self, key: i64) -> Option<i64> {
         self.get_all(key).next()
+    }
+
+    pub fn inner(&self) -> Index<'map> {
+        self.inner
     }
 
     pub fn len(&self) -> usize {

@@ -5,7 +5,7 @@ use streaming_iterator::StreamingIterator;
 use test::{Bencher, black_box};
 use rand::{distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
 
-use crate::{components::{CachedIndex, CachedVector, Index, IndexBlock, Vector, VectorReader}, container::Container};
+use crate::{components::{CachedIndex, CachedVector, Index, IndexBlock, Vector, VectorReader}, container::Container, layers::SegmentationLayer};
 
 const DATASTORE_PATH: &'static str = "../scripts/recipes4000/";
 
@@ -188,4 +188,23 @@ fn cachedidx_iter() {
     println!("{:?}", cidx.get_all(2002).collect::<Vec<_>>());
     println!("{:?}", cidx.get_all(2003).collect::<Vec<_>>());
     println!("{:?}", cidx.get_all(9001).collect::<Vec<_>>());
+}
+
+fn seg_setup(filename: &'static str) -> SegmentationLayer<'static> {
+    let file = File::open(DATASTORE_PATH.to_owned() + filename).unwrap();
+    let mmap = unsafe { Mmap::map(&file) }.unwrap();
+    let container = Container::from_mmap(mmap, "word".to_owned()).unwrap();
+
+    let seg = SegmentationLayer::try_from(container).unwrap();
+
+    seg
+}
+
+#[test]
+fn seg_containing() {
+    let seg = seg_setup("s/s.zigl");
+    assert!(seg.find_containing(0) == Some(0));
+    assert!(seg.find_containing(10) == Some(1));
+    assert!(seg.find_containing(1337) == Some(98));
+    assert!(seg.find_containing(9001) == None);
 }
