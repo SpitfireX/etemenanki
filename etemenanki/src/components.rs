@@ -10,7 +10,7 @@ pub use set::*;
 pub use string_vector::*;
 pub use vector::*;
 
-use std::{error, fmt, ops};
+use std::{error, fmt};
 
 use enum_as_inner::EnumAsInner;
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
@@ -279,15 +279,11 @@ impl<'map> StringList<'map> {
         Self { length: n, data }
     }
 
+    pub fn data(&self) -> &'map [u8] {
+        self.data
+    }
+
     pub fn len(&self) -> usize {
         self.length
-    }
-}
-
-impl<'map> ops::Deref for StringList<'map> {
-    type Target = [u8];
-
-    fn deref(&self) -> &Self::Target {
-        &self.data
     }
 }

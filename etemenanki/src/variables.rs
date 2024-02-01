@@ -6,7 +6,7 @@ use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use uuid::Uuid;
 
-use crate::components::{self, CachedVector};
+use crate::components::{self, CachedIndex, CachedVector};
 use crate::container::{self, Container};
 use crate::macros::{check_and_return_component, get_container_base};
 
@@ -234,11 +234,11 @@ pub struct PlainStringVariable<'map> {
     pub header: container::Header<'map>,
     string_data: components::StringList<'map>,
     offset_stream: Rc<RefCell<components::CachedVector<'map>>>,
-    string_hash: components::Index<'map>,
+    string_hash: Rc<RefCell<components::CachedIndex<'map>>>,
 }
 
 impl<'map> PlainStringVariable<'map> {
-    pub fn get(&self, index: usize) -> Option<&str> {
+    pub fn get(&self, index: usize) -> Option<&'map str> {
         let offset_stream = self.offset_stream.borrow();
         if index + 1 < offset_stream.len() {
             Some(self.get_unchecked(index))
@@ -247,12 +247,12 @@ impl<'map> PlainStringVariable<'map> {
         }
     }
 
-    pub fn get_unchecked(&self, index: usize) -> &str {
+    pub fn get_unchecked(&self, index: usize) -> &'map str {
         let mut offset_stream = self.offset_stream.borrow_mut();
         let start = offset_stream.get_row_unchecked(index)[0] as usize;
         let end = offset_stream.get_row_unchecked(index + 1)[0] as usize;
 
-        unsafe { std::str::from_utf8_unchecked(&self.string_data[start..end - 1]) }
+        unsafe { std::str::from_utf8_unchecked(&self.string_data.data()[start..end - 1]) }
     }
 
     pub fn iter(&'map self) -> PlainStringIterator<'map> {
@@ -297,6 +297,7 @@ impl<'map> TryFrom<Container<'map>> for PlainStringVariable<'map> {
                 if string_hash.len() != n {
                     return Err(Self::Error::WrongComponentDimensions("StringHash"));
                 }
+                let string_hash = Rc::new(RefCell::new(CachedIndex::new(string_hash)));
 
                 Ok(Self {
                     base,
@@ -315,7 +316,7 @@ impl<'map> TryFrom<Container<'map>> for PlainStringVariable<'map> {
 }
 
 pub struct PlainStringIterator<'map> {
-    var: &'map PlainStringVariable<'map>,
+    string_data: components::StringList<'map>,
     offset_stream: Rc<RefCell<components::CachedVector<'map>>>,
     len: usize,
     index: usize,
@@ -331,7 +332,7 @@ impl<'map> Iterator for PlainStringIterator<'map> {
             let end = offset_stream.get_row_unchecked(self.index + 1)[0] as usize;
             self.index += 1;
 
-            Some(unsafe { std::str::from_utf8_unchecked(&self.var.string_data[start..end - 1]) })
+            Some(unsafe { std::str::from_utf8_unchecked(&self.string_data.data()[start..end - 1]) })
         } else {
             None
         }
@@ -344,7 +345,7 @@ impl<'map> IntoIterator for &'map PlainStringVariable<'map> {
 
     fn into_iter(self) -> Self::IntoIter {
         PlainStringIterator {
-            var: self,
+            string_data: self.string_data,
             offset_stream: self.offset_stream.clone(),
             len: self.len(),
             index: 0,
