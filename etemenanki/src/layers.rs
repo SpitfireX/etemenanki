@@ -181,67 +181,50 @@ pub struct SegmentationLayer<'map> {
     pub name: String,
     pub header: container::Header<'map>,
     range_stream: Rc<RefCell<components::CachedVector<'map>>>,
-    start_sort: components::CachedIndex<'map>,
-    end_sort: components::CachedIndex<'map>,
+    start_sort: Rc<RefCell<components::CachedIndex<'map>>>,
+    end_sort: Rc<RefCell<components::CachedIndex<'map>>>,
 }
 
 impl<'map> SegmentationLayer<'map> {
-    pub fn contains(&mut self, range: (usize, usize)) -> bool {
+    pub fn contains(&self, range: (usize, usize)) -> bool {
         let (start, end) = range;
+        let mut start_sort = self.start_sort.borrow_mut();
 
-        match self.start_sort.get_first(start as i64) {
+        match start_sort.get_first(start as i64) {
             None => false,
             Some(i) => end == self.get_unchecked(i as usize).1,
         }
     }
 
-    pub fn contains_end(&mut self, end: usize) -> bool {
-        self.end_sort.contains_key(end as i64)
+    pub fn contains_end(&self, end: usize) -> bool {
+        let mut end_sort = self.end_sort.borrow_mut();
+        end_sort.contains_key(end as i64)
     }
 
-    pub fn contains_start(&mut self, start: usize) -> bool {
-        self.start_sort.contains_key(start as i64)
+    pub fn contains_start(&self, start: usize) -> bool {
+        let mut start_sort = self.start_sort.borrow_mut();
+        start_sort.contains_key(start as i64)
     }
 
     /// Finds the index of the range containing baselayer position `position`
     pub fn find_containing(&self, position: usize) -> Option<usize> {
-        let i = match self.start_sort.inner() {
-            components::Index::Compressed { length: _, r, sync, data } => {
+        let mut start_sort = self.start_sort.borrow_mut();
 
-                let bi = match sync.binary_search_by_key(&(position as i64), |(s, _)| *s) {
-                    Ok(i) => i,
-                    Err(0) => 0,
-                    Err(i) => i-1,
-                };
+        let i = match start_sort.inner() {
+            components::Index::Compressed { length: _, r: _, sync, data: _ } => {
+
+                let bi = components::Index::block_position(sync, position as i64);
 
                 if bi < sync.len() {
-                    let mut offset = sync[bi].1;
+                    let block = start_sort.get_block(bi);
 
-                    // read o
-                    let (_, readlen) = ziggurat_varint::decode(&data[offset..]);
-                    offset += readlen;
-
-                    // read keys vector
-                    let klen = min(r - (bi * 16), 16); // number of keys can be <16
-                    let (keys, readlen) = ziggurat_varint::decode_delta_array::<16>(&data[offset..]);
-                    offset += readlen;
-
-                    let vi = match keys[..klen].binary_search(&(position as i64)) {
+                    let vi = match block.keys().binary_search(&(position as i64)) {
                         Ok(i) => i,
                         Err(0) => 0,
                         Err(i) => i-1,
                     };
 
-                    let (mut value, readlen) = ziggurat_varint::decode(&data[offset..]);
-                    offset += readlen;
-
-                    for _ in 0..vi {
-                        let (tmp, readlen) = ziggurat_varint::decode(&data[offset..]);
-                        value += tmp;
-                        offset += readlen;
-                    }
-
-                    value
+                    block.get_position(vi).expect("vi must lie within block")
                 } else {
                     return None
                 }
@@ -262,13 +245,10 @@ impl<'map> SegmentationLayer<'map> {
             let (start, end) = self.get_unchecked(i as usize);
 
             if position >= start && end > position {
-                Some(i as usize)
-            } else {
-                None
+                return Some(i as usize)
             }
-        } else {
-            None
         }
+        None
     }
 
     pub fn get(&self, index: usize) -> Option<(usize, usize)> {
@@ -328,13 +308,13 @@ impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {
                 if start_sort.len() != header.dim1 {
                     return Err(Self::Error::WrongComponentDimensions("StartSort"));
                 }
-                let start_sort = CachedIndex::new(start_sort);
+                let start_sort = Rc::new(RefCell::new(CachedIndex::new(start_sort)));
 
                 let end_sort = check_and_return_component!(components, "EndSort", Index)?;
                 if end_sort.len() != header.dim1 {
                     return Err(Self::Error::WrongComponentDimensions("EndSort"));
                 }
-                let end_sort = CachedIndex::new(end_sort);
+                let end_sort = Rc::new(RefCell::new(CachedIndex::new(end_sort)));
 
                 Ok(Self {
                     base,

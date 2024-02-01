@@ -82,7 +82,7 @@ impl<'map> Index<'map> {
         }
     }
 
-    fn block_position(sync: &[(i64, usize)], key: i64) -> usize {
+    pub fn block_position(sync: &[(i64, usize)], key: i64) -> usize {
         match sync.binary_search_by_key(&key, |(k, _)| *k) {
             Ok(bi) => bi,
             Err(0) => 0,
