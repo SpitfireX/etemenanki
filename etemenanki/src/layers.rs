@@ -272,13 +272,13 @@ impl<'map> SegmentationLayer<'map> {
         self.header.dim1
     }
 
-    // pub fn end_index(&self) -> components::Index {
-    //     self.end_sort
-    // }
+    pub fn end_index(&self) -> Rc<RefCell<CachedIndex<'map>>> {
+        self.end_sort.clone()
+    }
 
-    // pub fn start_index(&self) -> components::Index {
-    //     self.start_sort
-    // }
+    pub fn start_index(&self) -> Rc<RefCell<CachedIndex<'map>>> {
+        self.start_sort.clone()
+    }
 }
 
 impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {
