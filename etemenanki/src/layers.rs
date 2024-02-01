@@ -215,7 +215,9 @@ impl<'map> SegmentationLayer<'map> {
                 let bi = components::Index::block_position(sync, position as i64);
 
                 if bi < sync.len() {
-                    let block = start_sort.get_block(bi);
+                    let cache = start_sort.cache().unwrap();
+                    let mut cache = cache.borrow_mut(); 
+                    let block = cache.get_block(bi).unwrap();
 
                     let vi = match block.keys().binary_search(&(position as i64)) {
                         Ok(i) => i,

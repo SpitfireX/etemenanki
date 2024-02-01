@@ -1,5 +1,5 @@
 use core::{hash::Hasher, panic};
-use std::{cmp::min, num::NonZeroUsize};
+use std::{cell::RefCell, cmp::min, num::NonZeroUsize, rc::Rc};
 
 use fnv::FnvHasher;
 use lru::LruCache;
@@ -347,67 +347,105 @@ impl<'map> IndexBlock<'map> {
     }
 }
 
+#[derive(Debug)]
+pub struct IndexBlockCache<'map> {
+    r: usize,
+    sync: &'map [(i64, usize)],
+    data: &'map [u8],
+    cache: LruCache<usize, IndexBlock<'map>>,
+}
+
+impl<'map> IndexBlockCache<'map> {
+    pub fn new(r: usize, sync: &'map [(i64, usize)], data: &'map [u8]) -> Self {
+        Self {
+            r,
+            sync,
+            data,
+            cache: LruCache::new(NonZeroUsize::new(250).unwrap())
+        }
+    }
+
+    /// Returns the reference to a cached IndexBlock.
+    /// If the is not yet in the cache it will be decoded.
+    pub fn get_block(&mut self, block_index: usize) -> Option<&mut IndexBlock<'map>> {
+        if block_index < self.sync.len() {
+            if !self.cache.contains(&block_index) {
+                let offset = self.sync[block_index].1 as usize;
+                let br = min(self.r - (block_index * 16), 16);
+                let block = IndexBlock::decode(&self.data[offset..], br);
+                self.cache.put(block_index, block);
+            }
+    
+            self.cache
+                .get_mut(&block_index)
+        } else {
+            None
+        }
+    }
+}
+
 /// WrapperType for `Index` implementing efficient cached access.
 /// Compressed index blocks are stored in an LRU cache and only decoded
 /// as needed.
 #[derive(Debug)]
-pub struct CachedIndex<'map> {
-    inner: Index<'map>,
-    cache: LruCache<usize, IndexBlock<'map>>,
+pub enum CachedIndex<'map> {
+    Uncompressed {
+        inner: Index<'map>,
+    },
+    Compressed {
+        inner: Index<'map>,
+        cache: Rc<RefCell<IndexBlockCache<'map>>>,
+    },
 }
 
 impl<'map> CachedIndex<'map> {
 
     pub fn new(inner: Index<'map>) -> Self {
-        Self {
-            inner,
-            cache: LruCache::new(NonZeroUsize::new(250).unwrap()),
+        match inner {
+            Index::Uncompressed { .. } => Self::Uncompressed { inner },
+            Index::Compressed { length: _, r, sync, data } => {
+                Self::Compressed {
+                    inner,
+                    cache: Rc::new(RefCell::new(IndexBlockCache::new(r, sync, data)))
+                }
+            }
         }
     }
 
-    pub fn contains_key(&mut self, key: i64) -> bool {
+    pub fn cache(&self) -> Option<Rc<RefCell<IndexBlockCache<'map>>>> {
+        match self {
+            CachedIndex::Uncompressed { ..} => None,
+            CachedIndex::Compressed { inner:_ , cache } => Some(cache.clone()),
+        }
+    }
+
+    pub fn contains_key(&self, key: i64) -> bool {
         self.get_first(key).is_some()
     }
 
-    /// Returns the reference to a cached IndexBlock.
-    /// If the is not yet in the cache it will be decoded.
-    pub fn get_block(&mut self, block_index: usize) -> &mut IndexBlock<'map> {
-        if let Index::Compressed { length: _, r, sync, data } = self.inner {
-            if !self.cache.contains(&block_index) {
-                let offset = sync[block_index].1 as usize;
-                let br = min(r - (block_index * 16), 16);
-                let block = IndexBlock::decode(&data[offset..], br);
-                self.cache.put(block_index, block);
-            }
-
-            self.cache
-                .get_mut(&block_index)
-                .expect("at this point the block must be cached")
-        } else {
-            panic!("Not applicable for uncompressed");
-        }
-    }
-
-    pub fn get_all(&mut self, key: i64) -> CachedValueIter<'_, 'map> {
+    pub fn get_all(&self, key: i64) -> CachedValueIter<'map> {
         CachedValueIter::new(self, key)
     }
 
-    pub fn get_first(&mut self, key: i64) -> Option<i64> {
+    pub fn get_first(&self, key: i64) -> Option<i64> {
         self.get_all(key).next()
     }
 
     pub fn inner(&self) -> Index<'map> {
-        self.inner
+        match self {
+            CachedIndex::Uncompressed { inner } |
+            CachedIndex::Compressed { inner, .. } => *inner,
+        }
     }
 
     pub fn len(&self) -> usize {
-        self.inner.len()
+        self.inner().len()
     }
 
 }
 
 /// Iterator that yields all positions for a key from a given CachedIndex
-pub enum CachedValueIter<'ci, 'map> {
+pub enum CachedValueIter<'map> {
     Uncompressed {
         pairs: &'map [(i64, i64)],
         position: Option<usize>,
@@ -415,15 +453,16 @@ pub enum CachedValueIter<'ci, 'map> {
     },
 
     Compressed {
-        block: &'ci mut IndexBlock<'map>,
+        cache: Rc<RefCell<IndexBlockCache<'map>>>,
+        block_index: usize,
         position: Option<usize>,
         key: i64,
     }
 }
 
-impl<'ci, 'map> CachedValueIter<'ci, 'map> {
-    fn new(cidx: &'ci mut CachedIndex<'map>, key: i64) -> Self {
-        match cidx.inner {
+impl<'map> CachedValueIter<'map> {
+    fn new(cidx: &CachedIndex<'map>, key: i64) -> Self {
+        match cidx.inner() {
             Index::Uncompressed { length: _, pairs } => {
                 let position = Index::position(pairs, key);
                 CachedValueIter::Uncompressed { 
@@ -433,27 +472,37 @@ impl<'ci, 'map> CachedValueIter<'ci, 'map> {
                 }
             },
 
-            Index::Compressed { length: _, r: _, sync, data: _ } => {
-                let bi = Index::block_position(sync, key);
-                let block = cidx.get_block(bi);
+            Index::Compressed { length: _, r: _, sync, .. } => {
+                if let CachedIndex::Compressed { inner: _, cache } = cidx {
+                    let cache = cache.clone();
+                    let block_index = Index::block_position(sync, key);
 
-                // partition_point() will return Some(position), even if the key is
-                // not actually in the block. This is fine, since the iterator will
-                // check the key at a later point again.
-                let position = block.keys().partition_point(|&x| x < key );
-                let position = (position < block.keys().len()).then_some(position);
-
-                CachedValueIter::Compressed {
-                    block,
-                    position,
-                    key,
+                    let position = {
+                        let mut borrow = cache.borrow_mut();
+                        let block = borrow.get_block(block_index).expect("at this point the block must be cached");
+    
+                        // partition_point() will return Some(position), even if the key is
+                        // not actually in the block. This is fine, since the iterator will
+                        // check the key at a later point again.
+                        let position = block.keys().partition_point(|&x| x < key );
+                        (position < block.keys().len()).then_some(position)
+                    };
+    
+                    CachedValueIter::Compressed {
+                        cache,
+                        block_index,
+                        position,
+                        key,
+                    }
+                } else {
+                    panic!();
                 }
             }
         }
     }
 }
 
-impl<'ci, 'map> Iterator for CachedValueIter<'ci, 'map> {
+impl<'map> Iterator for CachedValueIter<'map> {
     type Item = i64;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -471,8 +520,11 @@ impl<'ci, 'map> Iterator for CachedValueIter<'ci, 'map> {
                 None
             }
 
-            CachedValueIter::Compressed { block, position, key } => {
+            CachedValueIter::Compressed { cache, block_index, position, key } => {
                 if let Some(position) = position {
+                    let mut cache = cache.borrow_mut();
+                    let block = cache.get_block(*block_index).expect("at this point the block must be cached");
+
                     if *position < block.len() {
                         let (ckey, value) = block.get_pair(*position).unwrap();
                         if ckey == *key {

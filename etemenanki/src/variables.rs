@@ -360,7 +360,7 @@ pub struct IntegerVariable<'map> {
     pub name: String,
     pub header: container::Header<'map>,
     int_stream: Rc<RefCell<components::CachedVector<'map>>>,
-    int_sort: components::Index<'map>,
+    int_sort: components::CachedIndex<'map>,
 }
 
 impl<'map> IntegerVariable<'map> {
@@ -372,7 +372,7 @@ impl<'map> IntegerVariable<'map> {
         }
     }
 
-    pub fn get_all(&self, value: i64) -> components::IndexIterator {
+    pub fn get_all(&self, value: i64) -> components::CachedValueIter<'map> {
         self.int_sort.get_all(value)
     }
 
@@ -420,6 +420,7 @@ impl<'map> TryFrom<Container<'map>> for IntegerVariable<'map> {
                 if int_sort.len() != n {
                     return Err(Self::Error::WrongComponentDimensions("IntSort"));
                 }
+                let int_sort = CachedIndex::new(int_sort);
 
                 Ok(Self {
                     base,
