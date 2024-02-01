@@ -3,7 +3,6 @@ use memmap2::Mmap;
 use uuid::Uuid;
 
 use std::cell::RefCell;
-use std::cmp::min;
 use std::collections::{hash_map, HashMap};
 use std::ops;
 use std::rc::Rc;

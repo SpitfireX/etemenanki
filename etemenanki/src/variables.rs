@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::HashSet;
-use std::ops;
 use std::rc::Rc;
 
 use enum_as_inner::EnumAsInner;
