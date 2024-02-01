@@ -180,42 +180,37 @@ pub struct SegmentationLayer<'map> {
     pub name: String,
     pub header: container::Header<'map>,
     range_stream: Rc<RefCell<components::CachedVector<'map>>>,
-    start_sort: Rc<RefCell<components::CachedIndex<'map>>>,
-    end_sort: Rc<RefCell<components::CachedIndex<'map>>>,
+    start_sort: components::CachedIndex<'map>,
+    end_sort: components::CachedIndex<'map>,
 }
 
 impl<'map> SegmentationLayer<'map> {
     pub fn contains(&self, range: (usize, usize)) -> bool {
         let (start, end) = range;
-        let mut start_sort = self.start_sort.borrow_mut();
 
-        match start_sort.get_first(start as i64) {
+        match self.start_sort.get_first(start as i64) {
             None => false,
             Some(i) => end == self.get_unchecked(i as usize).1,
         }
     }
 
     pub fn contains_end(&self, end: usize) -> bool {
-        let mut end_sort = self.end_sort.borrow_mut();
-        end_sort.contains_key(end as i64)
+        self.end_sort.contains_key(end as i64)
     }
 
     pub fn contains_start(&self, start: usize) -> bool {
-        let mut start_sort = self.start_sort.borrow_mut();
-        start_sort.contains_key(start as i64)
+        self.start_sort.contains_key(start as i64)
     }
 
     /// Finds the index of the range containing baselayer position `position`
     pub fn find_containing(&self, position: usize) -> Option<usize> {
-        let mut start_sort = self.start_sort.borrow_mut();
-
-        let i = match start_sort.inner() {
+        let i = match self.start_sort.inner() {
             components::Index::Compressed { length: _, r: _, sync, data: _ } => {
 
                 let bi = components::Index::block_position(sync, position as i64);
 
                 if bi < sync.len() {
-                    let cache = start_sort.cache().unwrap();
+                    let cache = self.start_sort.cache().unwrap();
                     let mut cache = cache.borrow_mut(); 
                     let block = cache.get_block(bi).unwrap();
 
@@ -273,14 +268,6 @@ impl<'map> SegmentationLayer<'map> {
     pub fn len(&self) -> usize {
         self.header.dim1
     }
-
-    pub fn end_index(&self) -> Rc<RefCell<CachedIndex<'map>>> {
-        self.end_sort.clone()
-    }
-
-    pub fn start_index(&self) -> Rc<RefCell<CachedIndex<'map>>> {
-        self.start_sort.clone()
-    }
 }
 
 impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {
@@ -309,13 +296,13 @@ impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {
                 if start_sort.len() != header.dim1 {
                     return Err(Self::Error::WrongComponentDimensions("StartSort"));
                 }
-                let start_sort = Rc::new(RefCell::new(CachedIndex::new(start_sort)));
+                let start_sort = CachedIndex::new(start_sort);
 
                 let end_sort = check_and_return_component!(components, "EndSort", Index)?;
                 if end_sort.len() != header.dim1 {
                     return Err(Self::Error::WrongComponentDimensions("EndSort"));
                 }
-                let end_sort = Rc::new(RefCell::new(CachedIndex::new(end_sort)));
+                let end_sort = CachedIndex::new(end_sort);
 
                 Ok(Self {
                     base,
