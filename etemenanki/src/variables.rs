@@ -96,9 +96,9 @@ impl<'map> IndexedStringVariable<'map> {
         lex_id_stream.get_row_unchecked(index)[0] as usize
     }
 
-    pub fn get_range(&'map self, start: usize, end: usize) -> IndexedStringIterator<'map> {
+    pub fn get_range(&self, start: usize, end: usize) -> IndexedStringIterator<'map> {
         IndexedStringIterator {
-            var: self,
+            lexicon: self.lexicon,
             id_stream: self.lex_id_stream.clone(),
             index: start,
             end,
@@ -131,14 +131,6 @@ impl<'map> IndexedStringVariable<'map> {
 
     pub fn n_types(&self) -> usize {
         self.header.dim2
-    }
-}
-
-impl<'map> ops::Index<usize> for IndexedStringVariable<'map> {
-    type Output = str;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        self.get_unchecked(index)
     }
 }
 
@@ -199,7 +191,7 @@ impl<'map> TryFrom<Container<'map>> for IndexedStringVariable<'map> {
 }
 
 pub struct IndexedStringIterator<'map> {
-    var: &'map IndexedStringVariable<'map>,
+    lexicon: components::StringVector<'map>,
     id_stream: Rc<RefCell<components::CachedVector<'map>>>,
     index: usize,
     end: usize,
@@ -214,7 +206,7 @@ impl<'map> Iterator for IndexedStringIterator<'map> {
             let lexid = id_stream.get_row_unchecked(self.index)[0] as usize;
             self.index += 1;
 
-            Some(&self.var.lexicon[lexid])
+            Some(&self.lexicon.get_unchecked(lexid))
         } else {
             None
         }
@@ -227,7 +219,7 @@ impl<'map> IntoIterator for &'map IndexedStringVariable<'map> {
 
     fn into_iter(self) -> Self::IntoIter {
         IndexedStringIterator {
-            var: self,
+            lexicon: self.lexicon,
             id_stream: self.lex_id_stream.clone(),
             index: 0,
             end: self.len(),
@@ -270,14 +262,6 @@ impl<'map> PlainStringVariable<'map> {
 
     pub fn len(&self) -> usize {
         self.header.dim1
-    }
-}
-
-impl<'map> ops::Index<usize> for PlainStringVariable<'map> {
-    type Output = str;
-
-    fn index(&self, index: usize) -> &Self::Output {
-        self.get_unchecked(index)
     }
 }
 

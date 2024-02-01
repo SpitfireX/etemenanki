@@ -59,7 +59,7 @@ impl<'map> StringVector<'map> {
         }
     }
 
-    pub fn get(&self, index: usize) -> Option<&str> {
+    pub fn get(&self, index: usize) -> Option<&'map str> {
         if index < self.len() {
             Some(&self.get_unchecked(index))
         } else {
@@ -67,7 +67,7 @@ impl<'map> StringVector<'map> {
         }
     }
 
-    pub fn get_unchecked(&self, index: usize) -> &str {
+    pub fn get_unchecked(&self, index: usize) -> &'map str {
         let start = self.offsets[index] as usize;
         let end = self.offsets[index + 1] as usize;
         unsafe { std::str::from_utf8_unchecked(&self.data[start..end - 1]) }
@@ -92,7 +92,7 @@ impl<'map> StringVector<'map> {
 impl<'map> ops::Index<usize> for StringVector<'map> {
     type Output = str;
 
-    fn index(&self, index: usize) -> &Self::Output {
+    fn index(&self, index: usize) -> &'map Self::Output {
         &self.get_unchecked(index)
     }
 }

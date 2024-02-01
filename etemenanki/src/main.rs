@@ -90,9 +90,9 @@ fn main() -> Result<()> {
                         println!("{}", surface);
 
                         let tid = text.find_containing(p).unwrap();
-                        let title = &text["title"].as_plain_string().unwrap()[tid];
-                        let author = &text["author"].as_indexed_string().unwrap()[tid];
-                        let url = &text["url"].as_plain_string().unwrap()[tid];
+                        let title = &text["title"].as_plain_string().unwrap().get_unchecked(tid);
+                        let author = &text["author"].as_indexed_string().unwrap().get_unchecked(tid);
+                        let url = &text["url"].as_plain_string().unwrap().get_unchecked(tid);
                         let year = &text["year"]
                             .as_integer()
                             .unwrap()
