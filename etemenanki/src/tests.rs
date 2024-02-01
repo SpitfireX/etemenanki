@@ -181,7 +181,7 @@ fn idx_iter() {
 #[test]
 fn cachedidx_iter() {
     let (index, _container) = idxcmp_setup("text/year.zigv", "IntSort");
-    let mut cidx = CachedIndex::new(index);
+    let cidx = CachedIndex::new(index);
     println!();
     println!("{:?}", cidx.get_all(0).collect::<Vec<_>>());
     println!("{:?}", cidx.get_all(3).collect::<Vec<_>>());

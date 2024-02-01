@@ -204,29 +204,24 @@ impl<'map> SegmentationLayer<'map> {
 
     /// Finds the index of the range containing baselayer position `position`
     pub fn find_containing(&self, position: usize) -> Option<usize> {
-        let i = match self.start_sort.inner() {
-            components::Index::Compressed { length: _, r: _, sync, data: _ } => {
+        let i = match &self.start_sort {
 
-                let bi = components::Index::block_position(sync, position as i64);
+            components::CachedIndex::Compressed { length: _, cache } => {
+                let mut cache = cache.borrow_mut();
 
-                if bi < sync.len() {
-                    let cache = self.start_sort.cache().unwrap();
-                    let mut cache = cache.borrow_mut(); 
-                    let block = cache.get_block(bi).unwrap();
+                let bi = cache.sync_block_position(position as i64);
+                let block = cache.get_block(bi).unwrap();
 
-                    let vi = match block.keys().binary_search(&(position as i64)) {
-                        Ok(i) => i,
-                        Err(0) => 0,
-                        Err(i) => i-1,
-                    };
+                let vi = match block.keys().binary_search(&(position as i64)) {
+                    Ok(i) => i,
+                    Err(0) => 0,
+                    Err(i) => i-1,
+                };
 
-                    block.get_position(vi).expect("vi must lie within block")
-                } else {
-                    return None
-                }
+                block.get_position(vi).expect("vi must be in block")
             }
             
-            components::Index::Uncompressed { length: _, pairs } => {
+            components::CachedIndex::Uncompressed { length: _, pairs } => {
                 let i = match pairs.binary_search_by_key(&(position as i64), |(s, _)| *s) {
                     Ok(i) => i,
                     Err(0) => 0,
