@@ -1,7 +1,13 @@
-use std::{num::NonZeroUsize, ops};
+use std::{cell::RefCell, cmp::min, num::NonZeroUsize, ops, rc::Rc};
 
 use lru::LruCache;
 use streaming_iterator::StreamingIterator;
+
+#[derive(Debug, Clone, Copy)]
+pub enum CompressionType {
+    VarInt,
+    Delta,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum Vector<'map> {
@@ -28,7 +34,7 @@ pub enum Vector<'map> {
 
 impl<'map> Vector<'map> {
     /// Decodes a compressed block and returns it as a contiguous Vec of dimension n*d in row major order.
-    fn decode_compressed_block(d: usize, raw_data: &[u8]) -> Vec<i64> {
+    pub fn decode_compressed_block(d: usize, raw_data: &[u8]) -> Vec<i64> {
         let mut block = vec![0i64; d * 16];
         let mut offset = 0;
 
@@ -44,7 +50,7 @@ impl<'map> Vector<'map> {
     }
 
     /// Decodes a delta compressed block and returns it as a contiguous Vec of dimension n*d in row-major order.
-    fn decode_delta_block(d: usize, raw_data: &[u8]) -> Vec<i64> {
+    pub fn decode_delta_block(d: usize, raw_data: &[u8]) -> Vec<i64> {
         let mut delta_block = vec![0i64; d * 16];
         let mut offset = 0;
 
@@ -549,6 +555,384 @@ impl <'cv, 'map> StreamingIterator for RowIter<'cv, 'map> {
             self.cvec.peek_row(self.position-1) // -1 because get always gets called after advace
         } else {
             None
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct VectorBlock<const D: usize> {
+    rows: [[i64; D]; 16],
+    length: usize,
+}
+
+impl<const D: usize> VectorBlock<D> {
+    /// Decodes a compressed block into memory and turns it into row-major canonical representation
+    pub fn decode_compressed(data: &[u8], length: usize) -> Self {
+        let mut rows = [[0i64; D]; 16];
+        let mut offset = 0;
+
+        for i in 0..16 {
+            for j in 0..D {
+                let (int, len) = ziggurat_varint::decode(&data[offset..]);
+                rows[i][j] = int;
+                offset += len;
+            }
+        }
+
+        Self {
+            rows,
+            length,
+        }
+    }
+
+    /// Decodes a delta compressed block into memory and turns it into row-major canonical representation
+    pub fn decode_delta(data: &[u8], length: usize) -> Self {
+        let mut rows = [[0i64; D]; 16];
+        let mut offset = 0;
+
+        for i in 0..D {
+            for j in 0..16 {
+                let (int, len) = ziggurat_varint::decode(&data[offset..]);
+                if j == 0 {
+                    rows[j][i] = int; // initial seed values
+                } else {
+                    rows[j][i] = rows[j-1][i] + int;
+                }
+                offset += len;
+            }
+        }
+
+        Self {
+            rows,
+            length,
+        }
+    }
+
+    pub fn get_row(&self, index: usize) -> Option<[i64; D]> {
+        if index < self.length {
+            Some(self.get_row_unchecked(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_row_unchecked(&self, index: usize) -> [i64; D] {
+        self.rows[index]
+    }
+
+    pub fn len(&self) -> usize {
+        self.length
+    }
+
+    pub const fn width(&self) -> usize {
+        D
+    } 
+
+    // Returns a slice over all rows
+    pub fn rows(&self) -> &[[i64; D]] {
+        &self.rows[..self.length]
+    }
+}
+
+pub struct VectorBlockCache<'map, const D: usize> {
+    comp_type: CompressionType,
+    length: usize,
+    sync: &'map [i64],
+    data: &'map [u8],
+    cache: LruCache<usize, VectorBlock<D>>,
+}
+
+impl<'map, const D: usize> VectorBlockCache<'map, D> {
+    pub fn new_compressed(length: usize, sync: &'map [i64], data: &'map [u8]) -> Self {
+        Self {
+            comp_type: CompressionType::VarInt,
+            length,
+            sync,
+            data,
+            cache: LruCache::new(NonZeroUsize::new(250).unwrap()),
+        }
+    }
+
+    pub fn new_delta(length: usize, sync: &'map [i64], data: &'map [u8]) -> Self {
+        Self {
+            comp_type: CompressionType::Delta,
+            length,
+            sync,
+            data,
+            cache: LruCache::new(NonZeroUsize::new(250).unwrap()),
+        }
+    }
+
+    pub fn get_block(&mut self, block_index: usize) -> Option<&VectorBlock<D>> {
+        let Self {comp_type, length, sync, data, cache } = self;
+        if block_index < sync.len() {
+            if !cache.contains(&block_index) {
+                let offset = sync[block_index] as usize;
+                let blen = min(*length - (block_index * 16), 16);
+                let block = match comp_type {
+                    CompressionType::VarInt => VectorBlock::decode_compressed(&data[offset..], blen),
+                    CompressionType::Delta => VectorBlock::decode_delta(&data[offset..], blen),
+                };
+
+                cache.put(block_index, block);
+            }
+    
+            cache.get(&block_index)
+        } else {
+            None
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.length
+    }
+}
+
+pub enum CachedVector2<'map, const D: usize> {
+    Uncompressed {
+        length: usize,
+        data: &'map [i64],
+    },
+
+    Compressed {
+        blocks: Rc<RefCell<VectorBlockCache<'map, D>>>,
+    },
+}
+
+impl<'map, const D: usize> CachedVector2<'map, D> {
+    pub fn new(vector: Vector<'map>) -> Option<Self> {
+        if vector.width() == D {
+            match vector {
+                Vector::Uncompressed { length, width: _, data } => {
+                    Some(Self::Uncompressed { length, data })
+                }
+
+                Vector::Compressed { length, width: _, sync, data } => {
+                    Some(Self::Compressed { 
+                        blocks: Rc::new(RefCell::new(VectorBlockCache::new_compressed(length, sync, data))),
+                    })
+                }
+
+                Vector::Delta { length, width: _, sync, data } => {
+                    Some(Self::Compressed { 
+                        blocks: Rc::new(RefCell::new(VectorBlockCache::new_delta(length, sync, data))),
+                    })
+                }
+            }
+        } else {
+            None
+        }
+    }
+
+    pub fn column_iter(&self, column: usize) -> ColIter2<'map, D> {
+        ColIter2::new(self, 0, self.len(), column).unwrap()
+    }
+
+    pub fn column_iter_from(&self, start: usize, column: usize) -> ColIter2<'map, D> {
+        ColIter2::new(self, start, self.len(), column).unwrap()
+    }
+
+    pub fn column_iter_range(&self, start: usize, end: usize, column: usize) -> Option<ColIter2<'map, D>> {
+        ColIter2::new(self, start, end, column)
+    }
+
+    pub fn column_iter_until(&self, end: usize, column: usize) -> Option<ColIter2<'map, D>> {
+        ColIter2::new(self, 0, end, column)
+    }
+
+    pub fn get_row(&self, index: usize) -> Option<[i64; D]> {
+        if index < self.len() {
+            Some(self.get_row_unchecked(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn get_row_unchecked(&self, index: usize) -> [i64; D] {
+        match self {
+            CachedVector2::Uncompressed { length: _, data } => {
+                let start = index * D;
+                let end = start + D;
+
+                data[start..end].try_into().unwrap()
+            },
+            CachedVector2::Compressed { blocks } => {
+                let mut blocks = blocks.borrow_mut();
+                let bi = index / 16;
+                let block = blocks.get_block(bi).unwrap();
+
+                block.get_row_unchecked(index % 16)
+            }
+        }
+    }
+
+    pub fn iter(&self) -> RowIter2<'map, D> {
+        RowIter2::new(self, 0, self.len()).unwrap()
+    }
+
+    pub fn iter_from(&self, start: usize) -> RowIter2<'map, D> {
+        RowIter2::new(self, start, self.len()).unwrap()
+    }
+
+    pub fn iter_range(&self, start: usize, end: usize) -> Option<RowIter2<'map, D>> {
+        RowIter2::new(self, start, end)
+    }
+
+    pub fn iter_until(&self, end: usize) -> Option<RowIter2<'map, D>> {
+        RowIter2::new(self, 0, end)
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Uncompressed { length, .. } => *length,
+            Self::Compressed { blocks } => blocks.borrow().len(),
+        }
+    }
+
+    pub const fn width(&self) -> usize {
+        D
+    }
+}
+
+pub enum RowIter2<'map, const D: usize> {
+    Uncompressed {
+        data: &'map [i64],
+        position: usize,
+        end: usize,
+    },
+
+    Compressed {
+        blocks: Rc<RefCell<VectorBlockCache<'map, D>>>,
+        position: usize,
+        end: usize,
+    },
+}
+
+impl<'map, const D: usize> RowIter2<'map, D> {
+    pub fn new(cvec: &CachedVector2<'map, D>, start: usize, end: usize) -> Option<Self> {
+        match cvec {
+            CachedVector2::Uncompressed { length, data } => {
+                if end <= *length {
+                    Some(Self::Uncompressed { data, position: start, end })
+                } else {
+                    None
+                }
+            }
+
+            CachedVector2::Compressed { blocks } => {
+                if end <= blocks.borrow().len() {
+                    Some(Self::Compressed { blocks: blocks.clone(), position: start, end })
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+impl<'map, const D: usize> Iterator for RowIter2<'map, D> {
+    type Item = [i64; D];
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Uncompressed { data, position, end } => {
+                if position < end {
+                    let start = *position * D;
+                    let end = start + D;
+                    *position += 1;
+                    Some(data[start..end].try_into().unwrap())
+                } else {
+                    None
+                }
+            }
+
+            Self::Compressed { blocks, position, end } => {
+                if position < end {
+                    let bi = *position / 16;
+                    let i = *position % 16;
+                    *position += 1;
+
+                    let mut blocks = blocks.borrow_mut();
+                    let block = blocks.get_block(bi).unwrap();
+                    block.get_row(i)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+pub enum ColIter2<'map, const D: usize> {
+    Uncompressed {
+        data: &'map [i64],
+        position: usize,
+        end: usize,
+        column: usize,
+    },
+
+    Compressed {
+        blocks: Rc<RefCell<VectorBlockCache<'map, D>>>,
+        position: usize,
+        end: usize,
+        column: usize,
+    },
+}
+
+impl<'map, const D: usize> ColIter2<'map, D> {
+    pub fn new(cvec: &CachedVector2<'map, D>, start: usize, end: usize, column: usize) -> Option<Self> {
+        if column >= D{
+            return None;
+        }
+        
+        match cvec {
+            CachedVector2::Uncompressed { length, data } => {
+                if end <= *length {
+                    Some(Self::Uncompressed { data, position: start, end, column })
+                } else {
+                    None
+                }
+            }
+
+            CachedVector2::Compressed { blocks } => {
+                if end <= blocks.borrow().len() {
+                    Some(Self::Compressed { blocks: blocks.clone(), position: start, end, column })
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+impl<'map, const D: usize> Iterator for ColIter2<'map, D> {
+    type Item = i64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Uncompressed { data, position, end, column} => {
+                if position < end {
+                    let i = (*position * D) + *column;
+                    *position += 1;
+                    Some(data[i])
+                } else {
+                    None
+                }
+            }
+
+            Self::Compressed { blocks, position, end, column } => {
+                if position < end {
+                    let bi = *position / 16;
+                    let i = *position % 16;
+                    *position += 1;
+
+                    let mut blocks = blocks.borrow_mut();
+                    let block = blocks.get_block(bi).unwrap();
+                    block.get_row(i).map(|r| r[*column])
+                } else {
+                    None
+                }
+            }
         }
     }
 }
