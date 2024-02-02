@@ -1,11 +1,10 @@
 use std::fs::File;
 
 use memmap2::Mmap;
-use streaming_iterator::StreamingIterator;
 use test::{Bencher, black_box};
 use rand::{distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
 
-use crate::{components::{CachedIndex, CachedVector, Index, IndexBlock, Vector, VectorBlock, VectorReader}, container::Container, layers::SegmentationLayer};
+use crate::{components::{CachedIndex, CachedVector, Index, IndexBlock, Vector, VectorBlock}, container::Container, layers::SegmentationLayer};
 
 const DATASTORE_PATH: &'static str = "../scripts/recipes4000/";
 
@@ -37,27 +36,6 @@ fn vec_seq_no(b: &mut Bencher) {
     b.iter(|| {
         for i in 0..vec.len() {
             black_box(vec.get_row(i));
-        }
-    })
-}
-
-#[bench]
-fn vec_seq_reader(b: &mut Bencher) {
-    let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
-    b.iter(|| {
-        let mut reader = VectorReader::from_vector(vec);
-        for i in 0..vec.len() {
-            black_box(reader.get_row(i));
-        }
-    })
-}
-
-#[bench]
-fn vec_seq_reader_iter(b: &mut Bencher) {
-    let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
-    b.iter(|| {
-        for row in vec {
-            black_box(row);
         }
     })
 }
@@ -99,18 +77,6 @@ fn vec_rand_no(b: &mut Bencher) {
     b.iter(|| {
         for i in &ids {
             black_box(vec.get_row(*i));
-        }
-    })
-}
-
-#[bench]
-fn vec_rand_reader(b: &mut Bencher) {
-    let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
-    let ids = setup_rand(NACCESS, vec.len());
-    b.iter(|| {
-        let mut reader = VectorReader::from_vector(vec);
-        for i in &ids {
-            black_box(reader.get_row(*i));
         }
     })
 }
