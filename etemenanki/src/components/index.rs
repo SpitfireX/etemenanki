@@ -392,7 +392,7 @@ impl<'map> IndexBlockCache<'map> {
 /// Alternative type for `Index` implementing efficient cached access.
 /// Compressed index blocks are stored in an LRU cache and only decoded
 /// as needed.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CachedIndex<'map> {
     Uncompressed {
         length: usize,

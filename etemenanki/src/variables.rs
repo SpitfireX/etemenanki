@@ -1,6 +1,4 @@
-use std::cell::RefCell;
 use std::collections::HashSet;
-use std::rc::Rc;
 
 use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
@@ -60,7 +58,7 @@ pub struct IndexedStringVariable<'map> {
     pub name: String,
     pub header: container::Header<'map>,
     lexicon: components::StringVector<'map>,
-    lex_hash: components::Index<'map>,
+    lex_hash: components::CachedIndex<'map>,
     lex_id_stream: components::CachedVector<'map, 1>,
     lex_id_index: components::InvertedIndex<'map>,
 }
@@ -104,8 +102,8 @@ impl<'map> IndexedStringVariable<'map> {
         self.lex_id_stream.clone()
     }
 
-    pub fn index(&self) -> components::Index {
-        self.lex_hash
+    pub fn index(&self) -> components::CachedIndex<'map> {
+        self.lex_hash.clone()
     }
 
     pub fn inverted_index(&self) -> components::InvertedIndex {
@@ -155,6 +153,7 @@ impl<'map> TryFrom<Container<'map>> for IndexedStringVariable<'map> {
                 if lex_hash.len() != v {
                     return Err(Self::Error::WrongComponentDimensions("LexHash"));
                 }
+                let lex_hash = CachedIndex::new(lex_hash);
 
                 let lex_id_stream = check_and_return_component!(components, "LexIDStream", Vector)?;
                 if lex_id_stream.len() != n || lex_id_stream.width() != 1 {
@@ -230,7 +229,7 @@ pub struct PlainStringVariable<'map> {
     pub header: container::Header<'map>,
     string_data: components::StringList<'map>,
     offset_stream: components::CachedVector<'map, 1>,
-    string_hash: Rc<RefCell<components::CachedIndex<'map>>>,
+    string_hash: components::CachedIndex<'map>,
 }
 
 impl<'map> PlainStringVariable<'map> {
@@ -292,7 +291,7 @@ impl<'map> TryFrom<Container<'map>> for PlainStringVariable<'map> {
                 if string_hash.len() != n {
                     return Err(Self::Error::WrongComponentDimensions("StringHash"));
                 }
-                let string_hash = Rc::new(RefCell::new(CachedIndex::new(string_hash)));
+                let string_hash = CachedIndex::new(string_hash);
 
                 Ok(Self {
                     base,
@@ -469,7 +468,7 @@ pub struct SetVariable<'map> {
     pub name: String,
     pub header: container::Header<'map>,
     lexicon: components::StringVector<'map>,
-    lex_hash: components::Index<'map>,
+    lex_hash: components::CachedIndex<'map>,
     id_set_stream: components::Set<'map>,
     id_set_index: components::InvertedIndex<'map>,
 }
@@ -527,6 +526,7 @@ impl<'map> TryFrom<Container<'map>> for SetVariable<'map> {
                 if lex_hash.len() != v {
                     return Err(Self::Error::WrongComponentDimensions("LexHash"));
                 }
+                let lex_hash = CachedIndex::new(lex_hash);
 
                 let id_set_stream = check_and_return_component!(components, "IDSetStream", Set)?;
                 if id_set_stream.len() != n ||
@@ -565,7 +565,7 @@ pub struct PointerVariable<'map> {
     pub name: String,
     pub header: container::Header<'map>,
     head_stream: components::CachedVector<'map, 1>,
-    head_sort: components::Index<'map>,
+    head_sort: components::CachedIndex<'map>,
 }
 
 impl<'map> PointerVariable<'map> {
@@ -577,7 +577,7 @@ impl<'map> PointerVariable<'map> {
         }
     }
 
-    pub fn tail_positions(&self, head: usize) -> Option<components::IndexIterator<'_>>{
+    pub fn tail_positions(&self, head: usize) -> Option<components::CachedValueIter<'map>>{
         if head < self.len() {
             Some(self.head_sort.get_all(head as i64))
         } else {
@@ -626,6 +626,7 @@ impl<'map> TryFrom<Container<'map>> for PointerVariable<'map> {
                 if head_sort.len() != n {
                     return Err(Self::Error::WrongComponentDimensions("HeadSort"));
                 }
+                let head_sort = CachedIndex::new(head_sort);
 
                 Ok(Self {
                     base,
