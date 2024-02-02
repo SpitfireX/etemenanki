@@ -803,6 +803,7 @@ pub enum RowIter2<'map, const D: usize> {
 
     Compressed {
         blocks: Rc<RefCell<VectorBlockCache<'map, D>>>,
+        current: VectorBlock<D>,
         position: usize,
         end: usize,
     },
@@ -821,7 +822,10 @@ impl<'map, const D: usize> RowIter2<'map, D> {
 
             CachedVector2::Compressed { blocks } => {
                 if end <= blocks.borrow().len() {
-                    Some(Self::Compressed { blocks: blocks.clone(), position: start, end })
+                    let bi = start / 16;
+                    let current = *blocks.borrow_mut().get_block(bi).unwrap();
+
+                    Some(Self::Compressed { blocks: blocks.clone(), current, position: start, end })
                 } else {
                     None
                 }
@@ -846,15 +850,20 @@ impl<'map, const D: usize> Iterator for RowIter2<'map, D> {
                 }
             }
 
-            Self::Compressed { blocks, position, end } => {
+            Self::Compressed { blocks, current, position, end } => {
                 if position < end {
-                    let bi = *position / 16;
                     let i = *position % 16;
                     *position += 1;
+                    let value = current.get_row(i);
 
-                    let mut blocks = blocks.borrow_mut();
-                    let block = blocks.get_block(bi).unwrap();
-                    block.get_row(i)
+                    // only go through cache when the next block is needed
+                    if value.is_some() && i == 15 {
+                        let mut blocks = blocks.borrow_mut();
+                        let bi = *position / 16;
+                        *current = *blocks.get_block(bi).unwrap();
+                    }
+
+                    value
                 } else {
                     None
                 }
@@ -873,6 +882,7 @@ pub enum ColIter2<'map, const D: usize> {
 
     Compressed {
         blocks: Rc<RefCell<VectorBlockCache<'map, D>>>,
+        current: VectorBlock<D>,
         position: usize,
         end: usize,
         column: usize,
@@ -896,7 +906,10 @@ impl<'map, const D: usize> ColIter2<'map, D> {
 
             CachedVector2::Compressed { blocks } => {
                 if end <= blocks.borrow().len() {
-                    Some(Self::Compressed { blocks: blocks.clone(), position: start, end, column })
+                    let bi = start / 16;
+                    let current = *blocks.borrow_mut().get_block(bi).unwrap();
+
+                    Some(Self::Compressed { blocks: blocks.clone(), current, position: start, end, column })
                 } else {
                     None
                 }
@@ -920,15 +933,20 @@ impl<'map, const D: usize> Iterator for ColIter2<'map, D> {
                 }
             }
 
-            Self::Compressed { blocks, position, end, column } => {
+            Self::Compressed { blocks, current, position, end, column } => {
                 if position < end {
-                    let bi = *position / 16;
                     let i = *position % 16;
                     *position += 1;
+                    let value = current.get_row(i).map(|r| r[*column]);
 
-                    let mut blocks = blocks.borrow_mut();
-                    let block = blocks.get_block(bi).unwrap();
-                    block.get_row(i).map(|r| r[*column])
+                    // only go through cache when the next block is needed
+                    if value.is_some() && i == 15 {
+                        let mut blocks = blocks.borrow_mut();
+                        let bi = *position / 16;
+                        *current = *blocks.get_block(bi).unwrap();
+                    }
+
+                    value
                 } else {
                     None
                 }
