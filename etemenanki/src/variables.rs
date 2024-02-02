@@ -365,7 +365,7 @@ impl<'map> IntegerVariable<'map> {
         }
     }
 
-    pub fn get_all(&self, value: i64) -> components::CachedValueIter<'map> {
+    pub fn get_all(&self, value: i64) -> components::CachedValueIterator<'map> {
         self.int_sort.get_all(value)
     }
 
@@ -577,7 +577,7 @@ impl<'map> PointerVariable<'map> {
         }
     }
 
-    pub fn tail_positions(&self, head: usize) -> Option<components::CachedValueIter<'map>>{
+    pub fn tail_positions(&self, head: usize) -> Option<components::CachedValueIterator<'map>>{
         if head < self.len() {
             Some(self.head_sort.get_all(head as i64))
         } else {

@@ -431,8 +431,8 @@ impl<'map> CachedIndex<'map> {
         self.get_first(key).is_some()
     }
 
-    pub fn get_all(&self, key: i64) -> CachedValueIter<'map> {
-        CachedValueIter::new(self, key)
+    pub fn get_all(&self, key: i64) -> CachedValueIterator<'map> {
+        CachedValueIterator::new(self, key)
     }
 
     pub fn get_first(&self, key: i64) -> Option<i64> {
@@ -449,7 +449,7 @@ impl<'map> CachedIndex<'map> {
 }
 
 /// Iterator that yields all positions for a key from a given CachedIndex
-pub enum CachedValueIter<'map> {
+pub enum CachedValueIterator<'map> {
     None,
 
     Uncompressed {
@@ -466,12 +466,12 @@ pub enum CachedValueIter<'map> {
     }
 }
 
-impl<'map> CachedValueIter<'map> {
+impl<'map> CachedValueIterator<'map> {
     fn new(cidx: &CachedIndex<'map>, key: i64) -> Self {
         match cidx {
             CachedIndex::Uncompressed { length: _, pairs } => {
                 if let Some(position) = Index::position(pairs, key) {
-                    CachedValueIter::Uncompressed { 
+                    CachedValueIterator::Uncompressed { 
                         pairs,
                         position,
                         key,
@@ -512,7 +512,7 @@ impl<'map> CachedValueIter<'map> {
     }
 }
 
-impl<'map> Iterator for CachedValueIter<'map> {
+impl<'map> Iterator for CachedValueIterator<'map> {
     type Item = i64;
 
     fn next(&mut self) -> Option<Self::Item> {
