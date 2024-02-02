@@ -5,7 +5,7 @@ use streaming_iterator::StreamingIterator;
 use test::{Bencher, black_box};
 use rand::{distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
 
-use crate::{components::{CachedIndex, CachedVector, CachedVector2, Index, IndexBlock, Vector, VectorBlock, VectorReader}, container::Container, layers::SegmentationLayer};
+use crate::{components::{CachedIndex, CachedVector, Index, IndexBlock, Vector, VectorBlock, VectorReader}, container::Container, layers::SegmentationLayer};
 
 const DATASTORE_PATH: &'static str = "../scripts/recipes4000/";
 
@@ -66,7 +66,7 @@ fn vec_seq_reader_iter(b: &mut Bencher) {
 fn vec_seq_cached(b: &mut Bencher) {
     let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
     b.iter(|| {
-        let mut cvec = CachedVector::new(vec);
+        let cvec = CachedVector::<1>::new(vec).unwrap();
         for i in 0..vec.len() {
             black_box(cvec.get_row(i));
         }
@@ -77,30 +77,7 @@ fn vec_seq_cached(b: &mut Bencher) {
 fn vec_seq_cached_iter(b: &mut Bencher) {
     let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
     b.iter(|| {
-        let mut cvec = CachedVector::new(vec);
-        let mut iter = cvec.iter();
-        while let Some(row) = iter.next() {
-            black_box(row);
-        }
-    })
-}
-
-#[bench]
-fn vec_seq_cached2(b: &mut Bencher) {
-    let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
-    b.iter(|| {
-        let cvec = CachedVector2::<1>::new(vec).unwrap();
-        for i in 0..vec.len() {
-            black_box(cvec.get_row(i));
-        }
-    })
-}
-
-#[bench]
-fn vec_seq_cached2_iter(b: &mut Bencher) {
-    let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
-    b.iter(|| {
-        let cvec = CachedVector2::<1>::new(vec).unwrap();
+        let cvec = CachedVector::<1>::new(vec).unwrap();
         for row in cvec.iter() {
             black_box(row);
         }
@@ -143,19 +120,7 @@ fn vec_rand_cached(b: &mut Bencher) {
     let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
     let ids = setup_rand(NACCESS, vec.len());
     b.iter(|| {
-        let mut cached = CachedVector::new(vec);
-        for i in &ids {
-            black_box(cached.get_row(*i));
-        }
-    })
-}
-
-#[bench]
-fn vec_rand_cached2(b: &mut Bencher) {
-    let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
-    let ids = setup_rand(NACCESS, vec.len());
-    b.iter(|| {
-        let cached = CachedVector2::<1>::new(vec).unwrap();
+        let cached = CachedVector::<1>::new(vec).unwrap();
         for i in &ids {
             black_box(cached.get_row(*i));
         }
@@ -294,7 +259,7 @@ fn vec_deltablock_decode_len() {
 #[test]
 fn vec_cached2_access() {
     let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
-    let cvec2 = CachedVector2::<1>::new(vec).unwrap();
+    let cvec2 = CachedVector::<1>::new(vec).unwrap();
 
     assert!(cvec2.len() == 3508);
     assert!(cvec2.get_row(0) == Some([92]));
@@ -306,7 +271,7 @@ fn vec_cached2_access() {
 #[test]
 fn vec_cached2_iter() {
     let (vec, _c) = vec_setup("s/s.zigl", "RangeStream");
-    let cvec2 = CachedVector2::<2>::new(vec).unwrap();
+    let cvec2 = CachedVector::<2>::new(vec).unwrap();
 
     let all: Vec<_> = cvec2.iter().collect();
     assert!(all.len() == cvec2.len());

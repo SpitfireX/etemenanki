@@ -2,10 +2,8 @@ use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use uuid::Uuid;
 
-use std::cell::RefCell;
 use std::collections::{hash_map, HashMap};
 use std::ops;
-use std::rc::Rc;
 
 use crate::components::{CachedIndex, CachedVector};
 use crate::container::{self, Container};
@@ -179,7 +177,7 @@ pub struct SegmentationLayer<'map> {
     mmap: Mmap,
     pub name: String,
     pub header: container::Header<'map>,
-    range_stream: Rc<RefCell<components::CachedVector<'map>>>,
+    range_stream: components::CachedVector<'map, 2>,
     start_sort: components::CachedIndex<'map>,
     end_sort: components::CachedIndex<'map>,
 }
@@ -251,8 +249,7 @@ impl<'map> SegmentationLayer<'map> {
     }
 
     pub fn get_unchecked(&self, index: usize) -> (usize, usize) {
-        let mut range_stream = self.range_stream.borrow_mut();
-        let row = range_stream.get_row_unchecked(index);
+        let row = self.range_stream.get_row_unchecked(index);
         (row[0] as usize, row[1] as usize)
     }
 
@@ -285,7 +282,8 @@ impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {
                 if range_stream.width() != 2 || range_stream.len() != header.dim1 {
                     return Err(Self::Error::WrongComponentDimensions("RangeStream"));
                 }
-                let range_stream = Rc::new(RefCell::new(CachedVector::new(range_stream)));
+                let range_stream = CachedVector::<2>::new(range_stream)
+                    .expect("width already checked, should be 2");
 
                 let start_sort = check_and_return_component!(components, "StartSort", Index)?;
                 if start_sort.len() != header.dim1 {
@@ -316,7 +314,7 @@ impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {
 }
 
 pub struct SegmentationLayerIterator<'map> {
-    ranges: Rc<RefCell<components::CachedVector<'map>>>,
+    ranges: components::CachedVector<'map, 2>,
     index: usize,
 }
 
@@ -324,9 +322,8 @@ impl<'map> Iterator for SegmentationLayerIterator<'map> {
     type Item = (usize, usize);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut ranges = self.ranges.borrow_mut();
-        if self.index < ranges.len() {
-            let row = ranges.get_row_unchecked(self.index);
+        if self.index < self.ranges.len() {
+            let row = self.ranges.get_row_unchecked(self.index);
             self.index += 1;
             Some((row[0] as usize, row[1] as usize))
         } else {

@@ -1,7 +1,6 @@
 use std::{cell::RefCell, cmp::min, num::NonZeroUsize, ops, rc::Rc};
 
 use lru::LruCache;
-use streaming_iterator::StreamingIterator;
 
 #[derive(Debug, Clone, Copy)]
 pub enum CompressionType {
@@ -346,219 +345,6 @@ impl<'map> ToOwned for VecSlice<'map> {
     }
 }
 
-#[derive(Debug)]
-pub struct CachedVector<'map> {
-    inner: Vector<'map>,
-    cache: LruCache<usize, Vec<i64>>,
-}
-
-impl<'map> CachedVector<'map> {
-
-    pub fn new(vector: Vector<'map>) -> Self {
-        Self {
-            inner: vector,
-            cache: LruCache::new(NonZeroUsize::new(250).unwrap()),
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    pub fn width(&self) -> usize {
-        self.inner.width()
-    }
-
-    pub fn get_row(&mut self, index: usize) -> Option<&[i64]> {
-        if index < self.len() {
-            Some(self.get_row_unchecked(index))
-        } else {
-            None
-        }
-    }
-
-    pub fn get_row_unchecked(&mut self, index: usize) -> &[i64] {
-        match self.inner {
-            Vector::Uncompressed { length: _, width, data } => {
-                let start = index * width;
-                let end = start + width;
-                &data[start..end]
-            }
-
-            Vector::Delta { length: _, width, sync, data } |
-            Vector::Compressed { length: _, width, sync, data } => {
-                let (bi, start, end) = Vector::row_index_to_block_offsets(width, index);
-
-                // decode and cache block if needed
-                if !self.cache.contains(&bi) {
-                    let block = match self.inner {
-                        Vector::Uncompressed { .. } => unreachable!("unreachable because of previous match block"),
-                        
-                        Vector::Compressed { .. } => {
-                            let offset = sync[bi] as usize;
-                            Vector::decode_compressed_block(width, &data[offset..])
-                        }
-
-                        Vector::Delta { .. } => {
-                            let offset = sync[bi] as usize;
-                            Vector::decode_delta_block(width, &data[offset..])
-                        }
-                    };
-
-                    self.cache.put(bi, block);
-                }
-
-                // return reference into cache
-                let block = self.cache
-                    .get(&bi)
-                    .expect("at this point the block must be cached");
-                &block[start..end]
-            }
-        }
-    }
-
-    // Returns Some(row) if the row is immediately available (either uncompressed or already decoded in the cache)
-    // else None. This method never decodes any new blocks and doesn't modify the cache's LRU list.
-    fn peek_row(&self, index: usize) -> Option<&[i64]> {
-        match self.inner {
-            Vector::Uncompressed { length: _, width, data } => {
-                let start = index * width;
-                let end = start + width;
-                Some(&data[start..end])
-            }
-
-            Vector::Compressed { length: _, width, .. } |
-            Vector::Delta { length: _, width, .. } => {
-                let (bi, start, end) = Vector::row_index_to_block_offsets(width, index);
-                self.cache.peek(&bi)
-                    .map(|b| &b[start..end])
-            }
-        }
-    }
-
-    pub fn column_iter(&mut self, column: usize) -> Option<ColumnIter<'_, 'map>> {
-        let len = self.len();
-        if column < self.width() {
-            Some(ColumnIter::new(column, 0, len, self))
-        } else {
-            None
-        }
-    }
-
-    pub fn column_iter_from(&mut self, column: usize, start: usize) -> Option<ColumnIter<'_, 'map>> {
-        let len = self.len();
-        if column < self.width() {
-            Some(ColumnIter::new(column, start, len, self))
-        } else {
-            None
-        }
-    }
-
-    pub fn column_iter_range(&mut self, column: usize, start: usize, end: usize) -> Option<ColumnIter<'_, 'map>> {
-        let len = self.len();
-        if column < self.width() && end < len {
-            Some(ColumnIter::new(column, start, end, self))
-        } else {
-            None
-        }
-    }
-
-    pub fn iter(&mut self) -> RowIter<'_, 'map> {
-        let len = self.len();
-        RowIter::new(0, len, self)
-    }
-
-    pub fn iter_from(&mut self, start: usize) -> RowIter<'_, 'map> {
-        let len = self.len();
-        RowIter::new(start, len, self)
-    }
-
-    pub fn iter_range(&mut self, start: usize, end: usize) -> Option<RowIter<'_, 'map>> {
-        let len = self.len();
-        if end <= len {
-            Some(RowIter::new(start, end, self))
-        } else {
-            None
-        }
-    }
-}
-
-pub struct ColumnIter<'cv, 'map> {
-    cvec: &'cv mut CachedVector<'map>,
-    col: usize,
-    position: usize,
-    end: usize,
-}
-
-impl <'cv, 'map> ColumnIter<'cv, 'map> {
-    pub fn new(column: usize, start: usize, end: usize, cvec: &'cv mut CachedVector<'map>) -> Self {
-        Self {
-            cvec,
-            col: column,
-            position: start,
-            end,
-        }
-    }
-}
-
-impl <'cv, 'map> StreamingIterator for ColumnIter<'cv, 'map> {
-    type Item = i64;
-
-    fn advance(&mut self) {
-        if self.position <= self. end {
-            self.cvec.get_row(self.position);
-            self.position += 1;
-        }
-    }
-
-    fn get(&self) -> Option<&Self::Item> {
-        if self.position <= self.end {
-            let width = self.cvec.width();
-            let (bi, start, _) = Vector::row_index_to_block_offsets(width, self.position - 1);
-            self.cvec
-                .cache.peek(&bi)
-                .map(|b| &b[start + self.col])
-        } else {
-            None
-        }
-    }
-}
-
-pub struct RowIter<'cv, 'map> {
-    cvec: &'cv mut CachedVector<'map>,
-    position: usize,
-    end: usize,
-}
-
-impl <'cv, 'map> RowIter<'cv, 'map> {
-    pub fn new(start: usize, end: usize, cvec: &'cv mut CachedVector<'map>) -> Self {
-        Self {
-            cvec,
-            position: start,
-            end
-        }
-    }
-}
-
-impl <'cv, 'map> StreamingIterator for RowIter<'cv, 'map> {
-    type Item = [i64];
-
-    fn advance(&mut self) {
-        if self.position <= self.end {
-            self.cvec.get_row(self.position);
-            self.position += 1;
-        }
-    }
-
-    fn get(&self) -> Option<&Self::Item> {
-        if self.position <= self.end {
-            self.cvec.peek_row(self.position-1) // -1 because get always gets called after advace
-        } else {
-            None
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy)]
 pub struct VectorBlock<const D: usize> {
     rows: [[i64; D]; 16],
@@ -634,6 +420,7 @@ impl<const D: usize> VectorBlock<D> {
     }
 }
 
+#[derive(Debug)]
 pub struct VectorBlockCache<'map, const D: usize> {
     comp_type: CompressionType,
     length: usize,
@@ -688,7 +475,8 @@ impl<'map, const D: usize> VectorBlockCache<'map, D> {
     }
 }
 
-pub enum CachedVector2<'map, const D: usize> {
+#[derive(Debug, Clone)]
+pub enum CachedVector<'map, const D: usize> {
     Uncompressed {
         length: usize,
         data: &'map [i64],
@@ -699,7 +487,7 @@ pub enum CachedVector2<'map, const D: usize> {
     },
 }
 
-impl<'map, const D: usize> CachedVector2<'map, D> {
+impl<'map, const D: usize> CachedVector<'map, D> {
     pub fn new(vector: Vector<'map>) -> Option<Self> {
         if vector.width() == D {
             match vector {
@@ -724,20 +512,20 @@ impl<'map, const D: usize> CachedVector2<'map, D> {
         }
     }
 
-    pub fn column_iter(&self, column: usize) -> ColIter2<'map, D> {
-        ColIter2::new(self, 0, self.len(), column).unwrap()
+    pub fn column_iter(&self, column: usize) -> ColumnIterator<'map, D> {
+        ColumnIterator::new(self, 0, self.len(), column).unwrap()
     }
 
-    pub fn column_iter_from(&self, start: usize, column: usize) -> ColIter2<'map, D> {
-        ColIter2::new(self, start, self.len(), column).unwrap()
+    pub fn column_iter_from(&self, start: usize, column: usize) -> ColumnIterator<'map, D> {
+        ColumnIterator::new(self, start, self.len(), column).unwrap()
     }
 
-    pub fn column_iter_range(&self, start: usize, end: usize, column: usize) -> Option<ColIter2<'map, D>> {
-        ColIter2::new(self, start, end, column)
+    pub fn column_iter_range(&self, start: usize, end: usize, column: usize) -> Option<ColumnIterator<'map, D>> {
+        ColumnIterator::new(self, start, end, column)
     }
 
-    pub fn column_iter_until(&self, end: usize, column: usize) -> Option<ColIter2<'map, D>> {
-        ColIter2::new(self, 0, end, column)
+    pub fn column_iter_until(&self, end: usize, column: usize) -> Option<ColumnIterator<'map, D>> {
+        ColumnIterator::new(self, 0, end, column)
     }
 
     pub fn get_row(&self, index: usize) -> Option<[i64; D]> {
@@ -750,13 +538,13 @@ impl<'map, const D: usize> CachedVector2<'map, D> {
 
     pub fn get_row_unchecked(&self, index: usize) -> [i64; D] {
         match self {
-            CachedVector2::Uncompressed { length: _, data } => {
+            CachedVector::Uncompressed { length: _, data } => {
                 let start = index * D;
                 let end = start + D;
 
                 data[start..end].try_into().unwrap()
             },
-            CachedVector2::Compressed { blocks } => {
+            CachedVector::Compressed { blocks } => {
                 let mut blocks = blocks.borrow_mut();
                 let bi = index / 16;
                 let block = blocks.get_block(bi).unwrap();
@@ -766,20 +554,20 @@ impl<'map, const D: usize> CachedVector2<'map, D> {
         }
     }
 
-    pub fn iter(&self) -> RowIter2<'map, D> {
-        RowIter2::new(self, 0, self.len()).unwrap()
+    pub fn iter(&self) -> RowIterator<'map, D> {
+        RowIterator::new(self, 0, self.len()).unwrap()
     }
 
-    pub fn iter_from(&self, start: usize) -> RowIter2<'map, D> {
-        RowIter2::new(self, start, self.len()).unwrap()
+    pub fn iter_from(&self, start: usize) -> RowIterator<'map, D> {
+        RowIterator::new(self, start, self.len()).unwrap()
     }
 
-    pub fn iter_range(&self, start: usize, end: usize) -> Option<RowIter2<'map, D>> {
-        RowIter2::new(self, start, end)
+    pub fn iter_range(&self, start: usize, end: usize) -> Option<RowIterator<'map, D>> {
+        RowIterator::new(self, start, end)
     }
 
-    pub fn iter_until(&self, end: usize) -> Option<RowIter2<'map, D>> {
-        RowIter2::new(self, 0, end)
+    pub fn iter_until(&self, end: usize) -> Option<RowIterator<'map, D>> {
+        RowIterator::new(self, 0, end)
     }
 
     pub fn len(&self) -> usize {
@@ -794,7 +582,7 @@ impl<'map, const D: usize> CachedVector2<'map, D> {
     }
 }
 
-pub enum RowIter2<'map, const D: usize> {
+pub enum RowIterator<'map, const D: usize> {
     Uncompressed {
         data: &'map [i64],
         position: usize,
@@ -809,10 +597,10 @@ pub enum RowIter2<'map, const D: usize> {
     },
 }
 
-impl<'map, const D: usize> RowIter2<'map, D> {
-    pub fn new(cvec: &CachedVector2<'map, D>, start: usize, end: usize) -> Option<Self> {
+impl<'map, const D: usize> RowIterator<'map, D> {
+    pub fn new(cvec: &CachedVector<'map, D>, start: usize, end: usize) -> Option<Self> {
         match cvec {
-            CachedVector2::Uncompressed { length, data } => {
+            CachedVector::Uncompressed { length, data } => {
                 if end <= *length {
                     Some(Self::Uncompressed { data, position: start, end })
                 } else {
@@ -820,7 +608,7 @@ impl<'map, const D: usize> RowIter2<'map, D> {
                 }
             }
 
-            CachedVector2::Compressed { blocks } => {
+            CachedVector::Compressed { blocks } => {
                 if end <= blocks.borrow().len() {
                     let bi = start / 16;
                     let current = *blocks.borrow_mut().get_block(bi).unwrap();
@@ -834,7 +622,7 @@ impl<'map, const D: usize> RowIter2<'map, D> {
     }
 }
 
-impl<'map, const D: usize> Iterator for RowIter2<'map, D> {
+impl<'map, const D: usize> Iterator for RowIterator<'map, D> {
     type Item = [i64; D];
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -872,7 +660,7 @@ impl<'map, const D: usize> Iterator for RowIter2<'map, D> {
     }
 }
 
-pub enum ColIter2<'map, const D: usize> {
+pub enum ColumnIterator<'map, const D: usize> {
     Uncompressed {
         data: &'map [i64],
         position: usize,
@@ -889,14 +677,14 @@ pub enum ColIter2<'map, const D: usize> {
     },
 }
 
-impl<'map, const D: usize> ColIter2<'map, D> {
-    pub fn new(cvec: &CachedVector2<'map, D>, start: usize, end: usize, column: usize) -> Option<Self> {
+impl<'map, const D: usize> ColumnIterator<'map, D> {
+    pub fn new(cvec: &CachedVector<'map, D>, start: usize, end: usize, column: usize) -> Option<Self> {
         if column >= D{
             return None;
         }
         
         match cvec {
-            CachedVector2::Uncompressed { length, data } => {
+            CachedVector::Uncompressed { length, data } => {
                 if end <= *length {
                     Some(Self::Uncompressed { data, position: start, end, column })
                 } else {
@@ -904,7 +692,7 @@ impl<'map, const D: usize> ColIter2<'map, D> {
                 }
             }
 
-            CachedVector2::Compressed { blocks } => {
+            CachedVector::Compressed { blocks } => {
                 if end <= blocks.borrow().len() {
                     let bi = start / 16;
                     let current = *blocks.borrow_mut().get_block(bi).unwrap();
@@ -918,7 +706,7 @@ impl<'map, const D: usize> ColIter2<'map, D> {
     }
 }
 
-impl<'map, const D: usize> Iterator for ColIter2<'map, D> {
+impl<'map, const D: usize> Iterator for ColumnIterator<'map, D> {
     type Item = i64;
 
     fn next(&mut self) -> Option<Self::Item> {

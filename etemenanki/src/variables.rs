@@ -61,14 +61,13 @@ pub struct IndexedStringVariable<'map> {
     pub header: container::Header<'map>,
     lexicon: components::StringVector<'map>,
     lex_hash: components::Index<'map>,
-    lex_id_stream: Rc<RefCell<components::CachedVector<'map>>>,
+    lex_id_stream: components::CachedVector<'map, 1>,
     lex_id_index: components::InvertedIndex<'map>,
 }
 
 impl<'map> IndexedStringVariable<'map> {
     pub fn get(&self, index: usize) -> Option<&str> {
-        let lex_id_stream = self.lex_id_stream.borrow();
-        if index < lex_id_stream.len() {
+        if index < self.lex_id_stream.len() {
             Some(self.get_unchecked(index))
         } else {
             None
@@ -76,14 +75,12 @@ impl<'map> IndexedStringVariable<'map> {
     }
 
     pub fn get_unchecked(&self, index: usize) -> &str {
-        let mut lex_id_stream = self.lex_id_stream.borrow_mut();
-        let ti = lex_id_stream.get_row_unchecked(index)[0];
+        let ti = self.lex_id_stream.get_row_unchecked(index)[0];
         &self.lexicon[ti as usize]
     }
 
     pub fn get_id(&self, index: usize) -> Option<usize> {
-        let lex_id_stream = self.lex_id_stream.borrow();
-        if index < lex_id_stream.len() {
+        if index < self.lex_id_stream.len() {
             Some(self.get_id_unchecked(index))
         } else {
             None
@@ -91,8 +88,7 @@ impl<'map> IndexedStringVariable<'map> {
     }
 
     pub fn get_id_unchecked(&self, index: usize) -> usize {
-        let mut lex_id_stream = self.lex_id_stream.borrow_mut();
-        lex_id_stream.get_row_unchecked(index)[0] as usize
+        self.lex_id_stream.get_row_unchecked(index)[0] as usize
     }
 
     pub fn get_range(&self, start: usize, end: usize) -> IndexedStringIterator<'map> {
@@ -104,7 +100,7 @@ impl<'map> IndexedStringVariable<'map> {
         }
     }
 
-    pub fn id_stream(&'map self) -> Rc<RefCell<components::CachedVector<'map>>> {
+    pub fn id_stream(&'map self) -> components::CachedVector<'map, 1> {
         self.lex_id_stream.clone()
     }
 
@@ -164,7 +160,8 @@ impl<'map> TryFrom<Container<'map>> for IndexedStringVariable<'map> {
                 if lex_id_stream.len() != n || lex_id_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("LexIDStream"));
                 }
-                let lex_id_stream = Rc::new(RefCell::new(CachedVector::new(lex_id_stream)));
+                let lex_id_stream = CachedVector::<1>::new(lex_id_stream)
+                    .expect("width already checked, should be 1");
 
                 let lex_id_index =
                     check_and_return_component!(components, "LexIDIndex", InvertedIndex)?;
@@ -191,7 +188,7 @@ impl<'map> TryFrom<Container<'map>> for IndexedStringVariable<'map> {
 
 pub struct IndexedStringIterator<'map> {
     lexicon: components::StringVector<'map>,
-    id_stream: Rc<RefCell<components::CachedVector<'map>>>,
+    id_stream: components::CachedVector<'map, 1>,
     index: usize,
     end: usize,
 }
@@ -201,8 +198,7 @@ impl<'map> Iterator for IndexedStringIterator<'map> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.end {
-            let mut id_stream = self.id_stream.borrow_mut();
-            let lexid = id_stream.get_row_unchecked(self.index)[0] as usize;
+            let lexid = self.id_stream.get_row_unchecked(self.index)[0] as usize;
             self.index += 1;
 
             Some(&self.lexicon.get_unchecked(lexid))
@@ -233,14 +229,13 @@ pub struct PlainStringVariable<'map> {
     pub name: String,
     pub header: container::Header<'map>,
     string_data: components::StringList<'map>,
-    offset_stream: Rc<RefCell<components::CachedVector<'map>>>,
+    offset_stream: components::CachedVector<'map, 1>,
     string_hash: Rc<RefCell<components::CachedIndex<'map>>>,
 }
 
 impl<'map> PlainStringVariable<'map> {
     pub fn get(&self, index: usize) -> Option<&'map str> {
-        let offset_stream = self.offset_stream.borrow();
-        if index + 1 < offset_stream.len() {
+        if index + 1 < self.offset_stream.len() {
             Some(self.get_unchecked(index))
         } else {
             None
@@ -248,9 +243,8 @@ impl<'map> PlainStringVariable<'map> {
     }
 
     pub fn get_unchecked(&self, index: usize) -> &'map str {
-        let mut offset_stream = self.offset_stream.borrow_mut();
-        let start = offset_stream.get_row_unchecked(index)[0] as usize;
-        let end = offset_stream.get_row_unchecked(index + 1)[0] as usize;
+        let start = self.offset_stream.get_row_unchecked(index)[0] as usize;
+        let end = self.offset_stream.get_row_unchecked(index + 1)[0] as usize;
 
         unsafe { std::str::from_utf8_unchecked(&self.string_data.data()[start..end - 1]) }
     }
@@ -291,7 +285,8 @@ impl<'map> TryFrom<Container<'map>> for PlainStringVariable<'map> {
                 if offset_stream.len() != n + 1 || offset_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("OffsetStream"));
                 }
-                let offset_stream = Rc::new(RefCell::new(CachedVector::new(offset_stream)));
+                let offset_stream = CachedVector::<1>::new(offset_stream)
+                    .expect("width already checked, should be 2");
 
                 let string_hash = check_and_return_component!(components, "StringHash", Index)?;
                 if string_hash.len() != n {
@@ -317,7 +312,7 @@ impl<'map> TryFrom<Container<'map>> for PlainStringVariable<'map> {
 
 pub struct PlainStringIterator<'map> {
     string_data: components::StringList<'map>,
-    offset_stream: Rc<RefCell<components::CachedVector<'map>>>,
+    offset_stream: components::CachedVector<'map, 1>,
     len: usize,
     index: usize,
 }
@@ -327,9 +322,8 @@ impl<'map> Iterator for PlainStringIterator<'map> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.len {
-            let mut offset_stream = self.offset_stream.borrow_mut();
-            let start = offset_stream.get_row_unchecked(self.index)[0] as usize;
-            let end = offset_stream.get_row_unchecked(self.index + 1)[0] as usize;
+            let start = self.offset_stream.get_row_unchecked(self.index)[0] as usize;
+            let end = self.offset_stream.get_row_unchecked(self.index + 1)[0] as usize;
             self.index += 1;
 
             Some(unsafe { std::str::from_utf8_unchecked(&self.string_data.data()[start..end - 1]) })
@@ -359,7 +353,7 @@ pub struct IntegerVariable<'map> {
     mmap: Mmap,
     pub name: String,
     pub header: container::Header<'map>,
-    int_stream: Rc<RefCell<components::CachedVector<'map>>>,
+    int_stream: components::CachedVector<'map, 1>,
     int_sort: components::CachedIndex<'map>,
 }
 
@@ -377,8 +371,7 @@ impl<'map> IntegerVariable<'map> {
     }
 
     pub fn get_unchecked(&self, index: usize) -> i64 {
-        let mut int_stream = self.int_stream.borrow_mut();
-        int_stream.get_row_unchecked(index)[0]
+        self.int_stream.get_row_unchecked(index)[0]
     }
 
     pub fn iter(&'map self) -> IntegerIterator<'map> {
@@ -414,7 +407,8 @@ impl<'map> TryFrom<Container<'map>> for IntegerVariable<'map> {
                 if int_stream.len() != n || int_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("IntStream"));
                 }
-                let int_stream = Rc::new(RefCell::new(CachedVector::new(int_stream)));
+                let int_stream = CachedVector::<1>::new(int_stream)
+                    .expect("width already checked, should be 1");
 
                 let int_sort = check_and_return_component!(components, "IntSort", Index)?;
                 if int_sort.len() != n {
@@ -438,7 +432,7 @@ impl<'map> TryFrom<Container<'map>> for IntegerVariable<'map> {
 }
 
 pub struct IntegerIterator<'map> {
-    int_stream: Rc<RefCell<CachedVector<'map>>>,
+    int_stream: CachedVector<'map, 1>,
     index: usize,
 }
 
@@ -446,9 +440,8 @@ impl<'map> Iterator for IntegerIterator<'map> {
     type Item = i64;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut int_stream = self.int_stream.borrow_mut();
-        if self.index < int_stream.len() {
-            let value = int_stream.get_row_unchecked(self.index)[0];
+        if self.index < self.int_stream.len() {
+            let value = self.int_stream.get_row_unchecked(self.index)[0];
             self.index += 1;
             Some(value)
         } else {
@@ -571,7 +564,7 @@ pub struct PointerVariable<'map> {
     mmap: Mmap,
     pub name: String,
     pub header: container::Header<'map>,
-    head_stream: Rc<RefCell<components::CachedVector<'map>>>,
+    head_stream: components::CachedVector<'map, 1>,
     head_sort: components::Index<'map>,
 }
 
@@ -593,8 +586,7 @@ impl<'map> PointerVariable<'map> {
     }
 
     pub fn get_unchecked(&self, index: usize) -> Option<usize> {
-        let mut head_stream = self.head_stream.borrow_mut();
-        let head = head_stream.get_row_unchecked(index)[0];
+        let head = self.head_stream.get_row_unchecked(index)[0];
         if head.is_negative() {
             None
         } else {
@@ -627,7 +619,8 @@ impl<'map> TryFrom<Container<'map>> for PointerVariable<'map> {
                 if head_stream.len() != n || head_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("HeadStream"));
                 }
-                let head_stream = Rc::new(RefCell::new(CachedVector::new(head_stream)));
+                let head_stream = CachedVector::<1>::new(head_stream)
+                    .expect("width already checked, should be 1");
 
                 let head_sort = check_and_return_component!(components, "HeadSort", Index)?;
                 if head_sort.len() != n {
