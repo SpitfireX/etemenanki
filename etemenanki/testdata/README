@@ -1,0 +1,6 @@
+This directory contains a Ziggurat version of the DICKENS test corpus from the CWB repo.
+The encoded datastore is roughly equivalent to the CWB testdata in `/libcl-rs/testdata/`.
+See `encode.sh` for encoding details.
+
+Original data can be found here: https://sourceforge.net/p/cwb/code/HEAD/tree/doc/corpora/dickens/
+Encoded from "Dickens-1.0.xml.gz"

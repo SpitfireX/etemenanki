@@ -6,7 +6,7 @@ use rand::{distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
 
 use crate::{components::{CachedIndex, CachedVector, Index, IndexBlock, Vector, VectorBlock}, container::Container, layers::SegmentationLayer};
 
-const DATASTORE_PATH: &'static str = "../scripts/recipes4000/";
+const DATASTORE_PATH: &'static str = "testdata/simpledickens/";
 
 fn vec_setup(filename: &'static str, component_name: &'static str) -> (Vector<'static>, Container<'static>) {
     let file = File::open(DATASTORE_PATH.to_owned() + filename).unwrap();
@@ -25,14 +25,14 @@ fn vec_setup(filename: &'static str, component_name: &'static str) -> (Vector<'s
 
 #[test]
 fn vec() {
-    let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
-    assert!(vec.len() == 3508);
-    assert!(vec.get_row(10).unwrap()[0] == 31);
+    let (vec, _c) = vec_setup("word.zigv", "LexIDStream");
+    assert!(vec.len() == 3407085);
+    assert!(vec.get_row(10).unwrap()[0] == 40);
 }
 
 #[bench]
 fn vec_seq_no(b: &mut Bencher) {
-    let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
+    let (vec, _c) = vec_setup("word.zigv", "LexIDStream");
     b.iter(|| {
         for i in 0..vec.len() {
             black_box(vec.get_row(i));
@@ -42,7 +42,7 @@ fn vec_seq_no(b: &mut Bencher) {
 
 #[bench]
 fn vec_seq_cached(b: &mut Bencher) {
-    let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
+    let (vec, _c) = vec_setup("word.zigv", "LexIDStream");
     b.iter(|| {
         let cvec = CachedVector::<1>::new(vec).unwrap();
         for i in 0..vec.len() {
@@ -53,7 +53,7 @@ fn vec_seq_cached(b: &mut Bencher) {
 
 #[bench]
 fn vec_seq_cached_iter(b: &mut Bencher) {
-    let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
+    let (vec, _c) = vec_setup("word.zigv", "LexIDStream");
     b.iter(|| {
         let cvec = CachedVector::<1>::new(vec).unwrap();
         for row in cvec.iter() {
@@ -72,7 +72,7 @@ const NACCESS: usize = 1_000_000;
 
 #[bench]
 fn vec_rand_no(b: &mut Bencher) {
-    let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
+    let (vec, _c) = vec_setup("word.zigv", "LexIDStream");
     let ids = setup_rand(NACCESS, vec.len());
     b.iter(|| {
         for i in &ids {
@@ -83,7 +83,7 @@ fn vec_rand_no(b: &mut Bencher) {
 
 #[bench]
 fn vec_rand_cached(b: &mut Bencher) {
-    let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
+    let (vec, _c) = vec_setup("word.zigv", "LexIDStream");
     let ids = setup_rand(NACCESS, vec.len());
     b.iter(|| {
         let cached = CachedVector::<1>::new(vec).unwrap();
@@ -96,7 +96,7 @@ fn vec_rand_cached(b: &mut Bencher) {
 fn idxcmp_setup(filename: &'static str, component_name: &'static str) -> (Index<'static>, Container<'static>) {
     let file = File::open(DATASTORE_PATH.to_owned() + filename).unwrap();
     let mmap = unsafe { Mmap::map(&file) }.unwrap();
-    let container = Container::from_mmap(mmap, "word".to_owned()).unwrap();
+    let container = Container::from_mmap(mmap, "test".to_owned()).unwrap();
 
     let index = *container
         .components
@@ -110,12 +110,10 @@ fn idxcmp_setup(filename: &'static str, component_name: &'static str) -> (Index<
 
 #[test]
 fn idxcmp_block() {
-    let (index, _container) = idxcmp_setup("text/year.zigv", "IntSort");
+    let (index, _container) = idxcmp_setup("chapter/num.zigv", "IntSort");
     if let Index::Compressed { length, r, sync, data } = index {
         println!("\n index len {} with r {}", length, r);
         for (i, (_, o)) in sync.iter().enumerate(){
-            println!();
-
             let br = if i < sync.len()-1 {
                 16
             } else {
@@ -134,18 +132,16 @@ fn idxcmp_block() {
 
 #[test]
 fn idx_iter() {
-    let (index, _container) = idxcmp_setup("text/year.zigv", "IntSort");
+    let (index, _container) = idxcmp_setup("chapter/num.zigv", "IntSort");
     println!();
     println!("{:?}", index.get_all(0).collect::<Vec<_>>());
-    println!("{:?}", index.get_all(3).collect::<Vec<_>>());
-    println!("{:?}", index.get_all(2002).collect::<Vec<_>>());
-    println!("{:?}", index.get_all(2003).collect::<Vec<_>>());
+    println!("{:?}", index.get_all(1).collect::<Vec<_>>());
     println!("{:?}", index.get_all(9001).collect::<Vec<_>>());
 }
 
 #[test]
 fn cachedidx_iter() {
-    let (index, _container) = idxcmp_setup("text/year.zigv", "IntSort");
+    let (index, _container) = idxcmp_setup("chapter/num.zigv", "IntSort");
     let cidx = CachedIndex::new(index);
     println!();
     println!("{:?}", cidx.get_all(0).collect::<Vec<_>>());
@@ -169,14 +165,14 @@ fn seg_setup(filename: &'static str) -> SegmentationLayer<'static> {
 fn seg_containing() {
     let seg = seg_setup("s/s.zigl");
     assert!(seg.find_containing(0) == Some(0));
-    assert!(seg.find_containing(10) == Some(1));
-    assert!(seg.find_containing(1337) == Some(98));
-    assert!(seg.find_containing(9001) == None);
+    assert!(seg.find_containing(10) == Some(2));
+    assert!(seg.find_containing(9001) == Some(494));
+    assert!(seg.find_containing(3407085) == None);
 }
 
 #[test]
 fn vec_block_decode() {
-    let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
+    let (vec, _c) = vec_setup("word.zigv", "LexIDStream");
     let bdata = match vec {
         Vector::Uncompressed { .. } => panic!(),
         Vector::Compressed { length: _, width: _, sync, data } |
@@ -217,21 +213,21 @@ fn vec_deltablock_decode_len() {
     let b1 = Vector::decode_delta_block(2, bdata);
     let b2 = VectorBlock::<2>::decode_delta(bdata, lastlen);
 
-    assert!(b2.len() == 1);
-    assert!(b2.rows().len() == 1);
+    assert!(b2.len() == 7);
+    assert!(b2.rows().len() == 7);
     assert!(&b1[..2] == b2.rows()[0]);
 }
 
 #[test]
 fn vec_cached2_access() {
-    let (vec, _c) = vec_setup("token.zigv", "LexIDStream");
+    let (vec, _c) = vec_setup("word.zigv", "LexIDStream");
     let cvec2 = CachedVector::<1>::new(vec).unwrap();
 
-    assert!(cvec2.len() == 3508);
-    assert!(cvec2.get_row(0) == Some([92]));
-    assert!(cvec2.get_row(666) == Some([69]));
-    assert!(cvec2.get_row(3507) == Some([0]));
-    assert!(cvec2.get_row(3508) == None);
+    assert!(cvec2.len() == 3407085);
+    assert!(cvec2.get_row(0) == Some([195]));
+    assert!(cvec2.get_row(1234567) == Some([655]));
+    assert!(cvec2.get_row(3407084) == Some([2]));
+    assert!(cvec2.get_row(3407085) == None);
 }
 
 #[test]
@@ -246,7 +242,7 @@ fn vec_cached2_iter() {
     assert!(start.len() == 100);
 
     let end: Vec<_> = cvec2.iter_from(100).collect();
-    assert!(end.len() == 173);
+    assert!(end.len() == cvec2.len()-100);
     
     let middle: Vec<_> = cvec2.iter_range(100, 110).unwrap().collect();
     assert!(middle.len() == 10);
