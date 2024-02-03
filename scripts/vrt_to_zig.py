@@ -115,7 +115,8 @@ def end_element(name):
     parser_state = (True, name, None)
 
 parser = expat.ParserCreate()
-parser.Parse("<start>") # init with one global start tag to keep parser happy
+if ".xml" not in str(args.input):
+    parser.Parse("<start>") # init with one global start tag to keep parser happy
 parser.StartElementHandler = start_element
 parser.EndElementHandler = end_element
 
