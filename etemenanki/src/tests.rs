@@ -1,5 +1,6 @@
-use std::fs::File;
+use std::{fs::File, num::NonZeroUsize};
 
+use lru::LruCache;
 use memmap2::Mmap;
 use test::{Bencher, black_box};
 use rand::{distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
@@ -246,4 +247,32 @@ fn vec_cached2_iter() {
     
     let middle: Vec<_> = cvec2.iter_range(100, 110).unwrap().collect();
     assert!(middle.len() == 10);
+}
+
+#[test]
+fn invidx_cache_eval() {
+    for size in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10_000] {
+        // println!("\nTesting with cache size: {}", size);
+        let (vec, _c) = vec_setup("word.zigv", "LexIDStream");
+        let cvec = CachedVector::<1>::new(vec).unwrap();
+
+        let mut typecache: LruCache<i64, ()> = LruCache::new(NonZeroUsize::new(size).unwrap());
+        let mut accesses = 0;
+        let mut hits = 0;
+
+        for id in cvec.column_iter(0) {
+            accesses += 1;
+            match typecache.put(id, ()) {
+                Some(_) => hits += 1,
+                None => (),
+            }
+        }
+
+        // println!("total accesses: {}, hits: {}, hit ratio: {}", accesses, hits, hits as f32 / accesses as f32);
+        println!("({}, {}),", size, hits as f32 / accesses as f32);
+
+        // let mut cachestate: Vec<_> = typecache.iter().map(|(k, _)| k).collect();
+        // cachestate.sort();
+        // println!("blocks in cache: {:?}", cachestate);
+    }
 }
