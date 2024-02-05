@@ -1,3 +1,7 @@
+use std::{cell::RefCell, rc::Rc};
+
+use lru::LruCache;
+
 #[derive(Debug, Clone, Copy)]
 pub struct InvertedIndex<'map> {
     types: usize,
@@ -70,4 +74,58 @@ impl<'map> Iterator for PostingsIterator<'map> {
             None
         }
     }
+}
+
+/// A lazy postings list. Will only decode new data when needed.
+#[derive(Debug)]
+struct Postings<'map> {
+    length: usize,
+    decoded: Vec<i64>,
+    undecoded: &'map [u8],
+}
+
+impl<'map> Postings<'map> {
+    fn new(length: usize, data: &'map [u8]) -> Self {
+        Self {
+            length,
+            decoded: Vec::new(),
+            undecoded: data,
+        }
+    }
+
+    fn decoded(&self) -> &[i64] {
+        &self.decoded[..]
+    }
+
+    fn get(&self, i: usize) -> Option<i64> {
+        if i < self.length {
+            todo!()
+        } else {
+            None
+        }
+    }
+
+    fn get_all(&self) -> &[i64] {
+        todo!()
+    }
+
+    fn get_first(&self, n: usize) -> Option<&[i64]> {
+        todo!()
+    }
+
+    fn len(&self) -> usize {
+        self.length
+    }
+}
+
+#[derive(Debug)]
+pub struct PostingsCache<'map> {
+    typeinfo: &'map [(i64, i64)],
+    data: &'map [u8],
+    cache: LruCache<usize, Postings<'map>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CachedInvertedIndex<'map> {
+    postings: Rc<RefCell<PostingsCache<'map>>>,
 }
