@@ -5,7 +5,7 @@ use memmap2::Mmap;
 use test::{Bencher, black_box};
 use rand::{distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
 
-use crate::{components::{CachedIndex, CachedVector, Index, IndexBlock, Vector, VectorBlock}, container::Container, layers::SegmentationLayer};
+use crate::{components::{CachedIndex, CachedVector, Index, IndexBlock, InvertedIndex, Vector, VectorBlock}, container::Container, layers::SegmentationLayer};
 
 const DATASTORE_PATH: &'static str = "testdata/simpledickens/";
 
@@ -275,4 +275,39 @@ fn invidx_cache_eval() {
         // cachestate.sort();
         // println!("blocks in cache: {:?}", cachestate);
     }
+}
+
+fn invidx_setup(filename: &'static str, vec_name: &'static str, invidx_name: &'static str) -> (Vector<'static>, InvertedIndex<'static>, Container<'static>) {
+    let file = File::open(DATASTORE_PATH.to_owned() + filename).unwrap();
+    let mmap = unsafe { Mmap::map(&file) }.unwrap();
+    let container = Container::from_mmap(mmap, "test".to_owned()).unwrap();
+
+    let vec = *container
+        .components
+        .get(vec_name)
+        .unwrap()
+        .as_vector()
+        .unwrap();
+
+    let invidx = *container
+        .components
+        .get(invidx_name)
+        .unwrap()
+        .as_inverted_index()
+        .unwrap();
+
+    (vec, invidx, container)
+}
+
+#[bench]
+fn invidx_decodenn_no(b: &mut Bencher) {
+    let (lexids, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
+    b.iter(|| {
+        let cvec = CachedVector::<1>::new(lexids).unwrap();
+        for [id, ..] in cvec.iter_until(1000).unwrap() {
+            for position in invidx.postings(id as usize) {
+                black_box(position);
+            }
+        }
+    });
 }
