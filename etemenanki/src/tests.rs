@@ -5,7 +5,7 @@ use memmap2::Mmap;
 use test::{Bencher, black_box};
 use rand::{distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
 
-use crate::{components::{CachedIndex, CachedInvertedIndex, CachedVector, Index, IndexBlock, InvertedIndex, Vector, VectorBlock}, container::Container, layers::SegmentationLayer};
+use crate::{components::{CachedIndex, CachedInvertedIndex, CachedVector, GreedyCachedInvertedIndex, Index, IndexBlock, InvertedIndex, Vector, VectorBlock}, container::Container, layers::SegmentationLayer};
 
 const DATASTORE_PATH: &'static str = "testdata/simpledickens/";
 
@@ -299,12 +299,14 @@ fn invidx_setup(filename: &'static str, vec_name: &'static str, invidx_name: &'s
     (vec, invidx, container)
 }
 
+const INVIDX_LOOKUP_SIZE: usize = 10000;
+
 #[bench]
 fn invidx_decode_no(b: &mut Bencher) {
     let (lexids, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
     b.iter(|| {
         let cvec = CachedVector::<1>::new(lexids).unwrap();
-        for [id, ..] in cvec.iter() {
+        for [id, ..] in cvec.iter_until(INVIDX_LOOKUP_SIZE).unwrap() {
             for position in invidx.postings(id as usize) {
                 black_box(position);
             }
@@ -326,7 +328,7 @@ fn invidx_decode_cache(b: &mut Bencher) {
     b.iter(|| {
         let cvec = CachedVector::<1>::new(lexids).unwrap();
         let cinvidx = CachedInvertedIndex::new(invidx);
-        for [id, ..] in cvec.iter() {
+        for [id, ..] in cvec.iter_until(INVIDX_LOOKUP_SIZE).unwrap() {
             for position in cinvidx.positions(id as usize).unwrap() {
                 black_box(position);
             }
@@ -335,7 +337,7 @@ fn invidx_decode_cache(b: &mut Bencher) {
 }
 
 #[bench]
-fn invidx_decode0_no(b: &mut Bencher) {
+fn invidx_0decode_no(b: &mut Bencher) {
     let (_, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
     b.iter(|| {
         for position in invidx.postings(0) {
@@ -345,7 +347,7 @@ fn invidx_decode0_no(b: &mut Bencher) {
 }
 
 #[bench]
-fn invidx_decode0_cache(b: &mut Bencher) {
+fn invidx_0decode_cache(b: &mut Bencher) {
     let (_, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
     let cinvidx = CachedInvertedIndex::new(invidx);
     b.iter(|| {
@@ -356,7 +358,7 @@ fn invidx_decode0_cache(b: &mut Bencher) {
 }
 
 #[bench]
-fn invidx_decode0_cache_cold(b: &mut Bencher) {
+fn invidx_0decode_cache_cold(b: &mut Bencher) {
     let (_, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
     b.iter(|| {
         let cinvidx = CachedInvertedIndex::new(invidx);
@@ -367,7 +369,7 @@ fn invidx_decode0_cache_cold(b: &mut Bencher) {
 }
 
 #[bench]
-fn invidx_decode0_cache_warm(b: &mut Bencher) {
+fn invidx_0decode_cache_warm(b: &mut Bencher) {
     let (_, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
     let cinvidx = CachedInvertedIndex::new(invidx);
     for position in cinvidx.positions(0).unwrap() {
@@ -377,6 +379,34 @@ fn invidx_decode0_cache_warm(b: &mut Bencher) {
     b.iter(|| {
         for position in cinvidx.positions(0).unwrap() {
             black_box(position);
+        }
+    });
+}
+
+#[bench]
+fn invidx_decode_gcache(b: &mut Bencher) {
+    let (lexids, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
+    b.iter(|| {
+        let cvec = CachedVector::<1>::new(lexids).unwrap();
+        let cinvidx = GreedyCachedInvertedIndex::new(invidx);
+        for [id, ..] in cvec.iter_until(INVIDX_LOOKUP_SIZE).unwrap() {
+            for position in cinvidx.positions(id as usize).unwrap() {
+                black_box(position);
+            }
+        }
+    });
+}
+
+#[bench]
+fn invidx_decode_gcache2(b: &mut Bencher) {
+    let (lexids, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
+    b.iter(|| {
+        let cvec = CachedVector::<1>::new(lexids).unwrap();
+        let cinvidx = GreedyCachedInvertedIndex::new(invidx);
+        for [id, ..] in cvec.iter_until(INVIDX_LOOKUP_SIZE).unwrap() {
+            for position in cinvidx.get_postings(id as usize).unwrap().get_all() {
+                black_box(position);
+            }
         }
     });
 }

@@ -80,7 +80,7 @@ impl<'map> Iterator for PostingsIterator<'map> {
 #[derive(Debug)]
 pub struct Postings<'map> {
     length: usize,
-    decoded: Vec<i64>,
+    decoded: Vec<usize>,
     undecoded: &'map [u8],
 }
 
@@ -93,21 +93,21 @@ impl<'map> Postings<'map> {
         }
     }
 
-    fn decoded(&self) -> &[i64] {
+    fn decoded(&self) -> &[usize] {
         &self.decoded[..]
     }
 
-    fn get(&mut self, index: usize) -> Option<i64> {
+    fn get(&mut self, index: usize) -> Option<usize> {
         self.get_first(index + 1)
             .map(|p| p[index])
     }
 
-    fn get_all(&mut self) -> &[i64] {
+    fn get_all(&mut self) -> &[usize] {
         self.get_first(self.length)
             .expect("this should never fail")
     }
 
-    fn get_first(&mut self, n: usize) -> Option<&[i64]> {
+    fn get_first(&mut self, n: usize) -> Option<&[usize]> {
         if n <= self.decoded.len() {
             // index within already decoded postings, all good
             Some(&self.decoded[..n])
@@ -119,7 +119,7 @@ impl<'map> Postings<'map> {
                 let (i, readlen) = ziggurat_varint::decode(self.undecoded);
                 self.undecoded = &self.undecoded[readlen..]; // move slice to new beginning of undecoded data
                 let last = self.decoded.last().copied().unwrap_or(0);
-                self.decoded.push(last + i);
+                self.decoded.push(last + i as usize);
             }
 
             Some(&self.decoded[..n])
@@ -133,19 +133,21 @@ impl<'map> Postings<'map> {
     }
 }
 
-#[derive(Debug)]
-pub struct PostingsCache<'map> {
+#[derive(Debug, Clone)]
+pub struct CachedInvertedIndex<'map> {
     typeinfo: &'map [(i64, i64)],
     data: &'map [u8],
-    cache: LruCache<usize, Postings<'map>>,
+    cache: Rc<RefCell<LruCache<usize, Rc<RefCell<Postings<'map>>>>>>,
 }
 
-impl<'map> PostingsCache<'map> {
-    pub fn new(typeinfo: &'map [(i64, i64)], data: &'map [u8]) -> Self {
+impl<'map> CachedInvertedIndex<'map> {
+    pub fn new(invidx: InvertedIndex<'map>) -> Self {
+        let InvertedIndex {types: _, typeinfo, data} = invidx;
+
         Self {
             typeinfo,
             data,
-            cache: LruCache::new(NonZeroUsize::new(1000).unwrap()),
+            cache: Rc::new(RefCell::new(LruCache::new(NonZeroUsize::new(500).unwrap()))),
         }
     }
 
@@ -155,42 +157,21 @@ impl<'map> PostingsCache<'map> {
             .map(|(freq, _)| *freq as usize)
     }
 
-    pub fn positions(&mut self, type_id: usize) -> Option<&mut Postings<'map>> {
+    pub fn get_postings(&self, type_id: usize) -> Option<Rc<RefCell<Postings<'map>>>> {
         if type_id < self.typeinfo.len() {
-            if !self.cache.contains(&type_id) {
+            let mut cache = self.cache.borrow_mut();
+            if !cache.contains(&type_id) {
                 let (freq, offset) = self.typeinfo[type_id];
-                let postings = Postings::new(freq as usize, &self.data[offset as usize..]);
-                self.cache.put(type_id, postings);
+                let postings = Rc::new(RefCell::new(Postings::new(freq as usize, &self.data[offset as usize..])));
+                cache.put(type_id, postings);
             }
 
-            self.cache
-                .get_mut(&type_id)
+            cache
+                .get(&type_id)
+                .map(|rc| rc.clone())
         } else {
             None
         }
-    }
-
-    pub fn n_types(&self) -> usize {
-        self.typeinfo.len()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct CachedInvertedIndex<'map> {
-    postings: Rc<RefCell<PostingsCache<'map>>>,
-}
-
-impl<'map> CachedInvertedIndex<'map> {
-    pub fn new(invidx: InvertedIndex<'map>) -> Self {
-        let InvertedIndex {types: _, typeinfo, data} = invidx;
-
-        Self {
-            postings: Rc::new(RefCell::new(PostingsCache::new(typeinfo, data))),
-        }
-    }
-
-    pub fn frequency(&self, type_id: usize) -> Option<usize> {
-        self.postings.borrow().frequency(type_id)
     }
 
     pub fn positions(&self, type_id: usize) -> Option<CachedPostingsIterator<'map>> {
@@ -204,35 +185,32 @@ impl<'map> CachedInvertedIndex<'map> {
     }
 
     pub fn positions_range(&self, type_id: usize, start: usize, end: usize) -> Option<CachedPostingsIterator<'map>> {
-        CachedPostingsIterator::new(self, type_id, start, end)
+        self.frequency(type_id)
+            .filter(| freq | end <= *freq)
+            .and_then(| _ | self.get_postings(type_id))
+            .map(| postings | CachedPostingsIterator::new(postings, type_id, start, end))
     }
 
     pub fn positions_until(&self, type_id: usize, end: usize) -> Option<CachedPostingsIterator<'map>> {
-        CachedPostingsIterator::new(self, type_id, 0, end)
+        self.positions_range(type_id, 0, end)
     }
 
     pub fn n_types(&self) -> usize {
-        self.postings.borrow().n_types()
-    }
-
-    pub fn postings(&self) -> Rc<RefCell<PostingsCache<'map>>> {
-        self.postings.clone()
+        self.typeinfo.len()
     }
 }
 
 #[derive(Debug)]
 pub struct CachedPostingsIterator<'map> {
-    postings: Rc<RefCell<PostingsCache<'map>>>,
+    postings: Rc<RefCell<Postings<'map>>>,
     type_id: usize,
     position: usize,
     end: usize,
 }
 
 impl<'map> CachedPostingsIterator<'map> {
-    pub fn new(cinvidx: &CachedInvertedIndex<'map>, type_id: usize, start: usize, end: usize) -> Option<Self> {
-        cinvidx.frequency(type_id)
-            .filter(| freq | end <= *freq)
-            .map(|_| Self { postings: cinvidx.postings.clone(), type_id, position: start, end })
+    pub fn new(postings: Rc<RefCell<Postings<'map>>>, type_id: usize, start: usize, end: usize) -> Self {
+        Self { postings, type_id, position: start, end }
     }
 }
 
@@ -242,13 +220,134 @@ impl<'map> Iterator for CachedPostingsIterator<'map> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.position < self.end {
             let mut postings = self.postings.borrow_mut();
-            let value = postings.positions(self.type_id)
-                .and_then(|p| p.get(self.position))
-                .map(|i| i as usize);
+            let value = postings.get(self.position);
             self.position += 1;
             value
         } else {
             None
         }
+    }
+}
+
+
+#[derive(Debug)]
+pub struct GreedyPostings {
+    length: usize,
+    decoded: Vec<usize>,
+}
+
+impl GreedyPostings {
+    pub fn new(length: usize, data: &[u8]) -> Self {
+        let (decoded, _) = ziggurat_varint::decode_fixed_delta_block(data, length);
+        let decoded = decoded.into_iter().map(|i| i as usize).collect(); // compiler magic should make this a nop
+
+        Self {
+            length,
+            decoded,
+        }
+    }
+
+    pub fn get(&self, index: usize) -> Option<usize> {
+        self.decoded.get(index).copied()
+    }
+
+    pub fn get_all(&self) -> &[usize] {
+        &self.decoded[..]
+    }
+
+    pub fn len(&self) -> usize {
+        self.length
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GreedyCachedInvertedIndex<'map> {
+    typeinfo: &'map [(i64, i64)],
+    data: &'map [u8],
+    cache: Rc<RefCell<LruCache<usize, Rc<GreedyPostings>>>>,
+}
+
+impl<'map> GreedyCachedInvertedIndex<'map> {
+    pub fn new(invidx: InvertedIndex<'map>) -> Self {
+        let InvertedIndex {types: _, typeinfo, data} = invidx;
+
+        Self {
+            typeinfo,
+            data,
+            cache: Rc::new(RefCell::new(LruCache::new(NonZeroUsize::new(500).unwrap()))),
+        }
+    }
+
+    pub fn frequency(&self, type_id: usize) -> Option<usize> {
+        self.typeinfo
+            .get(type_id)
+            .map(|(freq, _)| *freq as usize)
+    }
+
+    pub fn get_postings(&self, type_id: usize) -> Option<Rc<GreedyPostings>> {
+        if type_id < self.typeinfo.len() {
+            let mut cache = self.cache.borrow_mut();
+            if !cache.contains(&type_id) {
+                let (freq, offset) = self.typeinfo[type_id];
+                let postings = Rc::new(GreedyPostings::new(freq as usize, &self.data[offset as usize..]));
+                cache.put(type_id, postings);
+            }
+
+            cache
+                .get(&type_id)
+                .map(|rc| rc.clone())
+        } else {
+            None
+        }
+    }
+
+    pub fn positions(&self, type_id: usize) -> Option<CachedGreedyPostingsIterator> {
+        self.frequency(type_id)
+            .and_then(| max | self.positions_range(type_id, 0, max))
+    }
+
+    pub fn positions_from(&self, type_id: usize, start: usize) -> Option<CachedGreedyPostingsIterator> {
+        self.frequency(type_id)
+            .and_then(| max | self.positions_range(type_id, start, max))
+    }
+
+    pub fn positions_range(&self, type_id: usize, start: usize, end: usize) -> Option<CachedGreedyPostingsIterator> {
+        self.frequency(type_id)
+            .filter(| freq | end <= *freq)
+            .and_then(| _ | self.get_postings(type_id))
+            .map(| postings | CachedGreedyPostingsIterator::new(postings, type_id, start, end))
+    }
+
+    pub fn positions_until(&self, type_id: usize, end: usize) -> Option<CachedGreedyPostingsIterator> {
+        self.positions_range(type_id, 0, end)
+    }
+
+    pub fn n_types(&self) -> usize {
+        self.typeinfo.len()
+    }
+}
+
+#[derive(Debug)]
+pub struct CachedGreedyPostingsIterator {
+    postings: Rc<GreedyPostings>,
+    type_id: usize,
+    position: usize,
+    end: usize,
+}
+
+impl CachedGreedyPostingsIterator {
+    pub fn new(postings: Rc<GreedyPostings>, type_id: usize, start: usize, end: usize) -> Self {
+        Self { postings, type_id, position: start, end }
+    }
+}
+
+impl Iterator for CachedGreedyPostingsIterator {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let value = self.postings
+            .get(self.position);
+        self.position += 1;
+        value
     }
 }
