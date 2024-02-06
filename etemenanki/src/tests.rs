@@ -5,7 +5,7 @@ use memmap2::Mmap;
 use test::{Bencher, black_box};
 use rand::{distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
 
-use crate::{components::{CachedIndex, CachedVector, Index, IndexBlock, InvertedIndex, Vector, VectorBlock}, container::Container, layers::SegmentationLayer};
+use crate::{components::{CachedIndex, CachedInvertedIndex, CachedVector, Index, IndexBlock, InvertedIndex, Vector, VectorBlock}, container::Container, layers::SegmentationLayer};
 
 const DATASTORE_PATH: &'static str = "testdata/simpledickens/";
 
@@ -300,14 +300,83 @@ fn invidx_setup(filename: &'static str, vec_name: &'static str, invidx_name: &'s
 }
 
 #[bench]
-fn invidx_decodenn_no(b: &mut Bencher) {
+fn invidx_decode_no(b: &mut Bencher) {
     let (lexids, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
     b.iter(|| {
         let cvec = CachedVector::<1>::new(lexids).unwrap();
-        for [id, ..] in cvec.iter_until(1000).unwrap() {
+        for [id, ..] in cvec.iter() {
             for position in invidx.postings(id as usize) {
                 black_box(position);
             }
+        }
+    });
+}
+
+#[test]
+fn cachedinvidx() {
+    let (_, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
+    let cinvidx = CachedInvertedIndex::new(invidx);
+
+    println!("{:?}", cinvidx.positions(0).unwrap().collect::<Vec<_>>());
+}
+
+#[bench]
+fn invidx_decode_cache(b: &mut Bencher) {
+    let (lexids, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
+    b.iter(|| {
+        let cvec = CachedVector::<1>::new(lexids).unwrap();
+        let cinvidx = CachedInvertedIndex::new(invidx);
+        for [id, ..] in cvec.iter() {
+            for position in cinvidx.positions(id as usize).unwrap() {
+                black_box(position);
+            }
+        }
+    });
+}
+
+#[bench]
+fn invidx_decode0_no(b: &mut Bencher) {
+    let (_, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
+    b.iter(|| {
+        for position in invidx.postings(0) {
+            black_box(position);
+        }
+    });
+}
+
+#[bench]
+fn invidx_decode0_cache(b: &mut Bencher) {
+    let (_, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
+    let cinvidx = CachedInvertedIndex::new(invidx);
+    b.iter(|| {
+        for position in cinvidx.positions(0).unwrap() {
+            black_box(position);
+        }
+    });
+}
+
+#[bench]
+fn invidx_decode0_cache_cold(b: &mut Bencher) {
+    let (_, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
+    b.iter(|| {
+        let cinvidx = CachedInvertedIndex::new(invidx);
+        for position in cinvidx.positions(0).unwrap() {
+            black_box(position);
+        }
+    });
+}
+
+#[bench]
+fn invidx_decode0_cache_warm(b: &mut Bencher) {
+    let (_, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
+    let cinvidx = CachedInvertedIndex::new(invidx);
+    for position in cinvidx.positions(0).unwrap() {
+        black_box(position);
+    }
+
+    b.iter(|| {
+        for position in cinvidx.positions(0).unwrap() {
+            black_box(position);
         }
     });
 }
