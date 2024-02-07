@@ -120,7 +120,7 @@ fn idxcmp_block() {
             } else {
                 ((r - 1) & 0x0f) + 1
             };
-            let mut block = IndexBlock::decode(&data[*o..], br);
+            let block = IndexBlock::decode(&data[*o..], br);
             
             println!("block {}: r {}, o {}", i, block.regular_items(), block.overflow_items());
             println!("keys: {:?}", block.keys());
@@ -406,6 +406,31 @@ fn invidx_decode_cache2(b: &mut Bencher) {
             for position in cinvidx.get_postings(id as usize).unwrap().get_all() {
                 black_box(position);
             }
+        }
+    });
+}
+
+#[bench]
+fn idx_decode_no(b: &mut Bencher) {
+    let (idx, _container) = idxcmp_setup("chapter/num.zigv", "IntSort");
+    let nums = setup_rand(1_000_000, 50);
+    
+    b.iter(|| {
+        for &n in nums.iter() {
+            black_box(idx.get_all(n as i64).count());
+        }
+    });
+}
+
+#[bench]
+fn idx_decode_cache(b: &mut Bencher) {
+    let (idx, _container) = idxcmp_setup("chapter/num.zigv", "IntSort");
+    let nums = setup_rand(1_000_000, 50);
+
+    b.iter(|| {
+        let cidx = CachedIndex::new(idx);
+        for &n in nums.iter() {
+            black_box(cidx.get_all(n as i64).count());
         }
     });
 }

@@ -227,18 +227,17 @@ impl<'map> Iterator for IndexIterator<'map> {
 }
 
 #[derive(Debug)]
-pub struct IndexBlock<'map> {
+pub struct IndexBlock {
     regular_items: usize,
     overflow_items: usize,
     keys: [i64; 16],
     positions: Vec<i64>,
-    overflow_data: &'map [u8],
 }
 
-impl<'map> IndexBlock<'map> {
+impl IndexBlock {
 
     /// Decodes a block from compressed raw data.
-    pub fn decode(data: &'map [u8], regular_items: usize) -> Self {
+    pub fn decode(data: &[u8], regular_items: usize) -> Self {
         // decode the number of overflow items in block
         // this should be:
         //  - overflow_items = 0 when regular_items < B (16)
@@ -250,18 +249,14 @@ impl<'map> IndexBlock<'map> {
         offset += readlen;
 
         // decode the first regular_items, max B = 16
-        let (positions, readlen) =
-            ziggurat_varint::decode_fixed_delta_block(&data[offset..], regular_items);
-
-        // keep position of next possible data position for future decoding
-        let overflow_data = &data[offset + readlen..];
+        let (positions, _) =
+            ziggurat_varint::decode_fixed_delta_block(&data[offset..], regular_items + overflow_items as usize);
 
         Self {
             regular_items,
             overflow_items: overflow_items as usize,
             keys,
             positions,
-            overflow_data,
         }
     }
 
@@ -285,51 +280,21 @@ impl<'map> IndexBlock<'map> {
 
     /// Returns a tuple of the form (key, value) for a given position in the block
     /// This action may decode additional overflow items. 
-    pub fn get_pair(&mut self, index: usize) -> Option<(i64, i64)> {
+    pub fn get_pair(&self, index: usize) -> Option<(i64, i64)> {
         self.get_key(index)
             .zip(self.get_position(index))
     }
 
     /// Returns a slice over all positions in the block including all overflow items.
     /// This action may decode additional overflow items.
-    pub fn get_all_position_(&mut self) -> &[i64] {
-        self.get_first_positions(self.regular_items + self.overflow_items)
-            .expect("this should never fail")
-    }
-
-    /// Returns a slice over the first n positions from the block.
-    /// This action may decode additional overflow items.
-    pub fn get_first_positions(&mut self, n: usize) -> Option<&[i64]> {
-        if n <= self.regular_items {
-            // index within already decoded regular positions, all good
-            Some(&self.positions[..n])
-        } else if self.overflow_items > 0 && n <= 16 + self.overflow_items {
-            // index within overflow items. we may need to decode additional values
-            // overflow items should only be possible when the block is full, thus fixed 16 and not
-            // self.overflow_items in check
-
-            // check if we need to decode additional values and extend self.positions
-            if n > self.positions.len() {
-                let decode_len = n - self.positions.len();
-                for _ in 0..decode_len {
-                    let (i, readlen) = ziggurat_varint::decode(self.overflow_data);
-                    self.overflow_data = &self.overflow_data[readlen..]; // move slice to new beginning of undecoded data
-                    let last = self.positions.last().copied().unwrap_or(0);
-                    self.positions.push(last + i);
-                }
-            }
-
-            Some(&self.positions[..n])
-        } else {
-            None
-        }
+    pub fn get_all_position_(&self) -> &[i64] {
+        &self.positions[..]
     }
 
     /// Returns the value of a single position from the block.
     /// This action may decode additional overflow items.
-    pub fn get_position(&mut self, index: usize) -> Option<i64> {
-        self.get_first_positions(index + 1)
-            .map(|p| p[index])
+    pub fn get_position(&self, index: usize) -> Option<i64> {
+        self.positions.get(index).copied()
     }
 
     /// Returns the total length of the block.
@@ -353,7 +318,7 @@ pub struct IndexBlockCache<'map> {
     r: usize,
     sync: &'map [(i64, usize)],
     data: &'map [u8],
-    cache: LruCache<usize, IndexBlock<'map>>,
+    cache: LruCache<usize, Rc<IndexBlock>>,
 }
 
 impl<'map> IndexBlockCache<'map> {
@@ -362,7 +327,7 @@ impl<'map> IndexBlockCache<'map> {
             r,
             sync,
             data,
-            cache: LruCache::new(NonZeroUsize::new(250).unwrap())
+            cache: LruCache::new(NonZeroUsize::new(500).unwrap())
         }
     }
 
@@ -372,17 +337,18 @@ impl<'map> IndexBlockCache<'map> {
 
     /// Returns the reference to a cached IndexBlock.
     /// If the is not yet in the cache it will be decoded.
-    pub fn get_block(&mut self, block_index: usize) -> Option<&mut IndexBlock<'map>> {
+    pub fn get_block(&mut self, block_index: usize) -> Option<Rc<IndexBlock>> {
         if block_index < self.sync.len() {
             if !self.cache.contains(&block_index) {
                 let offset = self.sync[block_index].1 as usize;
                 let br = min(self.r - (block_index * 16), 16);
-                let block = IndexBlock::decode(&self.data[offset..], br);
+                let block = Rc::new(IndexBlock::decode(&self.data[offset..], br));
                 self.cache.put(block_index, block);
             }
     
             self.cache
-                .get_mut(&block_index)
+                .get(&block_index)
+                .map(|rc| rc.clone())
         } else {
             None
         }
@@ -419,14 +385,6 @@ impl<'map> CachedIndex<'map> {
         }
     }
 
-    pub fn cache(&self) -> Option<Rc<RefCell<IndexBlockCache<'map>>>> {
-        if let Self::Compressed { length: _, cache } = self {
-            Some(cache.clone())
-        } else {
-            None
-        }
-    }
-
     pub fn contains_key(&self, key: i64) -> bool {
         self.get_first(key).is_some()
     }
@@ -459,8 +417,7 @@ pub enum CachedValueIterator<'map> {
     },
 
     Compressed {
-        cache: Rc<RefCell<IndexBlockCache<'map>>>,
-        block_index: usize,
+        block: Rc<IndexBlock>,
         position: usize,
         key: i64,
     }
@@ -482,28 +439,21 @@ impl<'map> CachedValueIterator<'map> {
             },
 
             CachedIndex::Compressed { length: _, cache } => {
-                let cache = cache.clone();
+                let mut cache = cache.borrow_mut();
 
-                let (block_index, position) = {
-                    let mut cacheref = cache.borrow_mut();
-                    
-                    let block_index = cacheref.sync_block_position(key);
-                    let block = cacheref.get_block(block_index).expect("at this point the block must be cached");
+                let block_index = cache.sync_block_position(key);
+                let block = cache.get_block(block_index).expect("at this point the block must be cached");
 
-                    // partition_point() will result in Some(position), even if the key is
-                    // not actually in the block. This is fine, since the iterator will
-                    // check the key at a later point again.
-                    let position = block.keys().partition_point(|&x| x < key );
-                    if position >= block.keys().len() {
-                        return Self::None;
-                    }
-
-                    (block_index, position)
-                };
+                // partition_point() will result in Some(position), even if the key is
+                // not actually in the block. This is fine, since the iterator will
+                // check the key at a later point again.
+                let position = block.keys().partition_point(|&x| x < key );
+                if position >= block.keys().len() {
+                    return Self::None;
+                }
 
                 Self::Compressed {
-                    cache,
-                    block_index,
+                    block,
                     position,
                     key,
                 }
@@ -530,18 +480,12 @@ impl<'map> Iterator for CachedValueIterator<'map> {
                 None
             }
 
-            Self::Compressed { cache, block_index, position, key } => {
-                let mut cache = cache.borrow_mut();
-                let block = cache.get_block(*block_index).expect("at this point the block must be cached");
-
-                if *position < block.len() {
-                    let (ckey, value) = block.get_pair(*position).unwrap();
-                    if ckey == *key {
-                        *position += 1;
-                        return Some(value)
-                    }
-                }
-                None
+            Self::Compressed { block, position, key } => {
+                let value = block.get_pair(*position)
+                    .filter(|(k, _)| k == key)
+                    .map(|(_, v)| v);
+                *position += 1;
+                value
             }
         }
     }
