@@ -484,7 +484,7 @@ impl<'map> CachedValueIterator<'map> {
             CachedIndex::Compressed { length: _, cache } => {
                 let cache = cache.clone();
 
-                let (block_index, position ) = {
+                let (block_index, position) = {
                     let mut cacheref = cache.borrow_mut();
                     
                     let block_index = cacheref.sync_block_position(key);
@@ -494,7 +494,7 @@ impl<'map> CachedValueIterator<'map> {
                     // not actually in the block. This is fine, since the iterator will
                     // check the key at a later point again.
                     let position = block.keys().partition_point(|&x| x < key );
-                    if position < block.keys().len() {
+                    if position >= block.keys().len() {
                         return Self::None;
                     }
 

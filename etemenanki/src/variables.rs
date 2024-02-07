@@ -375,8 +375,11 @@ impl<'map> IntegerVariable<'map> {
         self.int_stream.get_row_unchecked(index)[0]
     }
 
-    pub fn iter(&'map self) -> IntegerIterator<'map> {
-        self.into_iter()
+    pub fn iter(&self) -> IntegerIterator<'map> {
+        IntegerIterator {
+            int_stream: self.int_stream.clone(),
+            index: 0,
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -447,18 +450,6 @@ impl<'map> Iterator for IntegerIterator<'map> {
             Some(value)
         } else {
             None
-        }
-    }
-}
-
-impl<'map> IntoIterator for &'map IntegerVariable<'map> {
-    type Item = i64;
-    type IntoIter = IntegerIterator<'map>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        IntegerIterator {
-            int_stream: self.int_stream.clone(),
-            index: 0,
         }
     }
 }

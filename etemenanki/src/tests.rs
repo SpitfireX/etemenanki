@@ -133,11 +133,13 @@ fn idxcmp_block() {
 
 #[test]
 fn idx_iter() {
-    let (index, _container) = idxcmp_setup("chapter/num.zigv", "IntSort");
+    let (idx, _container) = idxcmp_setup("chapter/num.zigv", "IntSort");
     println!();
-    println!("{:?}", index.get_all(0).collect::<Vec<_>>());
-    println!("{:?}", index.get_all(1).collect::<Vec<_>>());
-    println!("{:?}", index.get_all(9001).collect::<Vec<_>>());
+    println!("{:?}", idx.get_all(0).collect::<Vec<_>>());
+    println!("{:?}", idx.get_all(1).collect::<Vec<_>>());
+    println!("{:?}", idx.get_all(5).collect::<Vec<_>>());
+    println!("{:?}", idx.get_all(30).collect::<Vec<_>>());
+    println!("{:?}", idx.get_all(9001).collect::<Vec<_>>());
 }
 
 #[test]
@@ -146,10 +148,21 @@ fn cachedidx_iter() {
     let cidx = CachedIndex::new(index);
     println!();
     println!("{:?}", cidx.get_all(0).collect::<Vec<_>>());
-    println!("{:?}", cidx.get_all(3).collect::<Vec<_>>());
-    println!("{:?}", cidx.get_all(2002).collect::<Vec<_>>());
-    println!("{:?}", cidx.get_all(2003).collect::<Vec<_>>());
+    println!("{:?}", cidx.get_all(1).collect::<Vec<_>>());
+    println!("{:?}", cidx.get_all(5).collect::<Vec<_>>());
+    println!("{:?}", cidx.get_all(30).collect::<Vec<_>>());
     println!("{:?}", cidx.get_all(9001).collect::<Vec<_>>());
+}
+
+#[test]
+fn idx_iter_comp() {
+    let (idx, _container) = idxcmp_setup("chapter/num.zigv", "IntSort");
+    let cidx = CachedIndex::new(idx);
+    assert!(idx.get_all(0).eq(cidx.get_all(0)));
+    assert!(idx.get_all(1).eq(cidx.get_all(1)));
+    assert!(idx.get_all(5).eq(cidx.get_all(5)));
+    assert!(idx.get_all(30).eq(cidx.get_all(30)));
+    assert!(idx.get_all(9001).eq(cidx.get_all(9001)));
 }
 
 fn seg_setup(filename: &'static str) -> SegmentationLayer<'static> {

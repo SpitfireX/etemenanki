@@ -116,14 +116,12 @@ fn main() -> Result<()> {
         }
     }
 
-    let all2016: Vec<_> = text.variable_by_name("year")
+    let year = text.variable_by_name("year")
         .unwrap()
         .as_integer()
-        .unwrap()
-        .get_all(2016)
-        .collect();
+        .unwrap();
 
-    println!("\nthere are {} texts from 2016", all2016.len());
+    println!("\nthere are {} texts from 2016", year.get_all(2016).count());
 
     // let filename = "../scripts/recipes4000/s/s.zigl";
     // let file = File::open(filename).unwrap();
