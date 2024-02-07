@@ -1,10 +1,11 @@
 use std::collections::HashSet;
+use std::rc::Rc;
 
 use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use uuid::Uuid;
 
-use crate::components::{self, CachedIndex, CachedVector};
+use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector};
 use crate::container::{self, Container};
 use crate::macros::{check_and_return_component, get_container_base};
 
@@ -60,7 +61,7 @@ pub struct IndexedStringVariable<'map> {
     lexicon: components::StringVector<'map>,
     lex_hash: components::CachedIndex<'map>,
     lex_id_stream: components::CachedVector<'map, 1>,
-    lex_id_index: components::InvertedIndex<'map>,
+    lex_id_index: Rc<components::CachedInvertedIndex<'map>>,
 }
 
 impl<'map> IndexedStringVariable<'map> {
@@ -106,8 +107,8 @@ impl<'map> IndexedStringVariable<'map> {
         self.lex_hash.clone()
     }
 
-    pub fn inverted_index(&self) -> components::InvertedIndex {
-        self.lex_id_index
+    pub fn inverted_index(&self) -> Rc<components::CachedInvertedIndex<'map>> {
+        self.lex_id_index.clone()
     }
 
     pub fn iter(&'map self) -> IndexedStringIterator<'map> {
@@ -167,6 +168,7 @@ impl<'map> TryFrom<Container<'map>> for IndexedStringVariable<'map> {
                 if lex_id_index.n_types() != v {
                     return Err(Self::Error::WrongComponentDimensions("LexIDIndex"));
                 }
+                let lex_id_index = Rc::new(CachedInvertedIndex::new(lex_id_index));
 
                 Ok(Self {
                     base,
@@ -470,7 +472,7 @@ pub struct SetVariable<'map> {
     lexicon: components::StringVector<'map>,
     lex_hash: components::CachedIndex<'map>,
     id_set_stream: components::Set<'map>,
-    id_set_index: components::InvertedIndex<'map>,
+    id_set_index: components::CachedInvertedIndex<'map>,
 }
 
 impl<'map> SetVariable<'map> {
@@ -539,6 +541,7 @@ impl<'map> TryFrom<Container<'map>> for SetVariable<'map> {
                 if id_set_index.n_types() != v {
                     return Err(Self::Error::WrongComponentDimensions("IDSetIndex"));
                 }
+                let id_set_index = CachedInvertedIndex::new(id_set_index);
 
                 Ok(Self {
                     base,

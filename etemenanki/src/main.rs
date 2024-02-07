@@ -65,10 +65,10 @@ fn main() -> Result<()> {
         match result {
             Some(i) => {
                 println!("{} in index at {}", test, i);
-                let positions: Vec<_> = strings.inverted_index().postings(i as usize).collect();
 
                 let mut usage = HashSet::new();
-                for p in positions {
+
+                for &p in strings.inverted_index().get_postings(i as usize).unwrap().get_all() {
                     let nextpos = pos.get_unchecked(p + 1);
                     if posses.contains(nextpos) {
                         usage.insert(strings.get_unchecked(p + 1));
