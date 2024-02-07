@@ -5,7 +5,7 @@ use memmap2::Mmap;
 use test::{Bencher, black_box};
 use rand::{distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
 
-use crate::{components::{CachedIndex, CachedInvertedIndex, CachedVector, GreedyCachedInvertedIndex, Index, IndexBlock, InvertedIndex, Vector, VectorBlock}, container::Container, layers::SegmentationLayer};
+use crate::{components::{CachedIndex, CachedInvertedIndex, CachedVector, Index, IndexBlock, InvertedIndex, Vector, VectorBlock}, container::Container, layers::SegmentationLayer};
 
 const DATASTORE_PATH: &'static str = "testdata/simpledickens/";
 
@@ -323,20 +323,6 @@ fn cachedinvidx() {
 }
 
 #[bench]
-fn invidx_decode_cache(b: &mut Bencher) {
-    let (lexids, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
-    b.iter(|| {
-        let cvec = CachedVector::<1>::new(lexids).unwrap();
-        let cinvidx = CachedInvertedIndex::new(invidx);
-        for [id, ..] in cvec.iter_until(INVIDX_LOOKUP_SIZE).unwrap() {
-            for position in cinvidx.positions(id as usize).unwrap() {
-                black_box(position);
-            }
-        }
-    });
-}
-
-#[bench]
 fn invidx_0decode_no(b: &mut Bencher) {
     let (_, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
     b.iter(|| {
@@ -384,11 +370,11 @@ fn invidx_0decode_cache_warm(b: &mut Bencher) {
 }
 
 #[bench]
-fn invidx_decode_gcache(b: &mut Bencher) {
+fn invidx_decode_cache(b: &mut Bencher) {
     let (lexids, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
     b.iter(|| {
         let cvec = CachedVector::<1>::new(lexids).unwrap();
-        let cinvidx = GreedyCachedInvertedIndex::new(invidx);
+        let cinvidx = CachedInvertedIndex::new(invidx);
         for [id, ..] in cvec.iter_until(INVIDX_LOOKUP_SIZE).unwrap() {
             for position in cinvidx.positions(id as usize).unwrap() {
                 black_box(position);
@@ -398,11 +384,11 @@ fn invidx_decode_gcache(b: &mut Bencher) {
 }
 
 #[bench]
-fn invidx_decode_gcache2(b: &mut Bencher) {
+fn invidx_decode_cache2(b: &mut Bencher) {
     let (lexids, invidx, _c) = invidx_setup("word.zigv", "LexIDStream", "LexIDIndex");
     b.iter(|| {
         let cvec = CachedVector::<1>::new(lexids).unwrap();
-        let cinvidx = GreedyCachedInvertedIndex::new(invidx);
+        let cinvidx = CachedInvertedIndex::new(invidx);
         for [id, ..] in cvec.iter_until(INVIDX_LOOKUP_SIZE).unwrap() {
             for position in cinvidx.get_postings(id as usize).unwrap().get_all() {
                 black_box(position);
