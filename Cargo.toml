@@ -5,4 +5,5 @@ members = [
     "etemenanki",
     "libcl-rs",
     "ziggurat-varint",
+    "ziggypy",
 ]

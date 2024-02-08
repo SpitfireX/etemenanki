@@ -1,3 +1,2 @@
 [env]
 RUST_TEST_THREADS = "1"
-PYO3_PYTHON = "/usr/bin/python"

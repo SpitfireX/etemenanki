@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling", "numpy"]
-build-backend = "hatchling.build"
+requires = ["numpy", "fnvhash", "maturin>=1.0,<2.0"]
+build-backend = "maturin"
 
 [project]
 name = "ziggypy"
@@ -25,3 +25,8 @@ classifiers = [
 [project.urls]
 "Homepage" = "https://github.com/SpitfireX/ziggypy"
 "Bug Tracker" = "https://github.com/SpitfireX/ziggypy/issues"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+python-source = "src"
+module-name = "ziggypy._rustypy"
