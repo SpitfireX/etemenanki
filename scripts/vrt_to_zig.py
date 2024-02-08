@@ -20,6 +20,8 @@ parser.add_argument("-f", "--force", action="store_true",
                     help="Force overwrite output if directory already exists")
 parser.add_argument("-u", "--uncompressed", action="store_true",
                     help="Write all components uncompressed (storage mode 0x00)")
+parser.add_argument("-x", "--invalid-xml", action="store_true",
+                    help="Fix invalid XML. Encloses whole corpus in an additional root element.")
 parser.add_argument("-p", action="append", metavar="p_attribute_name", default=[],
                     help="""Declares and names a p-attribute. Order of declaration must correspond to order of columns in input.
                     P-attributes are encoded as variables on the primary layer of the corpus.
@@ -115,8 +117,8 @@ def end_element(name):
     parser_state = (True, name, None)
 
 parser = expat.ParserCreate()
-if ".xml" not in str(args.input):
-    parser.Parse("<start>") # init with one global start tag to keep parser happy
+if ".xml" not in str(args.input) or args.fix_xml:
+    parser.Parse("<xml-fix-pseudo-start>") # init with one global start tag to keep parser happy
 parser.StartElementHandler = start_element
 parser.EndElementHandler = end_element
 
@@ -147,16 +149,17 @@ with gzip.open(args.input, mode = "rt") if args.input.suffix == ".gz" else args.
             parser.Parse(line)
             is_closing_tag, tagname, attrs = parser_state
 
-            if not is_closing_tag:
-                stack.append((cpos, tagname, attrs))
-            else:
-                if len(stack) > 0 and stack[-1][1] == tagname:
-                    startpos, start_tagname, attrs = stack.pop()
-                    if tagname not in spans.keys():
-                        spans[tagname] = []
-                        span_attrs[tagname] = []
-                    spans[tagname].append((startpos, cpos))
-                    span_attrs[tagname].append(attrs)
+            if tagname in s_attrs:
+                if not is_closing_tag:
+                    stack.append((cpos, tagname, attrs))
+                else:
+                    if len(stack) > 0 and stack[-1][1] == tagname:
+                        startpos, start_tagname, attrs = stack.pop()
+                        if tagname not in spans.keys():
+                            spans[tagname] = []
+                            span_attrs[tagname] = []
+                        spans[tagname].append((startpos, cpos))
+                        span_attrs[tagname].append(attrs)
 
 print(f"\t found {len(spans.keys())} s-attrs: {tuple(spans.keys())}")
 

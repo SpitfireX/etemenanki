@@ -149,7 +149,7 @@ class FileIndexedStringVariable(Variable):
         # inverted lookup index associating each lexicon ID with its positions of occurence
         file.seek(0)
         strings = (line.strip().encode("utf-8") for line in file)
-        lexids = [(lex[s],) for s in strings]
+        lexids = ((lex[s],) for s in strings)
         
         invidx = InvertedIndex(list(lex), lexids, "LexIDIndex", lsize)
 
