@@ -1,5 +1,6 @@
 from itertools import islice
 from typing import Iterable, Any
+from abc import ABC, abstractmethod
 from xml.parsers import expat
 
 
@@ -12,8 +13,22 @@ def batched(iterable: Iterable[Any], n: int):
     while (batch := tuple(islice(it, n))):
         yield batch
 
+class ResettableIter(ABC):
+    """ABC for a resettable iterator"""
 
-class PFileIter:
+    @abstractmethod
+    def __iter__(self):
+        pass
+
+    @abstractmethod
+    def __next__(self):
+        pass
+
+    @abstractmethod
+    def reset(self):
+        pass
+
+class PFileIter(ResettableIter):
     """Resettable iterator that wraps around an open text file in VRT format.
     The iterator returns values of the p attribute in the file at `column` as
     strings."""
@@ -43,7 +58,7 @@ class PFileIter:
     def reset(self):
         self.file.seek(0)
 
-class SFileIter:
+class SFileIter(ResettableIter):
     """Resettable iterator that wraps around an open text file in VRT format.
     The iterator returns values for an s attribute in the file matching `tagname`
     as tuples of the following format: ((start_position, end_position), {attrs})"""

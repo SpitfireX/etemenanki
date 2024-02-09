@@ -8,6 +8,7 @@ import tempfile
 from ziggypy.components import *
 from ziggypy.layers import *
 from ziggypy.variables import *
+from ziggypy.util import PFileIter
 
 from pathlib import Path
 
@@ -63,9 +64,7 @@ for p in args.p:
     else:
         name, type = p
     assert type in ("indexed", "plain", "int", "delta", "set", "ptr", "skip"), f"Invalid variable type '{type}' for p-attribute '{name}'"
-    # p-attr tokens get saved to a temporary file to avoid loading them into RAM
-    temp = tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", prefix=name+"_", suffix=".zigtmp")
-    p_attrs.append((name, type, temp))
+    p_attrs.append((name, type))
 
 # validation just for ptr variables
 ptrcount = [p[1] for p in p_attrs].count("ptr")
@@ -73,7 +72,7 @@ assert  ptrcount <= 1, "maximum of one pointer variable can be encoded at the sa
 if ptrcount > 0:
     assert args.ptr_base, "--ptr-base must be specified for encoding pointer variables"
     try:
-        next(f for (n, _, f) in p_attrs if n == args.ptr_base)
+        next(n for (n, _) in p_attrs if n == args.ptr_base)
     except:
         raise ValueError(f"specified ptr-base '{args.ptr_base}' does not exist in specified p-attributes"
 )
@@ -122,7 +121,13 @@ if ".xml" not in str(args.input) or args.fix_xml:
 parser.StartElementHandler = start_element
 parser.EndElementHandler = end_element
 
-with gzip.open(args.input, mode = "rt") if args.input.suffix == ".gz" else args.input.open() as f:
+def open_input():
+    if args.input.suffix == ".gz":
+        return gzip.open(args.input, mode = "rt")
+    else:
+        return args.input.open()
+
+with open_input() as f:
     # find number of p attrs
     for line in f:
         if not line.startswith("<"):
@@ -138,10 +143,6 @@ with gzip.open(args.input, mode = "rt") if args.input.suffix == ".gz" else args.
         # p attrs
         if not line.startswith("<"):
             if line.strip():
-                cols = line.strip().split("\t", maxsplit = pcount-1)
-                for i, token in enumerate(cols[:len(p_attrs)]):
-                    p_attrs[i][2].write(token)
-                    p_attrs[i][2].write("\n")
                 cpos += 1
 
         # s attrs
@@ -164,7 +165,7 @@ with gzip.open(args.input, mode = "rt") if args.input.suffix == ".gz" else args.
 print(f"\t found {len(spans.keys())} s-attrs: {tuple(spans.keys())}")
 
 print("Encoding the following attributes:")
-for name, type, _ in p_attrs:
+for name, type in p_attrs:
     if type == "ptr":
         print(f"\tp-attribute '{name}' of type '{type}' with base '{args.ptr_base}'")
     elif type != "skip":
@@ -256,33 +257,37 @@ write_datastore_object(primary_layer, "primary")
 
 ## Primary Layer Variables for p attributes
 
-for i, (name, type, temp) in enumerate(p_attrs):
-    temp.seek(0)
+for i, (name, type) in enumerate(p_attrs):
     c = f"p-attr {name}"
+    print(i)
 
-    try:
-        if type == "indexed":
-            variable = FileIndexedStringVariable(primary_layer, temp, compressed = not args.uncompressed, comment = c)
-        elif type == "plain":
-            variable = PlainStringVariable(primary_layer, (line.strip() for line in temp), compressed = not args.uncompressed, comment = c)
-        elif type == "int":
-            variable = IntegerVariable(primary_layer, [parse_int(s, default=args.int_default) for s in temp], compressed = not args.uncompressed, comment = c)
-        elif type == "delta":
-            variable = IntegerVariable(primary_layer, [parse_int(s, default=args.int_default) for s in temp], compressed = not args.uncompressed, delta= True, comment = c)
-        elif type == "set":
-            variable = SetVariable(primary_layer, [parse_set(s) for s in temp], comment = c)
-        elif type == "ptr":
-            base = next(f for (n, _, f) in p_attrs if n == args.ptr_base)
-            base.seek(0)
-            variable = PointerVariable(primary_layer, [parse_ptr(cpos, b, h) for cpos, (b, h) in enumerate(zip(base, temp))], compressed = not args.uncompressed, comment = c)
-        elif type == "skip":
-            continue
-        else:
-            print(f"Invalid type '{type}' for p attribute '{name}'")
-            continue
-    except Exception as e:
-        print(f"Error while encoding p attribute '{name}': {e}")
-        exit()
+    with open_input() as f:
+        fileiter = PFileIter(f, i)
+
+        try:
+            if type == "indexed":
+                variable = FileIndexedStringVariable(primary_layer, fileiter, compressed = not args.uncompressed, comment = c)
+            elif type == "plain":
+                variable = PlainStringVariable(primary_layer, (token for token in fileiter), compressed = not args.uncompressed, comment = c)
+            elif type == "int":
+                variable = IntegerVariable(primary_layer, [parse_int(s, default=args.int_default) for s in fileiter], compressed = not args.uncompressed, comment = c)
+            elif type == "delta":
+                variable = IntegerVariable(primary_layer, [parse_int(s, default=args.int_default) for s in fileiter], compressed = not args.uncompressed, delta= True, comment = c)
+            elif type == "set":
+                variable = SetVariable(primary_layer, [parse_set(s) for s in fileiter], comment = c)
+            elif type == "ptr":
+                base_index = next(i for i, (n, _) in enumerate(p_attrs) if n == args.ptr_base)
+                with open_input() as f2:
+                    base = PFileIter(f2, base_index, len(p_attrs))
+                    variable = PointerVariable(primary_layer, [parse_ptr(cpos, b, h) for cpos, (b, h) in enumerate(zip(base, fileiter))], compressed = not args.uncompressed, comment = c)
+            elif type == "skip":
+                continue
+            else:
+                print(f"Invalid type '{type}' for p attribute '{name}'")
+                continue
+        except Exception as e:
+            print(f"Error while encoding p attribute '{name}': {e}")
+            exit()
 
     write_datastore_object(variable, name)
 

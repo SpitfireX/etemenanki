@@ -1,9 +1,10 @@
 from abc import ABC
 from io import RawIOBase
-from typing import TextIO
 from itertools import chain, accumulate
 from uuid import UUID, uuid4
 from collections import Counter
+
+from ziggypy.util import ResettableIter
 
 from .container import Container
 from .components import *
@@ -116,7 +117,7 @@ class FileIndexedStringVariable(Variable):
     All of this needs to be thrown away and implemented proprely at some time actually using the proper
     Ziggurat data structures."""
 
-    def __init__(self, base_layer: Layer, file: TextIO, uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
+    def __init__(self, base_layer: Layer, file: ResettableIter, uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
         
         super().__init__(base_layer, uuid if uuid else uuid4())
 
@@ -137,7 +138,7 @@ class FileIndexedStringVariable(Variable):
 
         lexindex = Index(hashes, "LexHash", lsize)
 
-        file.seek(0)
+        file.reset()
         strings = (line.strip().encode("utf-8") for line in file)
         lexids = [(lex[s],) for s in strings]
 
@@ -147,7 +148,7 @@ class FileIndexedStringVariable(Variable):
             lexidstream = Vector(lexids, "LexIDStream", size)
 
         # inverted lookup index associating each lexicon ID with its positions of occurence
-        file.seek(0)
+        file.reset()
         strings = (line.strip().encode("utf-8") for line in file)
         lexids = ((lex[s],) for s in strings)
         
