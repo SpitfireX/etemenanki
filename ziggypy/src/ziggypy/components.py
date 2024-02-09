@@ -567,14 +567,15 @@ class InvertedIndex(Component):
 
         self.encoded = b''
 
-        # write typeinfo vector
+        # build typeinfo
+        typeinfo = []
 
         offset = 0
         for t, e in zip(postings, postings_encoded):
-            self.encoded += pack('<q', len(t)) # type frequency
-            self.encoded += pack('<q', offset) # offset for postings list
+            typeinfo.append((len(t), offset))
             offset += len(e)
 
+        self.typeinfo = typeinfo
         self.postings_encoded = postings_encoded
 
 
@@ -583,7 +584,11 @@ class InvertedIndex(Component):
 
 
     def write(self, f):
-        f.write(self.encoded)
+        # write typeinfo
+        for len, offset in self.typeinfo:
+            f.write(pack('<q', len)) # type frequency
+            f.write(pack('<q', offset)) # offset for postings list
+
         # write postings lists
         for p in self.postings_encoded:
             f.write(p)
