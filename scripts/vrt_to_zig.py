@@ -114,7 +114,7 @@ def end_element(name):
     parser_state = (True, name, None)
 
 parser = expat.ParserCreate()
-if ".xml" not in str(args.input) or args.fix_xml:
+if ".xml" not in str(args.input) or args.invalid_xml:
     parser.Parse("<xml-fix-pseudo-start>") # init with one global start tag to keep parser happy
 parser.StartElementHandler = start_element
 parser.EndElementHandler = end_element
