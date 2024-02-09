@@ -140,7 +140,7 @@ class FileIndexedStringVariable(Variable):
 
         file.reset()
         strings = (line.strip().encode("utf-8") for line in file)
-        lexids = [(lex[s],) for s in strings]
+        lexids = (lex[s] for s in strings)
 
         if compressed:
             lexidstream = VectorComp(lexids, "LexIDStream", size)

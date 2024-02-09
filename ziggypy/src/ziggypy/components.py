@@ -98,7 +98,7 @@ class Component(ABC):
 
 class Vector(Component):
     
-    def __init__(self, items: Iterable[Any], name: str, n: int, d: int = 1):
+    def __init__(self, items: Iterable[Any]|np.ndarray, name: str, n: int, d: int = 1):
         super().__init__(
             0x04,
             0x00,
@@ -107,7 +107,10 @@ class Vector(Component):
         )
         self.n = n
         self.d = d
-        self.data = np.atleast_2d(np.array(items, dtype=np.int64))
+        if not type(items) is np.ndarray:
+            data = np.atleast_2d(np.fromiter(items, dtype=np.int64))
+        else:
+            data = items
         self.data.shape = (d, n)
 
     
@@ -124,7 +127,7 @@ class Vector(Component):
 
 class VectorComp(Component):
 
-    def __init__(self, items: Iterable[Any], name: str, n: int, d: int = 1):
+    def __init__(self, items: Iterable[Any]|np.ndarray, name: str, n: int, d: int = 1):
         super().__init__(
             0x04,
             0x01,
@@ -133,7 +136,10 @@ class VectorComp(Component):
         )        
         self.n = n
         self.d = d
-        data = np.atleast_2d(np.array(items, dtype=np.int64))
+        if not type(items) is np.ndarray:
+            data = np.atleast_2d(np.fromiter(items, dtype=np.int64))
+        else:
+            data = items
         data.shape = (n, d)
 
         # compress data
@@ -182,7 +188,7 @@ class VectorComp(Component):
 
 class VectorDelta(Component):
 
-    def __init__(self, items: Iterable[Any], name:str, n: int, d: int = 1,):
+    def __init__(self, items: Iterable[Any]|np.ndarray, name:str, n: int, d: int = 1,):
         super().__init__(
             0x04,
             0x02,
@@ -191,7 +197,10 @@ class VectorDelta(Component):
         )
         self.n = n
         self.d = d
-        data = np.atleast_2d(np.array(items, dtype=np.int64))
+        if not type(items) is np.ndarray:
+            data = np.atleast_2d(np.fromiter(items, dtype=np.int64))
+        else:
+            data = items
         data.shape = (n, d)
 
         self.data = data # TODO entfernen

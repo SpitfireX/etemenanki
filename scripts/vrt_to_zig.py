@@ -259,35 +259,34 @@ write_datastore_object(primary_layer, "primary")
 
 for i, (name, type) in enumerate(p_attrs):
     c = f"p-attr {name}"
-    print(i)
 
     with open_input() as f:
         fileiter = PFileIter(f, i)
 
-        try:
-            if type == "indexed":
-                variable = FileIndexedStringVariable(primary_layer, fileiter, compressed = not args.uncompressed, comment = c)
-            elif type == "plain":
-                variable = PlainStringVariable(primary_layer, (token for token in fileiter), compressed = not args.uncompressed, comment = c)
-            elif type == "int":
-                variable = IntegerVariable(primary_layer, [parse_int(s, default=args.int_default) for s in fileiter], compressed = not args.uncompressed, comment = c)
-            elif type == "delta":
-                variable = IntegerVariable(primary_layer, [parse_int(s, default=args.int_default) for s in fileiter], compressed = not args.uncompressed, delta= True, comment = c)
-            elif type == "set":
-                variable = SetVariable(primary_layer, [parse_set(s) for s in fileiter], comment = c)
-            elif type == "ptr":
-                base_index = next(i for i, (n, _) in enumerate(p_attrs) if n == args.ptr_base)
-                with open_input() as f2:
-                    base = PFileIter(f2, base_index, len(p_attrs))
-                    variable = PointerVariable(primary_layer, [parse_ptr(cpos, b, h) for cpos, (b, h) in enumerate(zip(base, fileiter))], compressed = not args.uncompressed, comment = c)
-            elif type == "skip":
-                continue
-            else:
-                print(f"Invalid type '{type}' for p attribute '{name}'")
-                continue
-        except Exception as e:
-            print(f"Error while encoding p attribute '{name}': {e}")
-            exit()
+        # try:
+        if type == "indexed":
+            variable = FileIndexedStringVariable(primary_layer, fileiter, compressed = not args.uncompressed, comment = c)
+        elif type == "plain":
+            variable = PlainStringVariable(primary_layer, fileiter, compressed = not args.uncompressed, comment = c)
+        elif type == "int":
+            variable = IntegerVariable(primary_layer, [parse_int(s, default=args.int_default) for s in fileiter], compressed = not args.uncompressed, comment = c)
+        elif type == "delta":
+            variable = IntegerVariable(primary_layer, [parse_int(s, default=args.int_default) for s in fileiter], compressed = not args.uncompressed, delta= True, comment = c)
+        elif type == "set":
+            variable = SetVariable(primary_layer, [parse_set(s) for s in fileiter], comment = c)
+        elif type == "ptr":
+            base_index = next(i for i, (n, _) in enumerate(p_attrs) if n == args.ptr_base)
+            with open_input() as f2:
+                base = PFileIter(f2, base_index, len(p_attrs))
+                variable = PointerVariable(primary_layer, [parse_ptr(cpos, b, h) for cpos, (b, h) in enumerate(zip(base, fileiter))], compressed = not args.uncompressed, comment = c)
+        elif type == "skip":
+            continue
+        else:
+            print(f"Invalid type '{type}' for p attribute '{name}'")
+            continue
+        # except Exception as e:
+        #     print(f"Error while encoding p attribute '{name}': {e}")
+        #     exit()
 
     write_datastore_object(variable, name)
 
