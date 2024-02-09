@@ -79,6 +79,8 @@ class IndexedStringVariable(Variable):
 
         # lexicon of unique strings, sorted by total occurence
         lex = Counter(strings)
+        total = lex.total()
+        assert total == len(strings), "lexicon dropped tokens"
         lex = {x[0]: i for i, x in enumerate(lex.most_common())}
 
 
@@ -92,12 +94,12 @@ class IndexedStringVariable(Variable):
 
         lexindex = Index(hashes, "LexHash", lsize)
 
-        lexids = [(lex[pos],) for pos in strings]
+        lexids = (lex[s] for s in strings)
 
         if compressed:
-            lexidstream = VectorComp(lexids, "LexIDStream", len(lexids))
+            lexidstream = VectorComp(lexids, "LexIDStream", total)
         else:
-            lexidstream = Vector(lexids, "LexIDStream", len(lexids))
+            lexidstream = Vector(lexids, "LexIDStream", total)
 
         # inverted lookup index associating each lexicon ID with its positionso of occurence
         invidx = InvertedIndex(list(lex), lexids, "LexIDIndex", lsize)

@@ -8,7 +8,7 @@ import tempfile
 from ziggypy.components import *
 from ziggypy.layers import *
 from ziggypy.variables import *
-from ziggypy.util import PFileIter
+from ziggypy.util import PFileIter, SFileIter
 
 from pathlib import Path
 
@@ -98,9 +98,7 @@ for a in args.a:
 
 print("Processing VRT...")
 
-stack = [] # parsing stack for s attrs, list of openend tags (startpos, tagname, attrs)
-spans = dict() # keys are the different s attrs, values list of spans (startpos, endpos)
-span_attrs = dict() # same as above, but values are the associated attributes for each span 
+tags = set() # set of s attr tags found in the input file
 cpos = 0
 pcount = 0
 
@@ -148,21 +146,13 @@ with open_input() as f:
         # s attrs
         else:
             parser.Parse(line)
-            is_closing_tag, tagname, attrs = parser_state
+            is_closing_tag, tagname, _ = parser_state
 
-            if tagname in s_attrs:
-                if not is_closing_tag:
-                    stack.append((cpos, tagname, attrs))
-                else:
-                    if len(stack) > 0 and stack[-1][1] == tagname:
-                        startpos, start_tagname, attrs = stack.pop()
-                        if tagname not in spans.keys():
-                            spans[tagname] = []
-                            span_attrs[tagname] = []
-                        spans[tagname].append((startpos, cpos))
-                        span_attrs[tagname].append(attrs)
+            if is_closing_tag:
+                if is_closing_tag:
+                    tags.add(tagname)
 
-print(f"\t found {len(spans.keys())} s-attrs: {tuple(spans.keys())}")
+print(f"\t found {len(tags)} s-attrs: {tuple(tags)}")
 
 print("Encoding the following attributes:")
 for name, type in p_attrs:
@@ -179,6 +169,9 @@ for name in s_attrs:
     if name in s_annos.keys():
         for annotation, type in s_annos[name]:
             print(f"\t\t'{annotation}' of type '{type}'")
+
+assert all(s in tags for s in s_attrs), "Specified s-attrs are not present in input file"
+assert all(a in tags for a in s_annos.keys()), "Specified s-attr annotations are not present in input file"
 
 if not p_attrs and not s_attrs and not s_annos:
     print("\tNo attributes for encoding")
@@ -296,8 +289,11 @@ s_attr_layers = dict()
 ## Segmentation Layers for s attributes
 
 for attr in s_attrs:
-    slen = len(spans[attr])
-    layer = SegmentationLayer(primary_layer, slen, spans[attr], compressed = not args.uncompressed, comment = f"s-attr {attr}")
+    with open_input() as f:
+        fileiter = SFileIter(f, attr, fix=args.invalid_xml)
+        ranges = [r for r, _ in fileiter]
+
+    layer = SegmentationLayer(primary_layer, len(ranges), ranges, compressed = not args.uncompressed, comment = f"s-attr {attr}")
 
     s_attr_layers[attr] = layer
     write_datastore_object(layer, f"{attr}/{attr}")
@@ -309,8 +305,10 @@ for attr, annos in s_annos.items():
     base_layer = s_attr_layers[attr]
 
     for anno, type in annos:
+        with open_input() as f:
+            fileiter = SFileIter(f, attr, fix=args.invalid_xml)
+            data = [a[anno] for _, a in fileiter]
 
-        data = [attrs[anno] for attrs in span_attrs[attr]]
         assert len(data) == base_layer.n, f"Inconsistend number of annotations for annotation '{anno}' for s attribute '{attr}'"
 
         c = f"s-attr {attr}_{anno}"
