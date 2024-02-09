@@ -575,9 +575,7 @@ class InvertedIndex(Component):
             self.encoded += pack('<q', offset) # offset for postings list
             offset += len(e)
 
-        # write postings lists
-
-        self.encoded += b''.join(postings_encoded)
+        self.postings_encoded = postings_encoded
 
 
     def bytelen(self):
@@ -586,3 +584,6 @@ class InvertedIndex(Component):
 
     def write(self, f):
         f.write(self.encoded)
+        # write postings lists
+        for p in self.postings_encoded:
+            f.write(p)
