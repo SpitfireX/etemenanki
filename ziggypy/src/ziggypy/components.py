@@ -108,9 +108,9 @@ class Vector(Component):
         self.n = n
         self.d = d
         if not type(items) is np.ndarray:
-            data = np.atleast_2d(np.fromiter(items, dtype=np.int64))
+            self.data = np.atleast_2d(np.fromiter(items, dtype=np.int64))
         else:
-            data = items
+            self.data = items
         self.data.shape = (d, n)
 
     
