@@ -262,9 +262,9 @@ for i, (name, type) in enumerate(p_attrs):
         elif type == "plain":
             variable = PlainStringVariable(primary_layer, fileiter, compressed = not args.uncompressed, comment = c)
         elif type == "int":
-            variable = IntegerVariable(primary_layer, [parse_int(s, default=args.int_default) for s in fileiter], compressed = not args.uncompressed, comment = c)
+            variable = FileIntegerVariable(primary_layer, fileiter, clen, compressed = not args.uncompressed, comment = c, parse_int=lambda x: parse_int(x, default=args.int_default))
         elif type == "delta":
-            variable = IntegerVariable(primary_layer, [parse_int(s, default=args.int_default) for s in fileiter], compressed = not args.uncompressed, delta= True, comment = c)
+            variable = FileIntegerVariable(primary_layer, fileiter, clen, compressed = not args.uncompressed, comment = c, parse_int=lambda x: parse_int(x, default=args.int_default), delta=True)
         elif type == "set":
             variable = SetVariable(primary_layer, [parse_set(s) for s in fileiter], comment = c)
         elif type == "ptr":

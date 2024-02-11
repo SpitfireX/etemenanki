@@ -205,6 +205,48 @@ class IntegerVariable(Variable):
         )
 
 
+class FileIntegerVariable(Variable):
+
+    def __init__(self, base_layer: Layer, file: ResettableIter, length: int, b: int = 1, uuid: Optional[UUID] = None, compressed: bool = True, delta: bool = False, comment: str = "", parse_int=int):
+    
+        super().__init__(base_layer, uuid if uuid else uuid4())
+
+        assert length == base_layer.n, "variable must be of same size as its base layer"
+
+        # stream of integers
+        file.reset()
+        ints = (parse_int(i) for i in file)
+
+        if compressed:
+            if delta:
+                int_stream = VectorDelta(ints, "IntStream", length)
+            else:
+                int_stream = VectorComp(ints, "IntStream", length)
+        else:
+            int_stream = Vector(ints, "IntStream", length)
+
+        # sort index
+        file.reset()
+        ints = (parse_int(i) for i in file)
+
+        pairs = [(n, i) for i, n in enumerate(ints)]
+        pairs.sort(key = lambda x: x[0])
+
+        if compressed:
+            int_sort = IndexCompressed(pairs, "IntSort", length)
+        else:
+            int_sort = Index(pairs, "IntSort", length)
+
+        self.container = Container(
+            (int_stream, int_sort),
+            'ZVi',
+            (self.base_layer.n, b),
+            self.uuid,
+            (base_layer.uuid, None),
+            comment,
+        )
+
+
 class SetVariable(Variable):
     def __init__(self, base_layer: Layer, sets: Sequence[set[bytes]], uuid: Optional[UUID] = None, comment: str = ""):
 
