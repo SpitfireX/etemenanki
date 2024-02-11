@@ -266,7 +266,7 @@ for i, (name, type) in enumerate(p_attrs):
         elif type == "delta":
             variable = FileIntegerVariable(primary_layer, fileiter, clen, compressed = not args.uncompressed, comment = c, parse_int=lambda x: parse_int(x, default=args.int_default), delta=True)
         elif type == "set":
-            variable = SetVariable(primary_layer, [parse_set(s) for s in fileiter], comment = c)
+            variable = FileSetVariable(primary_layer, fileiter, clen, parse_set, comment = c)
         elif type == "ptr":
             base_index = next(i for i, (n, _) in enumerate(p_attrs) if n == args.ptr_base)
             with open_input() as f2:

@@ -3,6 +3,7 @@ from io import RawIOBase
 from itertools import chain, accumulate
 from uuid import UUID, uuid4
 from collections import Counter
+from typing import Callable
 
 from ziggypy.util import ResettableIter
 
@@ -287,6 +288,55 @@ class SetVariable(Variable):
             ),
             'ZVs',
             (n, v),
+            self.uuid,
+            (base_layer.uuid, None),
+            comment,
+        )
+
+
+class FileSetVariable(Variable):
+    def __init__(self, base_layer: Layer, file: ResettableIter, length: int, parse_set: Callable[[str], set], uuid: Optional[UUID] = None, comment: str = ""):
+
+        super().__init__(base_layer, uuid if uuid else uuid4())
+
+        assert length == base_layer.n, "variable must be of same size as its base layer"
+
+        # global lexicon of types 
+        file.reset()
+        sets = (parse_set(l) for l in file)
+
+        types = Counter()
+        for set in sets:
+            types.update(set)
+        types = {x[0]: i for i, x in enumerate(types.most_common())}
+
+        v = len(types.keys()) # number of unique types
+        lexicon = StringVector(types.keys(), "Lexicon", v)
+
+        # sort index of types
+        types_hash = [(fnv_hash(t), i) for t, i in types.items()]
+
+        lexhash = Index(types_hash, "LexHash", len(types_hash))
+
+        # sets of type ids
+        file.reset()
+        sets = (parse_set(l) for l in file)
+        id_sets = [ sorted([types[i] for i in s]) for s in sets ]
+
+        id_set_stream = Set(id_sets, "IDSetStream", length, 1)
+
+        # index of type occurrences in sets, associates types with set IDs/layer positions
+        id_set_index = InvertedIndex(list(types), id_sets, "IDSetIndex", v)
+
+        self.container = Container(
+            (
+                lexicon,
+                lexhash,
+                id_set_stream,
+                id_set_index,
+            ),
+            'ZVs',
+            (length, v),
             self.uuid,
             (base_layer.uuid, None),
             comment,
