@@ -15,8 +15,7 @@ fn vec_setup(filename: &'static str, component_name: &'static str) -> (Vector<'s
     let container = Container::from_mmap(mmap, "word".to_owned()).unwrap();
 
     let vec = *container
-        .components
-        .get(component_name)
+        .get_component(component_name)
         .unwrap()
         .as_vector()
         .unwrap();
@@ -100,8 +99,7 @@ fn idxcmp_setup(filename: &'static str, component_name: &'static str) -> (Index<
     let container = Container::from_mmap(mmap, "test".to_owned()).unwrap();
 
     let index = *container
-        .components
-        .get(component_name)
+        .get_component(component_name)
         .unwrap()
         .as_index()
         .unwrap();
@@ -296,15 +294,13 @@ fn invidx_setup(filename: &'static str, vec_name: &'static str, invidx_name: &'s
     let container = Container::from_mmap(mmap, "test".to_owned()).unwrap();
 
     let vec = *container
-        .components
-        .get(vec_name)
+        .get_component(vec_name)
         .unwrap()
         .as_vector()
         .unwrap();
 
     let invidx = *container
-        .components
-        .get(invidx_name)
+        .get_component(invidx_name)
         .unwrap()
         .as_inverted_index()
         .unwrap();

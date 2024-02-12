@@ -5,7 +5,7 @@ use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use uuid::Uuid;
 
-use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector};
+use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector, CompressionType};
 use crate::container::{self, Container};
 use crate::macros::{check_and_return_component, get_container_base};
 
@@ -24,7 +24,7 @@ impl<'map> TryFrom<Container<'map>> for Variable<'map> {
     type Error = container::TryFromError;
 
     fn try_from(container: Container<'map>) -> Result<Self, Self::Error> {
-        match container.header.container_type {
+        match container.header().container_type() {
             container::Type::IndexedStringVariable => Ok(Self::IndexedString(
                 IndexedStringVariable::try_from(container)?,
             )),
@@ -57,7 +57,7 @@ pub struct IndexedStringVariable<'map> {
     base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: container::Header<'map>,
+    pub header: &'map container::RawHeader,
     lexicon: components::StringVector<'map>,
     lex_hash: components::CachedIndex<'map>,
     lex_id_stream: components::CachedVector<'map, 1>,
@@ -116,7 +116,7 @@ impl<'map> IndexedStringVariable<'map> {
     }
 
     pub fn len(&self) -> usize {
-        self.header.dim1
+        self.header.dim1()
     }
 
     pub fn lexicon(&self) -> &components::StringVector {
@@ -124,7 +124,7 @@ impl<'map> IndexedStringVariable<'map> {
     }
 
     pub fn n_types(&self) -> usize {
-        self.header.dim2
+        self.header.dim2()
     }
 }
 
@@ -132,31 +132,26 @@ impl<'map> TryFrom<Container<'map>> for IndexedStringVariable<'map> {
     type Error = container::TryFromError;
 
     fn try_from(container: Container<'map>) -> Result<Self, Self::Error> {
-        let Container {
-            mmap,
-            name,
-            header,
-            mut components,
-        } = container;
+        let header = *container.header();
 
-        match header.container_type {
+        match header.container_type() {
             container::Type::IndexedStringVariable => {
-                let base = crate::macros::get_container_base!(header, PlainStringVariable);
-                let n = header.dim1;
-                let v = header.dim2;
+                let base = crate::macros::get_container_base!(container, PlainStringVariable);
+                let n = header.dim1();
+                let v = header.dim2();
 
-                let lexicon = check_and_return_component!(components, "Lexicon", StringVector)?;
+                let lexicon = check_and_return_component!(container, "Lexicon", StringVector)?;
                 if lexicon.len() != v {
                     return Err(Self::Error::WrongComponentDimensions("Lexicon"));
                 }
 
-                let lex_hash = check_and_return_component!(components, "LexHash", Index)?;
+                let lex_hash = check_and_return_component!(container, "LexHash", Index)?;
                 if lex_hash.len() != v {
                     return Err(Self::Error::WrongComponentDimensions("LexHash"));
                 }
                 let lex_hash = CachedIndex::new(lex_hash);
 
-                let lex_id_stream = check_and_return_component!(components, "LexIDStream", Vector)?;
+                let lex_id_stream = check_and_return_component!(container, "LexIDStream", Vector)?;
                 if lex_id_stream.len() != n || lex_id_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("LexIDStream"));
                 }
@@ -164,11 +159,13 @@ impl<'map> TryFrom<Container<'map>> for IndexedStringVariable<'map> {
                     .expect("width already checked, should be 1");
 
                 let lex_id_index =
-                    check_and_return_component!(components, "LexIDIndex", InvertedIndex)?;
+                    check_and_return_component!(container, "LexIDIndex", InvertedIndex)?;
                 if lex_id_index.n_types() != v {
                     return Err(Self::Error::WrongComponentDimensions("LexIDIndex"));
                 }
                 let lex_id_index = Rc::new(CachedInvertedIndex::new(lex_id_index));
+
+                let (name, mmap, header, _) = container.into_raw_parts();
 
                 Ok(Self {
                     base,
@@ -228,7 +225,7 @@ pub struct PlainStringVariable<'map> {
     base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: container::Header<'map>,
+    pub header: &'map container::RawHeader,
     string_data: components::StringList<'map>,
     offset_stream: components::CachedVector<'map, 1>,
     string_hash: components::CachedIndex<'map>,
@@ -255,7 +252,7 @@ impl<'map> PlainStringVariable<'map> {
     }
 
     pub fn len(&self) -> usize {
-        self.header.dim1
+        self.header.dim1()
     }
 }
 
@@ -263,37 +260,34 @@ impl<'map> TryFrom<Container<'map>> for PlainStringVariable<'map> {
     type Error = container::TryFromError;
 
     fn try_from(container: Container<'map>) -> Result<Self, Self::Error> {
-        let Container {
-            mmap,
-            name,
-            header,
-            mut components,
-        } = container;
+        let header = *container.header();
 
-        match header.container_type {
+        match header.container_type() {
             container::Type::PlainStringVariable => {
-                let base = get_container_base!(header, PlainStringVariable);
-                let n = header.dim1;
+                let base = get_container_base!(container, PlainStringVariable);
+                let n = header.dim1();
 
                 let string_data =
-                    check_and_return_component!(components, "StringData", StringList)?;
+                    check_and_return_component!(container, "StringData", StringList)?;
                 if string_data.len() != n {
                     return Err(Self::Error::WrongComponentDimensions("StringData"));
                 }
 
                 let offset_stream =
-                    check_and_return_component!(components, "OffsetStream", Vector)?;
+                    check_and_return_component!(container, "OffsetStream", Vector)?;
                 if offset_stream.len() != n + 1 || offset_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("OffsetStream"));
                 }
                 let offset_stream = CachedVector::<1>::new(offset_stream)
                     .expect("width already checked, should be 2");
 
-                let string_hash = check_and_return_component!(components, "StringHash", Index)?;
+                let string_hash = check_and_return_component!(container, "StringHash", Index)?;
                 if string_hash.len() != n {
                     return Err(Self::Error::WrongComponentDimensions("StringHash"));
                 }
                 let string_hash = CachedIndex::new(string_hash);
+
+                let (name, mmap, header, _) = container.into_raw_parts();
 
                 Ok(Self {
                     base,
@@ -353,12 +347,20 @@ pub struct IntegerVariable<'map> {
     base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: container::Header<'map>,
+    pub header: &'map container::RawHeader,
     int_stream: components::CachedVector<'map, 1>,
     int_sort: components::CachedIndex<'map>,
 }
 
 impl<'map> IntegerVariable<'map> {
+    pub fn from_iter<I>(iter: I, storage_mode: CompressionType) -> Self where I: Iterator<Item=i64> {
+        let container = Container::new_mmap().unwrap();
+
+        
+
+        container.try_into().unwrap()
+    }
+
     pub fn get(&self, index: usize) -> Option<i64> {
         if index < self.len() {
             Some(self.get_unchecked(index))
@@ -383,11 +385,11 @@ impl<'map> IntegerVariable<'map> {
     }
 
     pub fn len(&self) -> usize {
-        self.header.dim1
+        self.header.dim1()
     }
 
     pub fn b(&self) -> usize {
-        self.header.dim2
+        self.header.dim2()
     }
 }
 
@@ -395,30 +397,27 @@ impl<'map> TryFrom<Container<'map>> for IntegerVariable<'map> {
     type Error = container::TryFromError;
 
     fn try_from(container: Container<'map>) -> Result<Self, Self::Error> {
-        let Container {
-            mmap,
-            name,
-            header,
-            mut components,
-        } = container;
+        let header = *container.header();
 
-        match header.container_type {
+        match header.container_type() {
             container::Type::IntegerVariable => {
-                let base = get_container_base!(header, PlainStringVariable);
-                let n = header.dim1;
+                let base = get_container_base!(container, PlainStringVariable);
+                let n = header.dim1();
 
-                let int_stream = check_and_return_component!(components, "IntStream", Vector)?;
+                let int_stream = check_and_return_component!(container, "IntStream", Vector)?;
                 if int_stream.len() != n || int_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("IntStream"));
                 }
                 let int_stream = CachedVector::<1>::new(int_stream)
                     .expect("width already checked, should be 1");
 
-                let int_sort = check_and_return_component!(components, "IntSort", Index)?;
+                let int_sort = check_and_return_component!(container, "IntSort", Index)?;
                 if int_sort.len() != n {
                     return Err(Self::Error::WrongComponentDimensions("IntSort"));
                 }
                 let int_sort = CachedIndex::new(int_sort);
+
+                let (name, mmap, header, _) = container.into_raw_parts();
 
                 Ok(Self {
                     base,
@@ -459,7 +458,7 @@ pub struct SetVariable<'map> {
     base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: container::Header<'map>,
+    pub header: &'map container::RawHeader,
     lexicon: components::StringVector<'map>,
     lex_hash: components::CachedIndex<'map>,
     id_set_stream: components::Set<'map>,
@@ -485,11 +484,11 @@ impl<'map> SetVariable<'map> {
     }
 
     pub fn len(&self) -> usize {
-        self.header.dim1
+        self.header.dim1()
     }
 
     pub fn n_types(&self) -> usize {
-        self.header.dim2
+        self.header.dim2()
     }
 }
 
@@ -497,42 +496,39 @@ impl<'map> TryFrom<Container<'map>> for SetVariable<'map> {
     type Error = container::TryFromError;
 
     fn try_from(container: Container<'map>) -> Result<Self, Self::Error> {
-        let Container {
-            mmap,
-            name,
-            header,
-            mut components,
-        } = container;
+        let header = *container.header();
 
-        match header.container_type {
+        match header.container_type() {
             container::Type::SetVariable => {
-                let base = get_container_base!(header, PlainStringVariable);
-                let n = header.dim1;
-                let v = header.dim2;
+                let base = get_container_base!(container, PlainStringVariable);
+                let n = header.dim1();
+                let v = header.dim2();
 
-                let lexicon = check_and_return_component!(components, "Lexicon", StringVector)?;
+                let lexicon = check_and_return_component!(container, "Lexicon", StringVector)?;
                 if lexicon.len() != v {
                     return Err(Self::Error::WrongComponentDimensions("Lexicon"));
                 }
 
-                let lex_hash = check_and_return_component!(components, "LexHash", Index)?;
+                let lex_hash = check_and_return_component!(container, "LexHash", Index)?;
                 if lex_hash.len() != v {
                     return Err(Self::Error::WrongComponentDimensions("LexHash"));
                 }
                 let lex_hash = CachedIndex::new(lex_hash);
 
-                let id_set_stream = check_and_return_component!(components, "IDSetStream", Set)?;
+                let id_set_stream = check_and_return_component!(container, "IDSetStream", Set)?;
                 if id_set_stream.len() != n ||
                     id_set_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("IDSetStream"));
                 }
 
                 let id_set_index =
-                    check_and_return_component!(components, "IDSetIndex", InvertedIndex)?;
+                    check_and_return_component!(container, "IDSetIndex", InvertedIndex)?;
                 if id_set_index.n_types() != v {
                     return Err(Self::Error::WrongComponentDimensions("IDSetIndex"));
                 }
                 let id_set_index = CachedInvertedIndex::new(id_set_index);
+
+                let (name, mmap, header, _) = container.into_raw_parts();
 
                 Ok(Self {
                     base,
@@ -557,7 +553,7 @@ pub struct PointerVariable<'map> {
     base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: container::Header<'map>,
+    pub header: &'map container::RawHeader,
     head_stream: components::CachedVector<'map, 1>,
     head_sort: components::CachedIndex<'map>,
 }
@@ -589,7 +585,7 @@ impl<'map> PointerVariable<'map> {
     }
 
     pub fn len(&self) -> usize {
-        self.header.dim1
+        self.header.dim1()
     }
 }
 
@@ -597,30 +593,27 @@ impl<'map> TryFrom<Container<'map>> for PointerVariable<'map> {
     type Error = container::TryFromError;
 
     fn try_from(container: Container<'map>) -> Result<Self, Self::Error> {
-        let Container {
-            mmap,
-            name,
-            header,
-            mut components,
-        } = container;
+        let header = *container.header();
 
-        match header.container_type {
+        match header.container_type() {
             container::Type::PointerVariable => {
-                let base = get_container_base!(header, PlainStringVariable);
-                let n = header.dim1;
+                let base = get_container_base!(container, PlainStringVariable);
+                let n = header.dim1();
 
-                let head_stream = check_and_return_component!(components, "HeadStream", Vector)?;
+                let head_stream = check_and_return_component!(container, "HeadStream", Vector)?;
                 if head_stream.len() != n || head_stream.width() != 1 {
                     return Err(Self::Error::WrongComponentDimensions("HeadStream"));
                 }
                 let head_stream = CachedVector::<1>::new(head_stream)
                     .expect("width already checked, should be 1");
 
-                let head_sort = check_and_return_component!(components, "HeadSort", Index)?;
+                let head_sort = check_and_return_component!(container, "HeadSort", Index)?;
                 if head_sort.len() != n {
                     return Err(Self::Error::WrongComponentDimensions("HeadSort"));
                 }
                 let head_sort = CachedIndex::new(head_sort);
+
+                let (name, mmap, header, _) = container.into_raw_parts();
 
                 Ok(Self {
                     base,

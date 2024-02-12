@@ -80,7 +80,7 @@ impl<'map> Datastore<'map> {
             let name = path.file_stem().unwrap().to_str().unwrap().to_owned();
             let container = Container::from_mmap(mmap, name)?;
 
-            containers.insert(container.header.uuid, container);
+            containers.insert(container.header().uuid(), container);
         }
 
         let mut layers_by_uuid = HashMap::new();
@@ -88,9 +88,9 @@ impl<'map> Datastore<'map> {
 
         // instantiate all primary layers
         for (uuid, container) in
-            containers.extract_if(|_, c| c.header.container_type == container::Type::PrimaryLayer)
+            containers.extract_if(|_, c| c.header().container_type() == container::Type::PrimaryLayer)
         {
-            let name = container.name.clone();
+            let name = container.name().to_owned();
             let primarylayer = container.try_into()?;
             let layer = layers::Layer::new_primary(primarylayer);
 
@@ -101,14 +101,14 @@ impl<'map> Datastore<'map> {
         // next instantiate all segmentation layers (that are on top of the primary layers)
         while containers
             .values()
-            .any(|c| c.header.container_type == container::Type::SegmentationLayer)
+            .any(|c| c.header().container_type() == container::Type::SegmentationLayer)
         {
             let seglayers = containers
-                .extract_if(|_, c| c.header.container_type == container::Type::SegmentationLayer);
+                .extract_if(|_, c| c.header().container_type() == container::Type::SegmentationLayer);
 
             let mut temp_by_uuid = Vec::new();
             for (uuid, container) in seglayers {
-                let name = container.name.clone();
+                let name = container.name().to_owned();
 
                 let seglayer: layers::SegmentationLayer = container.try_into()?;
                 if !layers_by_uuid.contains_key(&seglayer.base) {
@@ -126,11 +126,11 @@ impl<'map> Datastore<'map> {
             layers_by_uuid.extend(temp_by_uuid);
         }
 
-        let vars = containers.extract_if(|_, c| c.header.raw_class == 'V');
+        let vars = containers.extract_if(|_, c| c.header().class() == 'V');
 
         for (_, container) in vars {
             let base = layers_by_uuid
-                .get_mut(&container.header.base1_uuid.ok_or(
+                .get_mut(&container.header().base1().ok_or(
                     DatastoreError::ContainerInstantiationError(
                         container::TryFromError::ConsistencyError(
                             "variable with no declared base layer",
@@ -140,7 +140,7 @@ impl<'map> Datastore<'map> {
                 .ok_or(DatastoreError::ConsistencyError(
                     "variable with base layer not in datastore",
                 ))?;
-            let name = container.name.clone();
+            let name = container.name().to_owned();
 
             let var: variables::Variable = container.try_into()?;
             if let Err(_) = base.add_variable(name, var) {
@@ -236,15 +236,14 @@ impl From<container::TryFromError> for DatastoreError {
 
 mod macros {
     macro_rules! check_and_return_component {
-        ($components:expr, $name:literal, $type:ident) => {
-            match $components.entry($name) {
-                std::collections::hash_map::Entry::Occupied(entry) => paste::paste! {
-                    entry.remove()
-                        .[<into_ $type:snake>]()
+        ($container:expr, $name:literal, $type:ident) => {
+            match $container.get_component($name) {
+                Some(component) => paste::paste! {
+                    component.[<into_ $type:snake>]()
                         .map_err(|_| container::TryFromError::WrongComponentType($name))
                 },
 
-                std::collections::hash_map::Entry::Vacant(_) => {
+                None => {
                     Err(container::TryFromError::MissingComponent($name))
                 }
             }
@@ -252,8 +251,8 @@ mod macros {
     }
 
     macro_rules! get_container_base {
-        ($header:expr, $selftype:ident) => {
-            match $header.base1_uuid {
+        ($container:expr, $selftype:ident) => {
+            match $container.header().base1() {
                 Some(uuid) => uuid,
                 None => {
                     return Err(container::TryFromError::ConsistencyError(concat!(

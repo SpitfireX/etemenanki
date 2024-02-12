@@ -1,6 +1,7 @@
 use std::{
-    collections::HashMap,
-    error, fmt, mem,
+    error, fmt, 
+    io::Result as IoResult,
+    mem,
     num::TryFromIntError,
     ops::Range,
     str::{self, Utf8Error},
@@ -47,6 +48,43 @@ pub struct RawHeader {
     comment: [u8; 72],
 }
 
+impl RawHeader {
+    pub fn class(&self) -> char {
+        self.class as char
+    }
+
+    pub fn dim1(&self) -> usize {
+        self.dim1 as usize
+    }
+
+    pub fn dim2(&self) -> usize {
+        self.dim2 as usize
+    }
+
+    pub fn container_type(&self) -> Type {
+        (((self.family as u64) << 16) | ((self.class as u64) << 8) | self.ctype as u64)
+            .try_into().unwrap()
+    }
+
+    pub fn uuid(&self) -> Uuid {
+        Uuid::from_bytes(self.uuid)
+    }
+
+    pub fn base1(&self) -> Option<Uuid> {
+        let uuid = Uuid::from_bytes(self.base1_uuid);
+        (!uuid.is_nil()).then_some(uuid)
+    }
+
+    pub fn base2(&self) -> Option<Uuid> {
+        let uuid = Uuid::from_bytes(self.base2_uuid);
+        (!uuid.is_nil()).then_some(uuid)
+    }
+
+    pub fn comment(&self) -> Option<&str> {
+        std::str::from_utf8(&self.comment).ok()
+    }
+}
+
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct RawBomEntry {
@@ -60,36 +98,26 @@ pub struct RawBomEntry {
     pub param2: i64,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Header<'map> {
-    pub version: &'map str,
-    pub raw_family: char,
-    pub raw_class: char,
-    pub raw_type: char,
-    pub container_type: Type,
-    pub allocated_components: u8,
-    pub used_components: u8,
-    pub uuid: Uuid,
-    pub base1_uuid: Option<Uuid>,
-    pub base2_uuid: Option<Uuid>,
-    pub dim1: usize,
-    pub dim2: usize,
-    pub extensions: i64,
-    pub comment: &'map str,
+impl RawBomEntry {
+    fn name(&self) -> Option<&str> {
+        str::from_utf8(&self.name).ok()
+            .map(|s| s.trim_end_matches("\0"))
+    }
 }
 
 #[derive(Debug)]
 pub struct Container<'map> {
-    pub mmap: Mmap,
-    pub name: String,
-    pub header: Header<'map>,
-    pub components: HashMap<&'map str, Component<'map>>,
+    name: String,
+    mmap: Mmap,
+    header: &'map RawHeader,
+    bom: &'map [RawBomEntry]
 }
 
 impl<'map> Container<'map> {
     pub fn from_mmap(mmap: Mmap, name: String) -> Result<Self, Error> {
         let Range { start, end } = mmap.as_ref().as_ptr_range();
 
+        // map header
         let header = unsafe {
             if start.offset(mem::size_of::<RawHeader>().try_into()?) <= end {
                 (start as *const RawHeader)
@@ -100,36 +128,19 @@ impl<'map> Container<'map> {
             }
         }?;
 
+        // check magic
         let magic = str::from_utf8(&header.magic)?;
         if !(magic == "Ziggurat") {
             return Err(Error::FormatError("Invalid magic string"));
         }
 
+        // check version
         let version = str::from_utf8(&header.version)?;
         if !(version == "1.0") {
             return Err(Error::FormatError("Invalid container version"));
         }
 
-        let raw_family = header.family as char;
-        let raw_class = header.class as char;
-        let raw_type = header.ctype as char;
-
-        let container_type =
-            (((header.family as u64) << 16) | ((header.class as u64) << 8) | header.ctype as u64)
-                .try_into()?;
-
-        let uuid = Uuid::from_bytes(header.uuid);
-
-        let base1_uuid = {
-            let uuid = Uuid::from_bytes(header.base1_uuid);
-            (!uuid.is_nil()).then_some(uuid)
-        };
-
-        let base2_uuid = {
-            let uuid = Uuid::from_bytes(header.base2_uuid);
-            (!uuid.is_nil()).then_some(uuid)
-        };
-
+        // map BOM and check if its in bounds
         let bom = unsafe {
             let bom_ptr = start.offset(160);
             let n = header.allocated as usize;
@@ -142,52 +153,64 @@ impl<'map> Container<'map> {
             }
         }?;
 
-        let comment = std::str::from_utf8(&header.comment)?;
-
-        let mut components = HashMap::new();
-
+        // check if all components are in bounds
         for be in bom {
             if be.family != 0x01 {
                 continue;
             }
 
             unsafe {
-                if start.offset(be.offset as isize) <= end
-                    && start.offset((be.offset + be.size) as isize) <= end
+                if start.offset(be.offset as isize) > end
+                    && start.offset((be.offset + be.size) as isize) > end
                 {
-                    let name = str::from_utf8(&be.name)?.trim_end_matches("\0");
-                    let component =
-                        Component::from_raw_parts(be, start.offset(be.offset as isize))?;
-
-                    components.insert(name, component);
-                } else {
                     return Err(Error::Memory("component out of bounds"));
                 }
             }
         }
 
         Ok(Container {
-            mmap,
             name,
-            header: Header {
-                version,
-                raw_family,
-                raw_class,
-                raw_type,
-                container_type,
-                allocated_components: header.allocated,
-                used_components: header.used,
-                uuid,
-                base1_uuid,
-                base2_uuid,
-                dim1: header.dim1 as usize,
-                dim2: header.dim2 as usize,
-                extensions: header.extensions,
-                comment,
-            },
-            components,
+            mmap,
+            header,
+            bom,
         })
     }
+
+    pub fn get_component(&self, name: &str) -> Option<Component<'map>> {
+        let Range { start, end } = self.mmap.as_ref().as_ptr_range();
+        let be = self.bom.iter()
+            .find(| be | { be.name().is_some_and(|s| s == name) })?;
+
+        if be.family != 0x01 {
+            return None;
+        }
+
+        unsafe {
+            if start.offset(be.offset as isize) <= end
+                && start.offset((be.offset + be.size) as isize) <= end
+            {
+                let component =
+                    Component::from_raw_parts(be, start.offset(be.offset as isize)).ok()?;
+
+                Some(component)
+            } else {
+                None
+            }
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn header(&self) -> &RawHeader {
+        &self.header
+    }
+
+    pub fn into_raw_parts(self) -> (String, Mmap, &'map RawHeader, &'map [RawBomEntry]) {
+        (self.name, self.mmap, self.header, self.bom)
+    }
+
 }
 
 #[derive(Debug, Clone)]

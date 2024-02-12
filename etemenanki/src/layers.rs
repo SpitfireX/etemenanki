@@ -136,13 +136,13 @@ impl<'map> LayerVariables<'map> {
 pub struct PrimaryLayer<'map> {
     mmap: Mmap,
     pub name: String,
-    pub header: container::Header<'map>,
+    pub header: &'map container::RawHeader,
 }
 
 impl<'map> PrimaryLayer<'map> {
     #[inline]
     pub fn len(&self) -> usize {
-        self.header.dim1
+        self.header.dim1()
     }
 }
 
@@ -150,15 +150,11 @@ impl<'map> TryFrom<Container<'map>> for PrimaryLayer<'map> {
     type Error = container::TryFromError;
 
     fn try_from(container: Container<'map>) -> Result<Self, Self::Error> {
-        let Container {
-            mmap,
-            name,
-            header,
-            components: _,
-        } = container;
+        let header = *container.header();
 
-        match header.container_type {
+        match header.container_type() {
             container::Type::PrimaryLayer => {
+                let (name, mmap, header, _) = container.into_raw_parts();
                 Ok(Self {
                     mmap,
                     name,
@@ -176,7 +172,7 @@ pub struct SegmentationLayer<'map> {
     pub base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: container::Header<'map>,
+    pub header: &'map container::RawHeader,
     range_stream: components::CachedVector<'map, 2>,
     start_sort: components::CachedIndex<'map>,
     end_sort: components::CachedIndex<'map>,
@@ -258,7 +254,7 @@ impl<'map> SegmentationLayer<'map> {
     }
 
     pub fn len(&self) -> usize {
-        self.header.dim1
+        self.header.dim1()
     }
 }
 
@@ -266,36 +262,32 @@ impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {
     type Error = container::TryFromError;
 
     fn try_from(container: Container<'map>) -> Result<Self, Self::Error> {
-        let Container {
-            mmap,
-            name,
-            header,
-            mut components,
-        } = container;
-
-        match header.container_type {
+        let header = *container.header();
+        match header.container_type() {
             container::Type::SegmentationLayer => {
-                let base = get_container_base!(header, SegmentationLayer);
+                let base = get_container_base!(container, SegmentationLayer);
 
                 let range_stream =
-                    check_and_return_component!(components, "RangeStream", Vector)?;
-                if range_stream.width() != 2 || range_stream.len() != header.dim1 {
+                    check_and_return_component!(container, "RangeStream", Vector)?;
+                if range_stream.width() != 2 || range_stream.len() != header.dim1() {
                     return Err(Self::Error::WrongComponentDimensions("RangeStream"));
                 }
                 let range_stream = CachedVector::<2>::new(range_stream)
                     .expect("width already checked, should be 2");
 
-                let start_sort = check_and_return_component!(components, "StartSort", Index)?;
-                if start_sort.len() != header.dim1 {
+                let start_sort = check_and_return_component!(container, "StartSort", Index)?;
+                if start_sort.len() != header.dim1() {
                     return Err(Self::Error::WrongComponentDimensions("StartSort"));
                 }
                 let start_sort = CachedIndex::new(start_sort);
 
-                let end_sort = check_and_return_component!(components, "EndSort", Index)?;
-                if end_sort.len() != header.dim1 {
+                let end_sort = check_and_return_component!(container, "EndSort", Index)?;
+                if end_sort.len() != header.dim1() {
                     return Err(Self::Error::WrongComponentDimensions("EndSort"));
                 }
                 let end_sort = CachedIndex::new(end_sort);
+
+                let (name, mmap, header, _) = container.into_raw_parts();
 
                 Ok(Self {
                     base,
