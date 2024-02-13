@@ -4,7 +4,7 @@ extern crate test;
 
 use std::{fs::File, io::{BufRead, BufReader, Read, Result as IoResult}};
 use flate2::read::GzDecoder;
-use quick_xml::events::{BytesText, Event};
+use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 
 use pyo3::prelude::*;
@@ -24,7 +24,7 @@ struct IntVariableCore {
 #[pymethods]
 impl IntVariableCore {
     #[new]
-    fn new(filename: &str, length: usize) -> Self {
+    fn new(_filename: &str, length: usize) -> Self {
         Self {
             length
         }
@@ -89,7 +89,7 @@ impl<R: Read> VrtReader<R> {
         None
     }
 
-    pub fn next_s(&mut self, tag: &str) -> Option<(usize, usize)> {
+    pub fn next_s(&mut self, _tag: &str) -> Option<(usize, usize)> {
         todo!()
     }
 }
@@ -178,13 +178,9 @@ impl<'a, R: Read> VrtReader2<R> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
-
-    use flate2::read::GzDecoder;
     use test::{Bencher, black_box};
     use crate::open_file;
     use crate::open_file2;
-    use crate::VrtReader;
 
     #[test]
     fn it_works() {
