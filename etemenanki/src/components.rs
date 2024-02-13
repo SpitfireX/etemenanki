@@ -19,7 +19,7 @@ use crate::container::BomEntry;
 
 #[repr(u16)]
 #[derive(Debug, IntoPrimitive, TryFromPrimitive)]
-pub enum ComponentType {
+pub enum Type {
     Blob = 0x0100,
     StringList = 0x0200,
     StringVector = 0x0300,
@@ -45,22 +45,22 @@ pub enum Component<'map> {
 
 impl<'map> Component<'map> {
     pub fn from_raw_parts(be: &BomEntry, start_ptr: *const u8) -> Result<Self, ComponentError> {
-        let component_type: ComponentType =
+        let component_type: Type =
             (((be.ctype as u16) << 8) | be.mode as u16).try_into()?;
 
         Ok(match component_type {
-            ComponentType::Blob => {
+            Type::Blob => {
                 let data = unsafe { std::slice::from_raw_parts(start_ptr, be.size as usize) };
                 Component::Blob(Blob::from_parts(data))
             }
 
-            ComponentType::StringList => {
+            Type::StringList => {
                 let n = be.param1 as usize;
                 let data = unsafe { std::slice::from_raw_parts(start_ptr, be.size as usize) };
                 Component::StringList(StringList::from_parts(n, data))
             }
 
-            ComponentType::StringVector => {
+            Type::StringVector => {
                 let n = be.param1 as usize;
 
                 // check if offsets array is in bounds
@@ -79,7 +79,7 @@ impl<'map> Component<'map> {
                 }
             }
 
-            ComponentType::Vector => {
+            Type::Vector => {
                 let n = be.param1 as usize;
                 let d = be.param2 as usize;
                 if d == 0 {
@@ -90,7 +90,7 @@ impl<'map> Component<'map> {
                 Component::Vector(Vector::uncompressed_from_parts(n, d, data))
             }
 
-            ComponentType::VectorComp => {
+            Type::VectorComp => {
                 let n = be.param1 as usize;
                 let d = be.param2 as usize;
                 let m = ((n - 1) / 16) + 1;
@@ -115,7 +115,7 @@ impl<'map> Component<'map> {
                 }
             }
 
-            ComponentType::VectorDelta => {
+            Type::VectorDelta => {
                 let n = be.param1 as usize;
                 let d = be.param2 as usize;
                 let m = ((n - 1) / 16) + 1;
@@ -140,7 +140,7 @@ impl<'map> Component<'map> {
                 }
             }
 
-            ComponentType::Set => {
+            Type::Set => {
                 let n = be.param1 as usize;
                 let p = be.param2 as usize;
                 let m = ((n - 1) / 16) + 1;
@@ -165,14 +165,14 @@ impl<'map> Component<'map> {
                 }
             }
 
-            ComponentType::Index => {
+            Type::Index => {
                 let n = be.param1 as usize;
                 let pairs_ptr = start_ptr as *const (i64, i64);
                 let pairs = unsafe { std::slice::from_raw_parts(pairs_ptr, n) };
                 Component::Index(Index::uncompressed_from_parts(n, pairs))
             }
 
-            ComponentType::IndexComp => {
+            Type::IndexComp => {
                 let n = be.param1 as usize;
                 let r = unsafe { *(start_ptr as *const i64) } as usize;
                 let mr = ((r - 1) / 16) + 1;
@@ -194,7 +194,7 @@ impl<'map> Component<'map> {
                 }
             }
 
-            ComponentType::InvertedIndex => {
+            Type::InvertedIndex => {
                 let k = be.param1 as usize;
 
                 // check if typeinfo array is in bounds
@@ -224,8 +224,8 @@ pub enum ComponentError {
     InvalidDimension(&'static str),
 }
 
-impl From<TryFromPrimitiveError<ComponentType>> for ComponentError {
-    fn from(value: TryFromPrimitiveError<ComponentType>) -> Self {
+impl From<TryFromPrimitiveError<Type>> for ComponentError {
+    fn from(value: TryFromPrimitiveError<Type>) -> Self {
         ComponentError::InvalidType(value.number)
     }
 }

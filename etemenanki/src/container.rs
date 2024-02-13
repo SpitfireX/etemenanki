@@ -6,7 +6,7 @@ use memmap2::{Mmap, MmapMut, MmapOptions};
 use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
 use uuid::Uuid;
 
-use crate::components::{Component, ComponentError, ComponentType};
+use crate::components::{self, Component, ComponentError};
 
 #[repr(u64)]
 #[derive(Debug, Clone, Copy, IntoPrimitive, TryFromPrimitive, PartialEq)]
@@ -348,7 +348,7 @@ impl<'map> ContainerBuilder<'map> {
         self
     }
 
-    pub fn add_component(mut self, name: &str, ctype: ComponentType, f: impl FnOnce(&mut BomEntry, &mut File) -> ()) -> Self {
+    pub fn add_component(mut self, name: &str, ctype: components::Type, f: impl FnOnce(&mut BomEntry, &mut File) -> ()) -> Self {
         let bom_entry = unsafe { self.bom_builder.new_component() };
 
         let name = name.as_bytes();
@@ -505,7 +505,7 @@ impl<'map> HeaderBuilder<'map> {
         assert!(header.ctype > 0x60 && header.ctype <= 0x7A, "invalid container type");
 
         if header.uuid().is_nil() {
-            let uuid = dbg!(Uuid::new_v4());
+            let uuid = Uuid::new_v4();
             header.uuid = uuid.as_u128().to_be_bytes();
         }
         assert!(!header.uuid().is_nil(), "UUID musn't be zero");
@@ -563,7 +563,7 @@ impl<'map> BomBuilder<'map> {
 mod tests {
     use std::{fs::File, io::Write, mem};
 
-    use crate::components::ComponentType;
+    use crate::components;
 
     use super::ContainerBuilder;
 
@@ -606,21 +606,21 @@ mod tests {
                     .class('X')
                     .ctype('x');
             })
-            .add_component("Blob1", ComponentType::Blob, | bom, file | {
+            .add_component("Blob1", components::Type::Blob, | bom, file | {
                 let buf = "hello, I am the first test blob. have a nice day! :D".as_bytes();
                 file.write_all(buf).unwrap();
                 bom.size = buf.len() as i64;
                 bom.param1 = buf.len() as i64;
                 println!("Blob1: {:?}", bom);
             })
-            .add_component("Blob2", ComponentType::Blob, | bom, file | {
+            .add_component("Blob2", components::Type::Blob, | bom, file | {
                 let buf = "sup, I'm another test blob. I may fuck your shit up :3".as_bytes();
                 file.write_all(buf).unwrap();
                 bom.size = buf.len() as i64;
                 bom.param1 = buf.len() as i64;
                 println!("Blob2: {:?}", bom);
             })
-            .add_component("Blob3", ComponentType::Blob, | bom, file | {
+            .add_component("Blob3", components::Type::Blob, | bom, file | {
                 let buf: Vec<u64> = (1..100000).collect();
                 let blen = buf.len() * mem::size_of::<u64>();
                 let bs = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const u8, blen) };

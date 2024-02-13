@@ -1,4 +1,4 @@
-use std::{cell::RefCell, cmp::min, fs::File, num::NonZeroUsize, ops, rc::Rc};
+use std::{cell::RefCell, cmp::min, fs::File, io::{BufWriter, Seek, SeekFrom, Write}, mem, num::NonZeroUsize, ops, rc::Rc};
 
 use lru::LruCache;
 
@@ -200,6 +200,7 @@ impl<'map> Vector<'map> {
         }
     }
 
+    pub unsafe fn encode_uncompressed_to_container_file<I>(values: I, n: usize, d: usize, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) where I: Iterator<Item=i64> {
     pub unsafe fn encode_to_container_file<I>(_values: I, _width: usize, _file: File, _bom_entry: &mut BomEntry, _file_offset: usize) -> usize {
         todo!()
     }

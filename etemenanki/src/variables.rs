@@ -6,7 +6,7 @@ use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use uuid::Uuid;
 
-use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector, CompressionType};
+use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector, CompressionType, Vector};
 use crate::container::{self, Container, ContainerBuilder};
 use crate::macros::{check_and_return_component, get_container_base};
 
@@ -354,7 +354,7 @@ pub struct IntegerVariable<'map> {
 }
 
 impl<'map> IntegerVariable<'map> {
-    pub fn encode_to_file<I>(_iter: I, name: String, file: File, _storage_mode: CompressionType) -> Self where I: Iterator<Item=i64> {
+    pub fn encode_to_file<I>(values: I, n: usize, name: String, file: File) -> Self where I: Iterator<Item=i64> {
         let container = ContainerBuilder::new_into_file(name, file, 2)
             .edit_header(| h | {
                 h.ziggurat_type(container::Type::IntegerVariable);
