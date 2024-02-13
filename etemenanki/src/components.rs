@@ -13,13 +13,13 @@ pub use vector::*;
 use std::{error, fmt};
 
 use enum_as_inner::EnumAsInner;
-use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
+use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
 
-use crate::container::RawBomEntry;
+use crate::container::BomEntry;
 
 #[repr(u16)]
-#[derive(Debug, TryFromPrimitive)]
-enum ComponentType {
+#[derive(Debug, IntoPrimitive, TryFromPrimitive)]
+pub enum ComponentType {
     Blob = 0x0100,
     StringList = 0x0200,
     StringVector = 0x0300,
@@ -44,7 +44,7 @@ pub enum Component<'map> {
 }
 
 impl<'map> Component<'map> {
-    pub fn from_raw_parts(be: &RawBomEntry, start_ptr: *const u8) -> Result<Self, ComponentError> {
+    pub fn from_raw_parts(be: &BomEntry, start_ptr: *const u8) -> Result<Self, ComponentError> {
         let component_type: ComponentType =
             (((be.ctype as u16) << 8) | be.mode as u16).try_into()?;
 

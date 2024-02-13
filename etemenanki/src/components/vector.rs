@@ -1,6 +1,8 @@
-use std::{cell::RefCell, cmp::min, num::NonZeroUsize, ops, rc::Rc};
+use std::{cell::RefCell, cmp::min, fs::File, num::NonZeroUsize, ops, rc::Rc};
 
 use lru::LruCache;
+
+use crate::container::BomEntry;
 
 #[derive(Debug, Clone, Copy)]
 pub enum CompressionType {
@@ -196,6 +198,10 @@ impl<'map> Vector<'map> {
             width: d,
             data,
         }
+    }
+
+    pub unsafe fn encode_to_container_file<I>(_values: I, _width: usize, _file: File, _bom_entry: &mut BomEntry, _file_offset: usize) -> usize {
+        todo!()
     }
 }
 
