@@ -65,7 +65,9 @@ struct BOMEntry {
     s64 param1;
     s64 param2;
     
-    if (type == 0x02 && mode == 0x00) { // StringList
+    if (type == 0x01 && mode == 0x00) { // Blob
+        u8 data[size] @ offset;
+    }else if (type == 0x02 && mode == 0x00) { // StringList
         u8 strings[size] @ offset;
     } else if (type == 0x03 && mode == 0x00) { // StringVector
         s64 offsets[param1+1] @ offset;
