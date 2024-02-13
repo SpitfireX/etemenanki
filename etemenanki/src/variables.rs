@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fs::File;
 use std::rc::Rc;
 
 use enum_as_inner::EnumAsInner;
@@ -6,7 +7,7 @@ use memmap2::Mmap;
 use uuid::Uuid;
 
 use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector, CompressionType};
-use crate::container::{self, Container};
+use crate::container::{self, Container, ContainerBuilder};
 use crate::macros::{check_and_return_component, get_container_base};
 
 #[derive(Debug, EnumAsInner)]
@@ -57,7 +58,7 @@ pub struct IndexedStringVariable<'map> {
     base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: &'map container::RawHeader,
+    pub header: &'map container::Header,
     lexicon: components::StringVector<'map>,
     lex_hash: components::CachedIndex<'map>,
     lex_id_stream: components::CachedVector<'map, 1>,
@@ -225,7 +226,7 @@ pub struct PlainStringVariable<'map> {
     base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: &'map container::RawHeader,
+    pub header: &'map container::Header,
     string_data: components::StringList<'map>,
     offset_stream: components::CachedVector<'map, 1>,
     string_hash: components::CachedIndex<'map>,
@@ -347,18 +348,20 @@ pub struct IntegerVariable<'map> {
     base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: &'map container::RawHeader,
+    pub header: &'map container::Header,
     int_stream: components::CachedVector<'map, 1>,
     int_sort: components::CachedIndex<'map>,
 }
 
 impl<'map> IntegerVariable<'map> {
-    pub fn from_iter<I>(iter: I, storage_mode: CompressionType) -> Self where I: Iterator<Item=i64> {
-        let container = Container::new_mmap().unwrap();
+    pub fn encode_to_file<I>(_iter: I, name: String, file: File, _storage_mode: CompressionType) -> Self where I: Iterator<Item=i64> {
+        let container = ContainerBuilder::new_into_file(name, file, 2)
+            .edit_header(| h | {
+                h.ziggurat_type(container::Type::IntegerVariable);
+            })
+            .build();
 
-        
-
-        container.try_into().unwrap()
+        container.try_into().expect("IntegerVariable returned by its constructor is inconsistent")
     }
 
     pub fn get(&self, index: usize) -> Option<i64> {
@@ -458,7 +461,7 @@ pub struct SetVariable<'map> {
     base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: &'map container::RawHeader,
+    pub header: &'map container::Header,
     lexicon: components::StringVector<'map>,
     lex_hash: components::CachedIndex<'map>,
     id_set_stream: components::Set<'map>,
@@ -553,7 +556,7 @@ pub struct PointerVariable<'map> {
     base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: &'map container::RawHeader,
+    pub header: &'map container::Header,
     head_stream: components::CachedVector<'map, 1>,
     head_sort: components::CachedIndex<'map>,
 }

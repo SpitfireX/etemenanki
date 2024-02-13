@@ -136,7 +136,7 @@ impl<'map> LayerVariables<'map> {
 pub struct PrimaryLayer<'map> {
     mmap: Mmap,
     pub name: String,
-    pub header: &'map container::RawHeader,
+    pub header: &'map container::Header,
 }
 
 impl<'map> PrimaryLayer<'map> {
@@ -172,7 +172,7 @@ pub struct SegmentationLayer<'map> {
     pub base: Uuid,
     mmap: Mmap,
     pub name: String,
-    pub header: &'map container::RawHeader,
+    pub header: &'map container::Header,
     range_stream: components::CachedVector<'map, 2>,
     start_sort: components::CachedIndex<'map>,
     end_sort: components::CachedIndex<'map>,
