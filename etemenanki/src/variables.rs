@@ -3,10 +3,10 @@ use std::fs::File;
 use std::rc::Rc;
 
 use enum_as_inner::EnumAsInner;
-use memmap2::Mmap;
+use memmap2::{Mmap, MmapOptions};
 use uuid::Uuid;
 
-use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector, CompressionType, Vector};
+use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector, Index, Vector};
 use crate::container::{self, Container, ContainerBuilder};
 use crate::macros::{check_and_return_component, get_container_base};
 
@@ -354,14 +354,41 @@ pub struct IntegerVariable<'map> {
 }
 
 impl<'map> IntegerVariable<'map> {
-    pub fn encode_to_file<I>(values: I, n: usize, name: String, file: File) -> Self where I: Iterator<Item=i64> {
-        let container = ContainerBuilder::new_into_file(name, file, 2)
+    pub fn encode_to_file<I>(file: File, values: I, n: usize, name: String, base: Uuid, compressed: bool, comment: &str) -> Self where I: Iterator<Item=i64> {
+        let mut builder = ContainerBuilder::new_into_file(name, file, 2)
             .edit_header(| h | {
-                h.ziggurat_type(container::Type::IntegerVariable);
+                h.comment(comment)
+                    .ziggurat_type(container::Type::IntegerVariable)
+                    .dim1(n)
+                    .dim2(1)
+                    .base1(Some(base));
             })
-            .build();
+            .add_component("IntStream", components::Type::Vector, | bom_entry, file | {
+                unsafe {
+                    Vector::encode_uncompressed_to_container_file(values, n, 1, file, bom_entry, bom_entry.offset as u64);
+                }
+            });
 
-        container.try_into().expect("IntegerVariable returned by its constructor is inconsistent")
+        let vecbom = builder.get_component(0);
+        let vecmmap = unsafe { MmapOptions::new()
+            .offset(vecbom.offset as u64)
+            .len(vecbom.size as usize)
+            .map(builder.file())
+            .unwrap()
+        };
+        let vecdata = unsafe { std::slice::from_raw_parts(vecmmap.as_ptr() as *const i64, n) };
+
+        let int_stream = Vector::uncompressed_from_parts(n, 1, vecdata);
+        let int_stream = CachedVector::<1>::new(int_stream).unwrap();
+
+        builder = builder.add_component("IntSort", components::Type::Index, | bom_entry, file | {
+            unsafe {
+                let values = int_stream.column_iter(0).map(| i | (i, i));
+                Index::encode_uncompressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
+            }
+        });
+
+        builder.build().try_into().expect("IntegerVariable returned by its constructor is inconsistent")
     }
 
     pub fn get(&self, index: usize) -> Option<i64> {
@@ -404,7 +431,7 @@ impl<'map> TryFrom<Container<'map>> for IntegerVariable<'map> {
 
         match header.container_type() {
             container::Type::IntegerVariable => {
-                let base = get_container_base!(container, PlainStringVariable);
+                let base = get_container_base!(container, IntegerVariable);
                 let n = header.dim1();
 
                 let int_stream = check_and_return_component!(container, "IntStream", Vector)?;
@@ -630,5 +657,31 @@ impl<'map> TryFrom<Container<'map>> for PointerVariable<'map> {
 
             _ => Err(Self::Error::WrongContainerType),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs::{self, File};
+
+    use uuid::Uuid;
+
+    use super::IntegerVariable;
+
+    #[test]
+    fn encode_intvar_uncompressed() {
+        let filename = "/tmp/intvar_uncompressed.zigv";
+        let _ = fs::remove_file(filename);
+
+        let file = File::options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(filename)
+            .unwrap();
+
+        let values = 1337..9_000_001;
+        
+        let _ = IntegerVariable::encode_to_file(file, values, 5_000_000, "testintvar".to_owned(), Uuid::new_v4(), false, "IntVar encoded for testing purposes.");
     }
 }

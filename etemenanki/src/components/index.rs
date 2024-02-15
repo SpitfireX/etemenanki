@@ -1,8 +1,10 @@
 use core::hash::Hasher;
-use std::{cell::RefCell, cmp::min, num::NonZeroUsize, rc::Rc};
+use std::{cell::RefCell, cmp::min, fs::File, io::{BufWriter, Seek, SeekFrom, Write}, mem, num::NonZeroUsize, rc::Rc};
 
 use fnv::FnvHasher;
 use lru::LruCache;
+
+use crate::container::BomEntry;
 
 pub trait FnvHash {
     fn fnv_hash(&self) -> i64;
@@ -100,6 +102,25 @@ impl<'map> Index<'map> {
 
     pub fn uncompressed_from_parts(n: usize, pairs: &'map [(i64, i64)]) -> Self {
         Self::Uncompressed { length: n, pairs }
+    }
+
+    pub unsafe fn encode_uncompressed_to_container_file<I>(values: I, n: usize, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) where I: Iterator<Item=(i64, i64)> {
+        file.seek(SeekFrom::Start(start_offset)).unwrap();
+        
+        // write data
+        let mut written = 0;
+        let mut writer = BufWriter::new(file);
+        for (k, v) in values.take(n) {
+            writer.write_all(&k.to_le_bytes()).unwrap();
+            writer.write_all(&v.to_le_bytes()).unwrap();
+            written += 1;
+        }
+        writer.flush().unwrap();
+        assert!(written == n, "could not write all values");
+
+        bom_entry.size = (written * mem::size_of::<i64>() * 2) as i64;
+        bom_entry.param1 = n as i64;
+        bom_entry.param2 = 0;
     }
 }
 

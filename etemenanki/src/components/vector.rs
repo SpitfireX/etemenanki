@@ -201,8 +201,21 @@ impl<'map> Vector<'map> {
     }
 
     pub unsafe fn encode_uncompressed_to_container_file<I>(values: I, n: usize, d: usize, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) where I: Iterator<Item=i64> {
-    pub unsafe fn encode_to_container_file<I>(_values: I, _width: usize, _file: File, _bom_entry: &mut BomEntry, _file_offset: usize) -> usize {
-        todo!()
+        file.seek(SeekFrom::Start(start_offset)).unwrap();
+        
+        // write data
+        let mut written = 0;
+        let mut writer = BufWriter::new(file);
+        for bytes in values.take(n*d).map(|i| i.to_le_bytes()) {
+            writer.write_all(&bytes).unwrap();
+            written += 1;
+        }
+        writer.flush().unwrap();
+        assert!(written == n*d, "could not write all values");
+
+        bom_entry.size = (written * mem::size_of::<i64>()) as i64;
+        bom_entry.param1 = n as i64;
+        bom_entry.param2 = d as i64;
     }
 }
 

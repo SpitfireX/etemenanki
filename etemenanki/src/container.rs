@@ -371,6 +371,14 @@ impl<'map> ContainerBuilder<'map> {
         self
     }
 
+    pub fn get_component(&mut self, index: usize) -> &BomEntry {
+        self.bom_builder.get_bom(index)
+    }
+
+    pub fn file(&mut self) -> &File {
+        &self.file
+    }
+
     pub fn build(self) -> Container<'map> {
         let header = self.header_builder.build();
         let bom = self.bom_builder.build();
@@ -380,22 +388,22 @@ impl<'map> ContainerBuilder<'map> {
         assert!(header.used as usize == bom.len(), "number of components in BOM inconsistent with header");
 
         // trim file to minimum
-        let mut actualsize = mem::size_of::<Header>() + (mem::size_of::<BomEntry>() * header.allocated as usize);
-        if let Some(entry) = bom.last() {
-            actualsize += entry.offset as usize + entry.size as usize;
-        }
+        let actualsize = if let Some(entry) = bom.last() {
+            entry.offset as usize + entry.size as usize
+        } else {
+            mem::size_of::<Header>() + (mem::size_of::<BomEntry>() * header.allocated as usize)
+        };
         self.file.set_len(actualsize as u64).unwrap();
 
         let mmap = unsafe {
-            Mmap::map(&self.file).unwrap()
+            MmapOptions::new()
+                .offset(0)
+                .len(actualsize)
+                .map(&self.file)
+                .unwrap()
         };
 
-        Container {
-            name: self.name,
-            mmap,
-            header,
-            bom,
-        }
+        Container::from_mmap(mmap, self.name).unwrap()
     }
 }
 
@@ -534,6 +542,10 @@ impl<'map> BomBuilder<'map> {
         } else {
             o
         }
+    }
+
+    fn get_bom(&self, index: usize) -> &BomEntry {
+        &self.bom[index]
     }
 
     pub unsafe fn new_component(&mut self,) -> &mut BomEntry {
