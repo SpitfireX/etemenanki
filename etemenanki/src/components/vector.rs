@@ -543,17 +543,18 @@ impl<'map, const D: usize> Iterator for RowIterator<'map, D> {
             Self::Compressed { blocks, current, position, end } => {
                 if position < end {
                     let i = *position % 16;
-                    *position += 1;
-                    let value = current.get_row(i);
 
+                    // i == 0 -> we need a new block
                     // only go through cache when the next block is needed
-                    if value.is_some() && i == 15 {
+                    if i == 0 {
                         let mut blocks = blocks.borrow_mut();
                         let bi = *position / 16;
                         *current = *blocks.get_block(bi).unwrap();
                     }
 
-                    value
+                    *position += 1;
+
+                    current.get_row(i)
                 } else {
                     None
                 }
@@ -626,17 +627,18 @@ impl<'map, const D: usize> Iterator for ColumnIterator<'map, D> {
             Self::Compressed { blocks, current, position, end, column } => {
                 if position < end {
                     let i = *position % 16;
-                    *position += 1;
-                    let value = current.get_row(i).map(|r| r[*column]);
 
+                    // i == 0 -> we need a new block
                     // only go through cache when the next block is needed
-                    if value.is_some() && i == 15 {
+                    if i == 0 {
                         let mut blocks = blocks.borrow_mut();
                         let bi = *position / 16;
                         *current = *blocks.get_block(bi).unwrap();
                     }
 
-                    value
+                    *position += 1;
+
+                    current.get_row(i).map(|r| r[*column])
                 } else {
                     None
                 }
