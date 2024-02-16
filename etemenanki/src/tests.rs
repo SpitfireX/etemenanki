@@ -261,6 +261,19 @@ fn vec_cached2_iter() {
 }
 
 #[test]
+fn vec_cached_column_iter() {
+    let (vec, _c) = vec_setup("word.zigv", "LexIDStream");
+    let cvec = CachedVector::<1>::new(vec).unwrap();
+
+    let mut sum = 0;
+    for i in cvec.column_iter(0) {
+        sum += i;
+    }
+
+    println!("{}", sum);
+}
+
+#[test]
 fn invidx_cache_eval() {
     for size in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10_000] {
         // println!("\nTesting with cache size: {}", size);

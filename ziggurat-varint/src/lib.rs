@@ -161,6 +161,29 @@ pub fn encode_block<I: EncodeVarint>(block: &[I]) -> Vec<u8> {
     output
 }
 
+pub fn encode_block_into<I: EncodeVarint>(block: &[I], buffer: &mut [u8]) -> usize {
+    let mut offset = 0;
+    for i in block {
+        let len = i.encode_varint(&mut buffer[offset..]);
+        offset += len;
+    }
+    offset
+}
+
+pub fn encode_delta_block_into<I: EncodeVarint + Copy + std::ops::Sub<I, Output = I>>(block: &[I], buffer: &mut [u8]) -> usize {
+    // first value raw
+    let mut offset = block[0].encode_varint(buffer);
+
+    // following values delta
+    for i in 1..block.len() {
+        let v = block[i] - block[i-1];
+        let len = v.encode_varint(&mut buffer[offset..]);
+        offset += len;
+    }
+
+    offset
+}
+
 pub trait EncodeVarint {
     fn encode_varint(&self, buffer: &mut [u8]) -> usize;
 }

@@ -6,7 +6,7 @@ use enum_as_inner::EnumAsInner;
 use memmap2::{Mmap, MmapOptions};
 use uuid::Uuid;
 
-use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector, Index, Vector};
+use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector, Component, Index, Vector};
 use crate::container::{self, Container, ContainerBuilder};
 use crate::macros::{check_and_return_component, get_container_base};
 
@@ -355,6 +355,8 @@ pub struct IntegerVariable<'map> {
 
 impl<'map> IntegerVariable<'map> {
     pub fn encode_to_file<I>(file: File, values: I, n: usize, name: String, base: Uuid, compressed: bool, comment: &str) -> Self where I: Iterator<Item=i64> {
+        let vectype = if compressed { components::Type::VectorDelta } else { components::Type::Vector };
+        
         let mut builder = ContainerBuilder::new_into_file(name, file, 2)
             .edit_header(| h | {
                 h.comment(comment)
@@ -363,22 +365,26 @@ impl<'map> IntegerVariable<'map> {
                     .dim2(1)
                     .base1(Some(base));
             })
-            .add_component("IntStream", components::Type::Vector, | bom_entry, file | {
+            .add_component("IntStream", vectype, | bom_entry, file | {
                 unsafe {
-                    Vector::encode_uncompressed_to_container_file(values, n, 1, file, bom_entry, bom_entry.offset as u64);
+                    if compressed {
+                        let values = values.map(|i| [i; 1]);
+                        Vector::encode_delta_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
+                    } else {
+                        Vector::encode_uncompressed_to_container_file(values, n, 1, file, bom_entry, bom_entry.offset as u64);
+                    }
                 }
             });
 
-        let vecbom = builder.get_component(0);
+        let vecbom = *builder.get_component(0);
         let vecmmap = unsafe { MmapOptions::new()
             .offset(vecbom.offset as u64)
             .len(vecbom.size as usize)
             .map(builder.file())
             .unwrap()
         };
-        let vecdata = unsafe { std::slice::from_raw_parts(vecmmap.as_ptr() as *const i64, n) };
 
-        let int_stream = Vector::uncompressed_from_parts(n, 1, vecdata);
+        let int_stream = Component::from_raw_parts(&vecbom, vecmmap.as_ptr()).unwrap().into_vector().unwrap();
         let int_stream = CachedVector::<1>::new(int_stream).unwrap();
 
         builder = builder.add_component("IntSort", components::Type::Index, | bom_entry, file | {
@@ -683,5 +689,22 @@ mod tests {
         let values = 1337..9_000_001;
         
         let _ = IntegerVariable::encode_to_file(file, values, 5_000_000, "testintvar".to_owned(), Uuid::new_v4(), false, "IntVar encoded for testing purposes.");
+    }
+
+    #[test]
+    fn encode_intvar_compressed() {
+        let filename = "/tmp/intvar_compressed.zigv";
+        let _ = fs::remove_file(filename);
+
+        let file = File::options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(filename)
+            .unwrap();
+
+        let values = 1337..9_000_001;
+        
+        let _ = IntegerVariable::encode_to_file(file, values, 5_000_001, "testintvar".to_owned(), Uuid::new_v4(), true, "IntVar encoded for testing purposes.");
     }
 }

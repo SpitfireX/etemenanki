@@ -106,7 +106,7 @@ impl<'map> Index<'map> {
 
     pub unsafe fn encode_uncompressed_to_container_file<I>(values: I, n: usize, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) where I: Iterator<Item=(i64, i64)> {
         file.seek(SeekFrom::Start(start_offset)).unwrap();
-        
+
         // write data
         let mut written = 0;
         let mut writer = BufWriter::new(file);

@@ -1,6 +1,8 @@
+use core::slice;
 use std::{cell::RefCell, cmp::min, fs::File, io::{BufWriter, Seek, SeekFrom, Write}, mem, num::NonZeroUsize, ops, rc::Rc};
 
 use lru::LruCache;
+use memmap2::MmapOptions;
 
 use crate::container::BomEntry;
 
@@ -198,6 +200,68 @@ impl<'map> Vector<'map> {
             width: d,
             data,
         }
+    }
+
+    unsafe fn _generic_encode_compressed_to_container_file<I, const D: usize>(values: I, n: usize, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64, encode_varint: fn(&[i64], &mut[u8]) -> usize)
+    where
+        I: Iterator<Item=[i64; D]>,
+    {
+        let m = (n-1) / 16 + 1;
+        let synclen = m * mem::size_of::<i64>();
+
+        file.set_len(start_offset + synclen as u64).unwrap();
+        let mut mmap = unsafe { MmapOptions::new().offset(start_offset).len(synclen).map_mut(&*file).unwrap()};
+        let sync = unsafe { slice::from_raw_parts_mut(mmap.as_mut_ptr() as *mut usize, m) };
+
+        file.seek(SeekFrom::Start(start_offset + synclen as u64)).unwrap();
+        let mut writer = BufWriter::new(file);
+
+        let mut buffer = vec![0u8; 16 * D * 9];
+        let mut block = vec![0i64; 16 * D];
+        let mut boffset = 0;
+        let mut values = values.take(n);
+
+        for bi in 0..m {
+            // set block offset
+            sync[bi] = boffset;
+
+            // collect block and bring it in column-major form
+            for ri in 0..16 {
+                if let Some(row) = values.next() {
+                    for ci in 0..D {
+                        block[ci*16 + ri] = row[ci];
+                    }
+                } else {
+                    for ci in 0..D {
+                        block[ci*16 + ri] = -1;
+                    }
+                }
+            }
+
+            // encode and write block
+            let len = encode_varint(&block, &mut buffer);
+            writer.write_all(&buffer[..len]).unwrap();
+            boffset += len;
+        }
+        writer.flush().unwrap();
+
+        bom_entry.size = (synclen + boffset) as i64;
+        bom_entry.param1 = n as i64;
+        bom_entry.param2 = D as i64;
+    }
+
+    pub unsafe fn encode_delta_to_container_file<I, const D: usize>(values: I, n: usize, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64)
+    where
+        I: Iterator<Item=[i64; D]>
+    {
+        Self::_generic_encode_compressed_to_container_file(values, n, file, bom_entry, start_offset, ziggurat_varint::encode_delta_block_into);
+    }
+
+    pub unsafe fn encode_compressed_to_container_file<I, const D: usize>(values: I, n: usize, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64)
+    where
+        I: Iterator<Item=[i64; D]>
+    {
+        Self::_generic_encode_compressed_to_container_file(values, n, file, bom_entry, start_offset, ziggurat_varint::encode_block_into);
     }
 
     pub unsafe fn encode_uncompressed_to_container_file<I>(values: I, n: usize, d: usize, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) where I: Iterator<Item=i64> {
