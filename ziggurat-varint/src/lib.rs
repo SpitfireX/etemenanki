@@ -4,14 +4,14 @@ use pyo3::types::PyBytes;
 #[pyfunction]
 fn encode_varint(py: Python, x: i64) -> PyObject {
     let mut buffer = [0u8; 9];
-    let len = x.encode_varint(&mut buffer);
+    let len = x.encode_varint_into(&mut buffer);
     PyBytes::new(py, &buffer[..len]).into()
 }
 
 #[pyfunction]
 fn encode_varint_unsigned(py: Python, x: u64) -> PyObject {
     let mut buffer = [0u8; 9];
-    let len = (x as i64).encode_varint(&mut buffer);
+    let len = (x as i64).encode_varint_into(&mut buffer);
     PyBytes::new(py, &buffer[..len]).into()
 }
 
@@ -21,7 +21,7 @@ fn encode_varint_block(py: Python, ints: Vec<i64>) -> PyObject {
     let mut blen = 0;
 
     for int in ints {
-        blen += int.encode_varint(&mut buffer[blen..(blen + 9)]);
+        blen += int.encode_varint_into(&mut buffer[blen..(blen + 9)]);
     }
 
     PyBytes::new(py, &buffer[..blen]).into()
@@ -33,7 +33,7 @@ fn encode_varint_block_unsigned(py: Python, ints: Vec<u64>) -> PyObject {
     let mut blen = 0;
 
     for int in ints {
-        blen += (int as i64).encode_varint(&mut buffer[blen..(blen + 9)]);
+        blen += (int as i64).encode_varint_into(&mut buffer[blen..(blen + 9)]);
     }
 
     PyBytes::new(py, &buffer[..blen]).into()
@@ -155,7 +155,7 @@ pub fn encode_block<I: EncodeVarint>(block: &[I]) -> Vec<u8> {
     let mut output = Vec::with_capacity(block.len() * 9);
     for i in block {
         let mut bytes = [0u8; 9];
-        let len = i.encode_varint(&mut bytes[..]);
+        let len = i.encode_varint_into(&mut bytes[..]);
         output.extend_from_slice(&bytes[..len]);
     }
     output
@@ -164,33 +164,55 @@ pub fn encode_block<I: EncodeVarint>(block: &[I]) -> Vec<u8> {
 pub fn encode_block_into<I: EncodeVarint>(block: &[I], buffer: &mut [u8]) -> usize {
     let mut offset = 0;
     for i in block {
-        let len = i.encode_varint(&mut buffer[offset..]);
+        let len = i.encode_varint_into(&mut buffer[offset..]);
         offset += len;
     }
     offset
 }
 
+pub fn encode_delta_block<I: EncodeVarint + Copy + std::ops::Sub<I, Output = I>>(block: &[I]) -> Vec<u8> {
+    let mut output = vec![0; block.len()*9];
+
+    // first value raw
+    let mut len = block[0].encode_varint_into(&mut output);
+
+    //following values delta
+    for i in 1..block.len() {
+        let v = block[i] - block[i-1];
+        len += v.encode_varint_into(&mut output[len..]);
+    }
+
+    output.truncate(len);
+    output
+}
+
 pub fn encode_delta_block_into<I: EncodeVarint + Copy + std::ops::Sub<I, Output = I>>(block: &[I], buffer: &mut [u8]) -> usize {
     // first value raw
-    let mut offset = block[0].encode_varint(buffer);
+    let mut offset = block[0].encode_varint_into(buffer);
 
     // following values delta
     for i in 1..block.len() {
         let v = block[i] - block[i-1];
-        let len = v.encode_varint(&mut buffer[offset..]);
-        offset += len;
+        offset += v.encode_varint_into(&mut buffer[offset..]);
     }
 
     offset
 }
 
 pub trait EncodeVarint {
-    fn encode_varint(&self, buffer: &mut [u8]) -> usize;
+    fn encode_varint(&self) -> Vec<u8> {
+        let mut buffer = vec![0u8; 9];
+        let len = self.encode_varint_into(&mut buffer);
+        buffer.truncate(len);
+        buffer
+    }
+
+    fn encode_varint_into(&self, buffer: &mut [u8]) -> usize;
 }
 
 impl EncodeVarint for i64 {
     #[inline]
-    fn encode_varint(&self, arr: &mut [u8]) -> usize {
+    fn encode_varint_into(&self, arr: &mut [u8]) -> usize {
         assert!(arr.len() >= 9, "passed slice too small to hold varint");
         let mut x = *self;
 
@@ -302,7 +324,7 @@ mod tests {
 
         for i in ints {
             let mut buffer = [0; 9];
-            let len = i.encode_varint(&mut buffer);
+            let len = i.encode_varint_into(&mut buffer);
             lens.push(len);
             encodings.push(buffer[..len].into());
         }
