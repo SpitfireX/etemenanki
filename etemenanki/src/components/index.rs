@@ -1,8 +1,10 @@
 use core::hash::Hasher;
-use std::{cell::RefCell, cmp::min, fs::File, io::{BufWriter, Seek, SeekFrom, Write}, mem, num::NonZeroUsize, rc::Rc};
+use std::{cell::RefCell, cmp::min, fs::File, io::{BufWriter, Seek, SeekFrom, Write}, mem, num::NonZeroUsize, rc::Rc, slice};
 
 use fnv::FnvHasher;
 use lru::LruCache;
+use memmap2::MmapOptions;
+use ziggurat_varint::EncodeVarint;
 
 use crate::container::BomEntry;
 
@@ -102,6 +104,115 @@ impl<'map> Index<'map> {
 
     pub fn uncompressed_from_parts(n: usize, pairs: &'map [(i64, i64)]) -> Self {
         Self::Uncompressed { length: n, pairs }
+    }
+
+    pub unsafe fn encode_compressed_to_container_file<I>(values: I, n: usize, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) where I: Iterator<Item=(i64, i64)> {
+        file.seek(SeekFrom::Start(start_offset)).unwrap();
+
+        const INTSIZE: usize =  mem::size_of::<i64>();
+        let m = (n-1) / 16 + 1; // worst case number of blocks = no overflow items
+        let headlen = INTSIZE + (m * 2 * INTSIZE);
+
+        // map constant header
+        file.set_len(start_offset + headlen as u64).unwrap();
+        let mut mmap = unsafe { MmapOptions::new().offset(start_offset).len(headlen).map_mut(&*file).unwrap()};
+        let r = unsafe { (mmap.as_mut_ptr() as *mut i64).as_mut().unwrap() };
+        let sync = unsafe { slice::from_raw_parts_mut(mmap.as_mut_ptr().offset(INTSIZE as isize) as *mut (i64, usize), m) };
+        // since sync can't grow into the space of the encoded index blocks after it, it's preempively mapped as int[m][2]
+        // instead of int[mr][2]. mr can only be calculated after the number of regular items in all blocks (r) is known,
+        // i.e. after encoding all blocks. If mr < m there will be empty space between sync and data in the final file.
+
+        file.seek(SeekFrom::Start(start_offset + headlen as u64)).unwrap();
+        let mut writer = BufWriter::new(file);
+
+        let mut values = values.take(n);
+
+        let mut buffer = [0u8; 9*17]; // byte buffer for encoded data
+        let mut total_overflow = 0; // total number of overflow items in blocks
+        let mut keys = Vec::with_capacity(16); // keys of the current block
+        let mut positions = Vec::with_capacity(100); // values of the current block
+        let mut bi = 0; // runnign block index
+        let mut boffset = 0; // relative starting offset of the current block
+
+        'outer: loop {
+            let mut overflow = 0i64;
+
+            // collect 16 regular items (or padding)
+            while keys.len() < 16 {
+                match values.next() {
+                    Some((key, position)) => {
+                        // 
+                        keys.push(key);
+                        positions.push(position);
+                        *r += 1; // count regular items
+                    }
+
+                    None => {
+                        // generate padding
+                        keys.push(-1);
+                        positions.push(-1);
+                    }
+                }
+            }
+
+            // if the iterator has more values:
+            // add overflow items or encode and continue to next block
+            while let Some((key, position)) = values.next() {
+                if key == keys[15] {
+                    // add overflow item
+                    positions.push(position);
+                    overflow += 1;
+                } else {
+                    total_overflow += overflow as usize;
+
+                    // encode block and continue with next
+                    let mut blen = overflow.encode_varint_into(&mut buffer);
+                    blen += ziggurat_varint::encode_delta_block_into(&keys, &mut buffer[blen..]);
+                    writer.write_all(&buffer[..blen]).unwrap();
+
+                    let encoded_positions = ziggurat_varint::encode_delta_block(&positions);
+                    blen += encoded_positions.len();
+                    writer.write_all(&encoded_positions).unwrap();
+
+                    sync[bi] = (keys[0], boffset);
+                    bi += 1;
+                    boffset += blen;
+
+                    keys.clear();
+                    positions.clear();
+
+                    // add consumed iter value to next block
+                    keys.push(key);
+                    positions.push(position);
+                    *r += 1;
+
+                    continue 'outer;
+                }
+            }
+
+            // else (iterator is empty):
+            // encode and write last block
+            total_overflow += overflow as usize;
+            let mut blen = overflow.encode_varint_into(&mut buffer);
+            blen += ziggurat_varint::encode_delta_block_into(&keys, &mut buffer[blen..]);
+            writer.write_all(&buffer[..blen]).unwrap();
+
+            let encoded_positions = ziggurat_varint::encode_delta_block(&positions);
+            writer.write_all(&encoded_positions).unwrap();
+
+            sync[bi] = (keys[0], boffset);
+            boffset += blen;
+
+            break;
+        }
+        writer.flush().unwrap();
+
+        assert!(n == *r as usize + total_overflow, "encoded fewer values than specified");
+
+        *r = n as i64; // worst case
+        bom_entry.size = boffset as i64;
+        bom_entry.param1 = n as i64;
+        bom_entry.param2 = 0;
     }
 
     pub unsafe fn encode_uncompressed_to_container_file<I>(values: I, n: usize, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) where I: Iterator<Item=(i64, i64)> {

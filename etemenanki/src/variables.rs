@@ -356,6 +356,7 @@ pub struct IntegerVariable<'map> {
 impl<'map> IntegerVariable<'map> {
     pub fn encode_to_file<I>(file: File, values: I, n: usize, name: String, base: Uuid, compressed: bool, comment: &str) -> Self where I: Iterator<Item=i64> {
         let vectype = if compressed { components::Type::VectorDelta } else { components::Type::Vector };
+        let idxtype = if compressed { components::Type::IndexComp } else { components::Type::Index };
         
         let mut builder = ContainerBuilder::new_into_file(name, file, 2)
             .edit_header(| h | {
@@ -387,10 +388,16 @@ impl<'map> IntegerVariable<'map> {
         let int_stream = Component::from_raw_parts(&vecbom, vecmmap.as_ptr()).unwrap().into_vector().unwrap();
         let int_stream = CachedVector::<1>::new(int_stream).unwrap();
 
-        builder = builder.add_component("IntSort", components::Type::Index, | bom_entry, file | {
+        builder = builder.add_component("IntSort", idxtype, | bom_entry, file | {
             unsafe {
-                let values = int_stream.column_iter(0).map(| i | (i, i));
-                Index::encode_uncompressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
+                let mut values: Vec<_> = int_stream.column_iter(0).map(| i | (i % 10000, i)).collect();
+                values.sort_by_key(|(k, _)| *k);
+
+                if compressed {
+                    Index::encode_compressed_to_container_file(values.into_iter(), n, file, bom_entry, bom_entry.offset as u64);
+                } else {
+                    Index::encode_uncompressed_to_container_file(values.into_iter(), n, file, bom_entry, bom_entry.offset as u64);
+                }
             }
         });
 
