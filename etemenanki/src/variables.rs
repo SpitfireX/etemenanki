@@ -390,13 +390,11 @@ impl<'map> IntegerVariable<'map> {
 
         builder = builder.add_component("IntSort", idxtype, | bom_entry, file | {
             unsafe {
-                let mut values: Vec<_> = int_stream.column_iter(0).map(| i | (i % 10000, i)).collect();
-                values.sort_by_key(|(k, _)| *k);
-
+                let values = int_stream.column_iter(0).map(| i | (i, i));
                 if compressed {
-                    Index::encode_compressed_to_container_file(values.into_iter(), n, file, bom_entry, bom_entry.offset as u64);
+                    Index::encode_compressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
                 } else {
-                    Index::encode_uncompressed_to_container_file(values.into_iter(), n, file, bom_entry, bom_entry.offset as u64);
+                    Index::encode_uncompressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
                 }
             }
         });
@@ -675,23 +673,13 @@ impl<'map> TryFrom<Container<'map>> for PointerVariable<'map> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::{self, File};
-
     use uuid::Uuid;
 
     use super::IntegerVariable;
 
     #[test]
     fn encode_intvar_uncompressed() {
-        let filename = "/tmp/intvar_uncompressed.zigv";
-        let _ = fs::remove_file(filename);
-
-        let file = File::options()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(filename)
-            .unwrap();
+        let file = tempfile::tempfile().unwrap();
 
         let values = 1337..9_000_001;
         
@@ -700,15 +688,7 @@ mod tests {
 
     #[test]
     fn encode_intvar_compressed() {
-        let filename = "/tmp/intvar_compressed.zigv";
-        let _ = fs::remove_file(filename);
-
-        let file = File::options()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(filename)
-            .unwrap();
+        let file = tempfile::tempfile().unwrap();
 
         let values = 1337..9_000_001;
         

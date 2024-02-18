@@ -1,5 +1,5 @@
 use core::hash::Hasher;
-use std::{cell::RefCell, cmp::min, fs::File, io::{BufWriter, Seek, SeekFrom, Write}, mem, num::NonZeroUsize, rc::Rc, slice};
+use std::{cell::RefCell, cmp::min, fs::File, io::{self, BufWriter, Seek, SeekFrom, Write}, mem, num::NonZeroUsize, rc::Rc, slice};
 
 use fnv::FnvHasher;
 use lru::LruCache;
@@ -107,8 +107,6 @@ impl<'map> Index<'map> {
     }
 
     pub unsafe fn encode_compressed_to_container_file<I>(values: I, n: usize, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) where I: Iterator<Item=(i64, i64)> {
-        file.seek(SeekFrom::Start(start_offset)).unwrap();
-
         const INTSIZE: usize =  mem::size_of::<i64>();
         let m = (n-1) / 16 + 1; // worst case number of blocks = no overflow items
         let headlen = INTSIZE + (m * 2 * INTSIZE);
@@ -118,12 +116,13 @@ impl<'map> Index<'map> {
         let mut mmap = unsafe { MmapOptions::new().offset(start_offset).len(headlen).map_mut(&*file).unwrap()};
         let r = unsafe { (mmap.as_mut_ptr() as *mut i64).as_mut().unwrap() };
         let sync = unsafe { slice::from_raw_parts_mut(mmap.as_mut_ptr().offset(INTSIZE as isize) as *mut (i64, usize), m) };
-        // since sync can't grow into the space of the encoded index blocks after it, it's preempively mapped as int[m][2]
-        // instead of int[mr][2]. mr can only be calculated after the number of regular items in all blocks (r) is known,
-        // i.e. after encoding all blocks. If mr < m there will be empty space between sync and data in the final file.
+        // since the size of sync is not known in advance it's preempively mapped as int[m][2].
+        // Its final size will be int[mr][2]. mr can only be calculated after the number of regular items in all blocks (r) is known,
+        // i.e. after encoding all blocks. If mr < m there would be empty space between sync and data in the final file, thus we encode
+        // to a separate file first and copy data to the container at the end.
 
-        file.seek(SeekFrom::Start(start_offset + headlen as u64)).unwrap();
-        let mut writer = BufWriter::new(file);
+        let tmpfile = tempfile::tempfile().unwrap();
+        let mut writer = BufWriter::new(tmpfile);
 
         let mut values = values.take(n);
 
@@ -206,11 +205,20 @@ impl<'map> Index<'map> {
             break;
         }
         writer.flush().unwrap();
+        let mut tmpfile = writer.into_inner().unwrap();
 
         assert!(n == *r as usize + total_overflow, "encoded fewer values than specified");
 
-        *r = n as i64; // worst case
-        bom_entry.size = boffset as i64;
+        // copy encoded data from tmp file into container
+        let mr = (*r as usize - 1) / 16 + 1; // actual number of blocks
+        let headlen = INTSIZE + (mr * 2 * INTSIZE); // actual header size
+
+        file.seek(SeekFrom::Start(start_offset + headlen as u64)).unwrap();
+        tmpfile.seek(SeekFrom::Start(0)).unwrap();
+        io::copy(&mut tmpfile, file).unwrap();
+        file.flush().unwrap();
+
+        bom_entry.size = (headlen + boffset) as i64;
         bom_entry.param1 = n as i64;
         bom_entry.param2 = 0;
     }
