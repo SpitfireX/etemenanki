@@ -15,6 +15,7 @@ use uuid::Uuid;
 #[pyo3(name="_rustypy")]
 fn module(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(encode_int_from_p, m)?)?;
+    m.add_function(wrap_pyfunction!(vrt_stats, m)?)?;
     m.add_class::<IntVariableCore>()?;
     Ok(())
 }
@@ -56,6 +57,12 @@ fn encode_int_from_p(input: &str, column: usize, length: usize, default: i64, ba
         .open(output)
         .unwrap();
     IntegerVariable::encode_to_file(file, values, length, "bla".to_owned(), base_uuid, compressed, delta, comment);
+}
+
+#[pyfunction]
+fn vrt_stats(input: &str) -> (usize, usize, HashMap<String, usize>) {
+    let mut reader = open_reader(input).unwrap();
+    reader.stats()
 }
 
 struct PIntIter<R: Read> {
@@ -105,16 +112,16 @@ impl<R: Read> VrtReader<R> {
 
             Ok(_) => {
                 let mut line = self.last_line.trim();
-                if line.starts_with('<') {
-                    line = line.trim_start_matches('<');
-                    line = line.split_whitespace().next().unwrap();
-                    line = line.trim_end_matches('>');
-                    Some(ReaderEvent::TagOpen(self.cpos, line))
-                } else if line.starts_with("</") {
+                if line.starts_with("</") {
                     line = line.trim_start_matches("</");
                     line = line.split_whitespace().next().unwrap();
                     line = line.trim_end_matches('>');
                     Some(ReaderEvent::TagClose(self.cpos, line))
+                } else if line.starts_with('<') {
+                    line = line.trim_start_matches('<');
+                    line = line.split_whitespace().next().unwrap();
+                    line = line.trim_end_matches('>');
+                    Some(ReaderEvent::TagOpen(self.cpos, line))
                 } else {
                     let value = ReaderEvent::Line(self.cpos);
                     self.cpos += 1;
@@ -140,6 +147,30 @@ impl<R: Read> VrtReader<R> {
             }
         }
         None
+    }
+
+    pub fn stats(&mut self) -> (usize, usize, HashMap<String, usize>) {
+        let mut pcount = 0;
+        let mut scounts: HashMap<String, usize> = HashMap::new();
+
+        while let Some(event) = self.read_next() {
+            match event {
+                crate::ReaderEvent::Line(cpos) => {
+                    if cpos == 0 {
+                        pcount = self.last_line.split('\t').count();
+                    }
+                }
+
+                crate::ReaderEvent::TagOpen(_, _) => (),
+
+                crate::ReaderEvent::TagClose(_, tag) =>  {
+                    let count = scounts.entry(tag.to_owned()).or_insert_with(|| 0);
+                    *count += 1;
+                }
+            }
+        }
+
+        (self.cpos, pcount, scounts)
     }
 }
 
@@ -416,5 +447,14 @@ mod tests {
                 black_box(attr);
             }
         });
+    }
+
+    #[test]
+    fn vrt_stats() {
+        let mut reader = open_reader("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
+        let (clen, pcount, scounts) = reader.stats();
+
+        println!("\nCorpus with {} positions and {} P attrs", clen, pcount);
+        println!("S attrs: {:?}", scounts);
     }
 }

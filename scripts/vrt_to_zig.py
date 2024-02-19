@@ -9,7 +9,9 @@ from ziggypy.components import *
 from ziggypy.layers import *
 from ziggypy.variables import *
 from ziggypy.util import PFileIter, SFileIter
+from ziggypy._rustypy import vrt_stats
 
+from os.path import realpath
 from pathlib import Path
 
 parser = argparse.ArgumentParser(description="Script to convert a VRT file to a ziggurat basic layer")
@@ -96,28 +98,7 @@ for a in args.a:
 
 ### VRT processing
 
-print("Processing VRT...")
-
-tags = set() # set of s attr tags found in the input file
-cpos = 0
-pcount = 0
-
-# XML parser to parse s attrs
-parser_state = (False, "", None) # (is_closing_tag, tagname, attributes)
-
-def start_element(name, attrs):
-    global parser_state
-    parser_state = (False, name, attrs)
-
-def end_element(name):
-    global parser_state
-    parser_state = (True, name, None)
-
-parser = expat.ParserCreate()
-if ".xml" not in str(args.input) or args.invalid_xml:
-    parser.Parse("<xml-fix-pseudo-start>") # init with one global start tag to keep parser happy
-parser.StartElementHandler = start_element
-parser.EndElementHandler = end_element
+print("Scanning VRT...")
 
 def open_input():
     if args.input.suffix == ".gz":
@@ -125,34 +106,16 @@ def open_input():
     else:
         return args.input.open()
 
-with open_input() as f:
-    # find number of p attrs
-    for line in f:
-        if not line.startswith("<"):
-            if line.strip():
-                pcount = len(line.split())
-                break
-    
-    print(f"\t found {pcount} p-attrs in input")
-    assert len(p_attrs) <= pcount, "Not enough columns for specified p-attrs in input"
-    f.seek(0) # reset file to beginning
+# scan file
+clen, pcount, scounts = vrt_stats(realpath(args.input))
 
-    for line in f:
-        # p attrs
-        if not line.startswith("<"):
-            if line.strip():
-                cpos += 1
+print(f"\t found {pcount} p-attrs in input")
+print(f"\t found {len(scounts.keys())} s-attrs: {scounts}")
 
-        # s attrs
-        else:
-            parser.Parse(line)
-            is_closing_tag, tagname, _ = parser_state
+assert len(p_attrs) <= pcount, "Not enough columns for specified p-attrs in input"
 
-            if is_closing_tag:
-                if is_closing_tag:
-                    tags.add(tagname)
-
-print(f"\t found {len(tags)} s-attrs: {tuple(tags)}")
+assert all(s in scounts.keys() for s in s_attrs), "Specified s-attrs are not present in input file"
+assert all(a in scounts.keys() for a in s_annos.keys()), "Specified s-attr annotations are not present in input file"
 
 print("Encoding the following attributes:")
 for name, type in p_attrs:
@@ -170,15 +133,10 @@ for name in s_attrs:
         for annotation, type in s_annos[name]:
             print(f"\t\t'{annotation}' of type '{type}'")
 
-assert all(s in tags for s in s_attrs), "Specified s-attrs are not present in input file"
-assert all(a in tags for a in s_annos.keys()), "Specified s-attr annotations are not present in input file"
-
 if not p_attrs and not s_attrs and not s_annos:
     print("\tNo attributes for encoding")
     print("Hint: you should probably specify some with -p, -s, or -a (see --help)")
     exit()
-
-clen = cpos
 
 print(f"Input corpus has {clen} corpus positions")
 
