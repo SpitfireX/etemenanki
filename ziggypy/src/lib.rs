@@ -5,7 +5,7 @@ extern crate test;
 use std::{collections::{HashMap, VecDeque}, fs::File, io::{BufRead, BufReader, Read, Result as IoResult}, str::FromStr};
 use etemenanki::variables::IntegerVariable;
 use flate2::read::GzDecoder;
-use quick_xml::{events::{attributes::Attribute, Event}, name::LocalName};
+use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 
 use pyo3::prelude::*;
@@ -40,7 +40,7 @@ impl IntVariableCore {
 
 #[pyfunction]
 fn encode_int_from_p(input: &str, column: usize, length: usize, default: i64, base: &str, compressed: bool, delta: bool, comment: &str, output: &str) {
-    let reader = open_file(input).unwrap();
+    let reader = open_reader(input).unwrap();
     let values = PIntIter {
         reader,
         column,
@@ -72,9 +72,11 @@ impl<R: Read> Iterator for PIntIter<R> {
     }
 }
 
-enum LineEvent {
-    Text,
-    Tag,
+#[derive(Debug)]
+pub enum ReaderEvent<'a> {
+    Line(usize),
+    TagOpen(usize, &'a str),
+    TagClose(usize, &'a str),
 }
 
 pub struct VrtReader<R: Read> {
@@ -92,17 +94,31 @@ impl<R: Read> VrtReader<R> {
         }
     }
 
-    fn read_next(&mut self) -> Option<LineEvent> {
+    pub fn last_line(&self) -> &str {
+        &self.last_line
+    }
+
+    pub fn read_next(&mut self) -> Option<ReaderEvent> {
         self.last_line.clear();
         match self.reader.read_line(&mut self.last_line) {
             Ok(0) => None,
 
             Ok(_) => {
-                if self.last_line.trim_start().starts_with('<') {
-                    Some(LineEvent::Tag)
+                let mut line = self.last_line.trim();
+                if line.starts_with('<') {
+                    line = line.trim_start_matches('<');
+                    line = line.split_whitespace().next().unwrap();
+                    line = line.trim_end_matches('>');
+                    Some(ReaderEvent::TagOpen(self.cpos, line))
+                } else if line.starts_with("</") {
+                    line = line.trim_start_matches("</");
+                    line = line.split_whitespace().next().unwrap();
+                    line = line.trim_end_matches('>');
+                    Some(ReaderEvent::TagClose(self.cpos, line))
                 } else {
+                    let value = ReaderEvent::Line(self.cpos);
                     self.cpos += 1;
-                    Some(LineEvent::Text)
+                    Some(value)
                 }
             }
 
@@ -113,25 +129,21 @@ impl<R: Read> VrtReader<R> {
     pub fn next_p(&mut self, column: usize) -> Option<(usize, &str)> {
         while let Some(event) = self.read_next() {
             match event {
-                LineEvent::Text => {
+                ReaderEvent::Line(cpos) => {
                     return self.last_line.trim()
                         .split('\t')
                         .nth(column)
-                        .map(| token | return (self.cpos, token))
+                        .map(| token | (cpos, token))
                 }
 
-                LineEvent::Tag => continue,
+                _ => continue,
             }
         }
         None
     }
-
-    pub fn next_s(&mut self, _tag: &str) -> Option<(usize, usize)> {
-        todo!()
-    }
 }
 
-pub fn open_file(filename: &str) -> IoResult<VrtReader<Box<dyn Read>>> {
+pub fn open_reader(filename: &str) -> IoResult<VrtReader<Box<dyn Read>>> {
     let file = File::open(filename)?;
     if filename.ends_with("gz") {
         Ok(VrtReader::new(Box::new(GzDecoder::new(file))))
@@ -302,20 +314,20 @@ impl<R: Read> VrtParser<R> {
 #[cfg(test)]
 mod tests {
     use test::{Bencher, black_box};
-    use crate::open_file;
+    use crate::open_reader;
     use crate::open_parser;
 
     #[test]
     fn it_works() {
-        let mut file = open_file("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
+        let mut file = open_reader("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
         file.read_next();
     }
 
     #[test]
     fn read_events() {
-        let mut file = open_file("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
-        while let Some((cpos, text)) = file.next_p(0) {
-            println!("{}: {}", cpos, text);
+        let mut file = open_reader("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
+        while let Some(event) = file.read_next() {
+            println!("{:?}", event);
         }
     }
 
@@ -334,6 +346,17 @@ mod tests {
                 crate::ParserEvent::PLine(cpos, line) => println!("{}: {}", cpos, line),
                 crate::ParserEvent::SAttr(start, end, tag, attrs) => println!("<{}, {}, {}, {:?}>", tag, start, end, attrs),
             }
+        }
+    }
+
+    #[test]
+    fn read_p_comp() {
+        let mut file1 = open_reader("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
+        let mut file2 = open_parser("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
+
+        while let Some(((cpos1, v1), (cpos2, v2))) = file1.next_p(0).zip(file2.next_p(0)) {
+            assert!(cpos1 == cpos2, "discrepancy in cpos");
+            assert!(v1 == v2, "discrepancy in value");
         }
     }
 
@@ -358,7 +381,7 @@ mod tests {
     #[bench]
     fn bench_read_p(b: &mut Bencher) {
         b.iter(||{
-            let mut file = open_file("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
+            let mut file = open_reader("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
             while let Some(attr) = file.next_p(0) {
                 black_box(attr);
             }
