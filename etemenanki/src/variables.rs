@@ -354,8 +354,16 @@ pub struct IntegerVariable<'map> {
 }
 
 impl<'map> IntegerVariable<'map> {
-    pub fn encode_to_file<I>(file: File, values: I, n: usize, name: String, base: Uuid, compressed: bool, comment: &str) -> Self where I: Iterator<Item=i64> {
-        let vectype = if compressed { components::Type::VectorDelta } else { components::Type::Vector };
+    pub fn encode_to_file<I>(file: File, values: I, n: usize, name: String, base: Uuid, compressed: bool, delta: bool, comment: &str) -> Self where I: Iterator<Item=i64> {
+        let vectype = if compressed { 
+            if delta {
+                components::Type::VectorDelta
+            } else {
+                components::Type::VectorComp
+            }
+         } else {
+            components::Type::Vector
+        };
         let idxtype = if compressed { components::Type::IndexComp } else { components::Type::Index };
         
         let mut builder = ContainerBuilder::new_into_file(name, file, 2)
@@ -370,7 +378,11 @@ impl<'map> IntegerVariable<'map> {
                 unsafe {
                     if compressed {
                         let values = values.map(|i| [i; 1]);
-                        Vector::encode_delta_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
+                        if delta {
+                            Vector::encode_delta_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
+                        } else {
+                            Vector::encode_compressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
+                        }
                     } else {
                         Vector::encode_uncompressed_to_container_file(values, n, 1, file, bom_entry, bom_entry.offset as u64);
                     }
@@ -683,7 +695,7 @@ mod tests {
 
         let values = 1337..9_000_001;
         
-        let _ = IntegerVariable::encode_to_file(file, values, 5_000_000, "testintvar".to_owned(), Uuid::new_v4(), false, "IntVar encoded for testing purposes.");
+        let _ = IntegerVariable::encode_to_file(file, values, 5_000_000, "testintvar".to_owned(), Uuid::new_v4(), false, true, "IntVar encoded for testing purposes.");
     }
 
     #[test]
@@ -692,6 +704,6 @@ mod tests {
 
         let values = 1337..9_000_001;
         
-        let _ = IntegerVariable::encode_to_file(file, values, 5_000_001, "testintvar".to_owned(), Uuid::new_v4(), true, "IntVar encoded for testing purposes.");
+        let _ = IntegerVariable::encode_to_file(file, values, 5_000_001, "testintvar".to_owned(), Uuid::new_v4(), true, true, "IntVar encoded for testing purposes.");
     }
 }
