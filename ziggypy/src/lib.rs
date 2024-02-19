@@ -2,10 +2,10 @@
 
 extern crate test;
 
-use std::{fs::File, io::{BufRead, BufReader, Read, Result as IoResult}, str::FromStr};
+use std::{collections::{HashMap, VecDeque}, fs::File, io::{BufRead, BufReader, Read, Result as IoResult}, str::FromStr};
 use etemenanki::variables::IntegerVariable;
 use flate2::read::GzDecoder;
-use quick_xml::events::Event;
+use quick_xml::{events::{attributes::Attribute, Event}, name::LocalName};
 use quick_xml::reader::Reader;
 
 use pyo3::prelude::*;
@@ -140,24 +140,32 @@ pub fn open_file(filename: &str) -> IoResult<VrtReader<Box<dyn Read>>> {
     }
 }
 
-pub fn open_file2(filename: &str) -> IoResult<VrtReader2<Box<dyn Read>>> {
+pub fn open_parser(filename: &str) -> IoResult<VrtParser<Box<dyn Read>>> {
     let file = File::open(filename)?;
     if filename.ends_with("gz") {
-        Ok(VrtReader2::new(Box::new(GzDecoder::new(file))))
+        Ok(VrtParser::new(Box::new(GzDecoder::new(file))))
     } else {
-        Ok(VrtReader2::new(Box::new(file)))
+        Ok(VrtParser::new(Box::new(file)))
     }
 }
 
-pub struct VrtReader2<R: Read> {
+#[derive(Debug)]
+pub enum ParserEvent {
+    PLine(usize, String),
+    SAttr(usize, usize, String, HashMap<String, String>),
+}
+
+pub struct VrtParser<R: Read> {
     xml: Reader<BufReader<R>>,
     buffer: Vec<u8>,
     cpos: usize,
-    lines: Option<Vec<String>>,
+    lines: VecDeque<String>,
     lpos: usize,
+    ltotal: usize,
+    stack: Vec<(usize, String, HashMap<String, String>)>,
 }
 
-impl<'a, R: Read> VrtReader2<R> {
+impl<R: Read> VrtParser<R> {
     pub fn new(readable: R) -> Self {
         let bufreader = BufReader::new(readable);
         let mut reader = Reader::from_reader(bufreader);
@@ -167,46 +175,124 @@ impl<'a, R: Read> VrtReader2<R> {
             xml: reader,
             buffer: Vec::new(),
             cpos: 0,
-            lines: None,
+            lines: VecDeque::new(),
             lpos: 0,
+            ltotal: 0,
+            stack: Vec::new(),
         }
     }
 
-    fn read_next(&mut self) -> Option<Event> {
-        self.buffer.clear();
-        self.xml.read_event_into(&mut self.buffer).ok()
-    }
-
-    pub fn next_p(&mut self, column: usize) -> Option<(usize, &str)> {
-        if let Some(lines) = &self.lines {
-            if self.lpos >= lines.len(){
-                self.lpos = 0;
-                self.lines = None;
-            }
-        }
-
-        if self.lines.is_none() {
-            while let Some(event) = self.read_next() {
-                match event {
-                    Event::Text(t) => {
-                        let lines: Result<Vec<_>, _> = t.lines().collect();
-                        self.lines = lines.ok();
-                        break;
-                    }
-    
-                    Event::Eof => return None,
-    
-                    _ => continue,
-                }
-            }
-        }
-
-        if let Some(lines) = &self.lines {
-            let token = lines[self.lpos].split('\t').nth(column)?;
-            let value = (self.cpos, token);
+    fn read_next(&mut self) -> Option<ParserEvent> {
+        // if there are lines in the buffer return them as individual line events
+        if self.lpos < self.ltotal {
+            let line = self.lines.pop_front().unwrap();
+            let attr = ParserEvent::PLine(self.cpos, line);
             self.cpos += 1;
             self.lpos += 1;
-            return Some(value);
+            return Some(attr);
+        }
+
+        // line buffer done
+        self.lpos = 0;
+        self.ltotal = 0;
+        self.lines.clear(); // line buffer
+        self.buffer.clear(); // event buffer
+
+        while let Some(event) = self.xml.read_event_into(&mut self.buffer).ok() {
+            // process next XML event
+            match event {
+                Event::Start(s) => {
+                    // copy tag name and attributes and put it on the parse stack
+                    let name = String::from_utf8(s.local_name().into_inner().to_owned()).unwrap();
+                    let attrs: Result<HashMap<String, String>, _> = s.attributes().map(| res | {
+                        res.map(| attr | {
+                            let key = String::from_utf8(attr.key.local_name().into_inner().to_owned()).unwrap();
+                            let value = attr.decode_and_unescape_value(&mut self.xml).unwrap().to_string();
+                            (key, value)
+                        })
+                    })
+                    .collect();
+                    
+                    self.stack.push((self.cpos, name, attrs.unwrap()));
+                    continue
+                }
+
+                Event::End(e) => {
+                    // try close last tag from the stack and return event
+                    if let Some((start, name, attrs)) = self.stack.pop() {
+                        // if the last start tag returned from the stack does not match the current end tag
+                        // we have invalid xml. <a><b></a></b> cannot be possible.
+                        assert!(e.local_name().into_inner() == name.as_bytes(), "unclosed S attr");
+                        return Some(ParserEvent::SAttr(start, self.cpos, name, attrs))
+                    }
+                    panic!("encountered end tag before first start tag");
+                }
+
+                Event::Text(t) => {
+                    // split text into lines and push them into the line buffer
+                    for l in t.lines() {
+                        self.lines.push_back(l.unwrap());
+                    }
+                    // this is fine because this code cannot be reached if lpos/ltotal > 0
+                    self.ltotal = self.lines.len();
+                    self.lpos = 1; // we issue the first line event from this code block
+                    let attr = ParserEvent::PLine(self.cpos, self.lines.pop_front().unwrap());
+                    self.cpos += 1;
+
+                    return Some(attr)
+                }
+
+                Event::Eof => return None,
+
+                _ => continue,
+            };
+        }
+
+        None
+    }
+
+    pub fn next_p(&mut self, column: usize) -> Option<(usize, String)> {
+        while let Some(event) = self.read_next() {
+            match event {
+                ParserEvent::PLine(cpos, line) => {
+                    let value = line.split('\t').nth(column)?;
+                    return Some((cpos, value.to_owned()));
+                }
+
+                _ => continue,
+            }
+        }
+
+        None
+    }
+
+    pub fn next_s(&mut self, tag: &str) -> Option<(usize, usize)> {
+        while let Some(event) = self.read_next() {
+            match event {
+                ParserEvent::SAttr(start, end, name, _) => {
+                    if name == tag {
+                        return Some((start, end))
+                    }
+                }
+
+                _ => continue,
+            }
+        }
+
+        None
+    }
+
+    pub fn next_a(&mut self, tag: &str, attr: &str) -> Option<(usize, usize, String)> {
+        while let Some(event) = self.read_next() {
+            match event {
+                ParserEvent::SAttr(start, end, name, mut attrs) => {
+                    if name == tag {
+                        return Some((start, end, attrs.remove(attr).unwrap()))
+                    }
+                }
+
+                _ => continue,
+            }
         }
 
         None
@@ -217,7 +303,7 @@ impl<'a, R: Read> VrtReader2<R> {
 mod tests {
     use test::{Bencher, black_box};
     use crate::open_file;
-    use crate::open_file2;
+    use crate::open_parser;
 
     #[test]
     fn it_works() {
@@ -233,6 +319,42 @@ mod tests {
         }
     }
 
+    #[test]
+    fn it_works_parser() {
+        let mut file = open_parser("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
+        file.read_next();
+    }
+
+    #[test]
+    fn read_events_parser() {
+        let mut file = open_parser("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
+        println!();
+        while let Some(event) = file.read_next() {
+            match event {
+                crate::ParserEvent::PLine(cpos, line) => println!("{}: {}", cpos, line),
+                crate::ParserEvent::SAttr(start, end, tag, attrs) => println!("<{}, {}, {}, {:?}>", tag, start, end, attrs),
+            }
+        }
+    }
+
+    #[test]
+    fn read_s_parser() {
+        let mut file = open_parser("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
+        println!();
+        while let Some((start, end)) = file.next_s("s") {
+            println!("text {}, {}", start, end);
+        }
+    }
+
+    #[test]
+    fn read_a_parser() {
+        let mut file = open_parser("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
+        println!();
+        while let Some((start, end, value)) = file.next_a("text", "id") {
+            println!("text_id {}, {}: {}", start, end, value);
+        }
+    }
+
     #[bench]
     fn bench_read_p(b: &mut Bencher) {
         b.iter(||{
@@ -243,19 +365,31 @@ mod tests {
         });
     }
 
-    #[test]
-    fn read_events2() {
-        let mut file = open_file2("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
-        while let Some((cpos, text)) = file.next_p(0) {
-            println!("{}: {}", cpos, text);
-        }
+    #[bench]
+    fn bench_read_p_parser(b: &mut Bencher) {
+        b.iter(||{
+            let mut file = open_parser("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
+            while let Some(attr) = file.next_p(0) {
+                black_box(attr);
+            }
+        });
     }
 
     #[bench]
-    fn bench_read_p2(b: &mut Bencher) {
+    fn bench_read_s_parser(b: &mut Bencher) {
         b.iter(||{
-            let mut file = open_file2("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
-            while let Some(attr) = file.next_p(0) {
+            let mut file = open_parser("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
+            while let Some(attr) = file.next_s("s") {
+                black_box(attr);
+            }
+        });
+    }
+
+    #[bench]
+    fn bench_read_a_parser(b: &mut Bencher) {
+        b.iter(||{
+            let mut file = open_parser("../etemenanki/testdata/Dickens-1.0.xml.gz").unwrap();
+            while let Some(attr) = file.next_a("text", "id") {
                 black_box(attr);
             }
         });
