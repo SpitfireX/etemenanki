@@ -256,30 +256,30 @@ for i, (name, type) in enumerate(p_attrs):
     with open_input() as f:
         fileiter = PFileIter(f, i)
 
-        # try:
-        if type == "indexed":
-            variable = FileIndexedStringVariable(primary_layer, fileiter, compressed = not args.uncompressed, comment = c)
-        elif type == "plain":
-            variable = PlainStringVariable(primary_layer, fileiter, compressed = not args.uncompressed, comment = c)
-        elif type == "int":
-            variable = FileIntegerVariable(primary_layer, fileiter, clen, compressed = not args.uncompressed, comment = c, parse_int=lambda x: parse_int(x, default=args.int_default))
-        elif type == "delta":
-            variable = FileIntegerVariable(primary_layer, fileiter, clen, compressed = not args.uncompressed, comment = c, parse_int=lambda x: parse_int(x, default=args.int_default), delta=True)
-        elif type == "set":
-            variable = FileSetVariable(primary_layer, fileiter, clen, parse_set, comment = c)
-        elif type == "ptr":
-            base_index = next(i for i, (n, _) in enumerate(p_attrs) if n == args.ptr_base)
-            with open_input() as f2:
-                base = PFileIter(f2, base_index, len(p_attrs))
-                variable = PointerVariable(primary_layer, [parse_ptr(cpos, b, h) for cpos, (b, h) in enumerate(zip(base, fileiter))], compressed = not args.uncompressed, comment = c)
-        elif type == "skip":
-            continue
-        else:
-            print(f"Invalid type '{type}' for p attribute '{name}'")
-            continue
-        # except Exception as e:
-        #     print(f"Error while encoding p attribute '{name}': {e}")
-        #     exit()
+        try:
+            if type == "indexed":
+                variable = FileIndexedStringVariable(primary_layer, fileiter, compressed = not args.uncompressed, comment = c)
+            elif type == "plain":
+                variable = PlainStringVariable(primary_layer, fileiter, compressed = not args.uncompressed, comment = c)
+            elif type == "int":
+                variable = RustyIntegerVariable(primary_layer, f, i, clen, compressed = not args.uncompressed, comment = c, default=args.int_default)
+            elif type == "delta":
+                variable = RustyIntegerVariable(primary_layer, f, i, clen, compressed = not args.uncompressed, comment = c, default=args.int_default, delta=True)
+            elif type == "set":
+                variable = FileSetVariable(primary_layer, fileiter, clen, parse_set, comment = c)
+            elif type == "ptr":
+                base_index = next(i for i, (n, _) in enumerate(p_attrs) if n == args.ptr_base)
+                with open_input() as f2:
+                    base = PFileIter(f2, base_index, len(p_attrs))
+                    variable = PointerVariable(primary_layer, [parse_ptr(cpos, b, h) for cpos, (b, h) in enumerate(zip(base, fileiter))], compressed = not args.uncompressed, comment = c)
+            elif type == "skip":
+                continue
+            else:
+                print(f"Invalid type '{type}' for p attribute '{name}'")
+                continue
+        except Exception as e:
+            print(f"Error while encoding p attribute '{name}': {e}")
+            exit()
 
     write_datastore_object(variable, name)
 

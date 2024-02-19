@@ -2,16 +2,19 @@
 
 extern crate test;
 
-use std::{fs::File, io::{BufRead, BufReader, Read, Result as IoResult}};
+use std::{fs::File, io::{BufRead, BufReader, Read, Result as IoResult}, str::FromStr};
+use etemenanki::variables::IntegerVariable;
 use flate2::read::GzDecoder;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 
 use pyo3::prelude::*;
+use uuid::Uuid;
 
 #[pymodule]
 #[pyo3(name="_rustypy")]
 fn module(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(encode_int_from_p, m)?)?;
     m.add_class::<IntVariableCore>()?;
     Ok(())
 }
@@ -32,6 +35,40 @@ impl IntVariableCore {
 
     fn __len__(&self) -> usize {
         self.length
+    }
+}
+
+#[pyfunction]
+fn encode_int_from_p(input: &str, column: usize, length: usize, default: i64, base: &str, compressed: bool, delta: bool, comment: &str, output: &str) {
+    let reader = open_file(input).unwrap();
+    let values = PIntIter {
+        reader,
+        column,
+        default,
+    };
+
+    let base_uuid = Uuid::from_str(base).unwrap();
+
+    let file = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(output)
+        .unwrap();
+    IntegerVariable::encode_to_file(file, values, length, "bla".to_owned(), base_uuid, compressed, delta, comment);
+}
+
+struct PIntIter<R: Read> {
+    reader: VrtReader<R>,
+    column: usize,
+    default: i64,
+}
+
+impl<R: Read> Iterator for PIntIter<R> {
+    type Item = i64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.reader.next_p(self.column).map(|(_, str)| str.parse().unwrap_or(self.default))
     }
 }
 

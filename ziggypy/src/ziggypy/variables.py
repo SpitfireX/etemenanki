@@ -4,8 +4,10 @@ from itertools import chain, accumulate
 from uuid import UUID, uuid4
 from collections import Counter
 from typing import Callable
+from os.path import realpath
 
 from ziggypy.util import ResettableIter
+from ziggypy._rustypy import encode_int_from_p
 
 from .container import Container
 from .components import *
@@ -246,6 +248,23 @@ class FileIntegerVariable(Variable):
             (base_layer.uuid, None),
             comment,
         )
+
+class RustyIntegerVariable:
+
+    def __init__(self, base_layer: Layer, file: RawIOBase, column: int, length: int, default: int = 0, uuid: Optional[UUID] = None, compressed: bool = True, delta: bool = False, comment: str = ""):
+        self.base = str(base_layer.uuid)
+        self.input = realpath(file.name)
+        self.column = column
+        self.length = length
+        self.default = default
+        self.compressed = compressed
+        self.delta = delta
+        self.comment = comment
+
+    def write(self, f: RawIOBase):
+        output = realpath(f.name)
+        encode_int_from_p(self.input, self.column, self.length, self.default, self.base, self.compressed, self.delta, self.comment, output)
+
 
 
 class SetVariable(Variable):
