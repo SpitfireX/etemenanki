@@ -7,7 +7,7 @@ from typing import Callable
 from os.path import realpath
 
 from ziggypy.util import ResettableIter
-from ziggypy._rustypy import encode_int_from_p
+from ziggypy._rustypy import encode_int_from_p, encode_int_from_a
 
 from .container import Container
 from .components import *
@@ -249,12 +249,13 @@ class FileIntegerVariable(Variable):
             comment,
         )
 
+
 class RustyIntegerVariable:
 
-    def __init__(self, base_layer: Layer, file: RawIOBase, column: int, length: int, default: int = 0, uuid: Optional[UUID] = None, compressed: bool = True, delta: bool = False, comment: str = ""):
+    def __init__(self, base_layer: Layer, file: RawIOBase, src: int | tuple[str, str], length: int, default: int = 0, uuid: Optional[UUID] = None, compressed: bool = True, delta: bool = False, comment: str = ""):
         self.base = str(base_layer.uuid)
         self.input = realpath(file.name)
-        self.column = column
+        self.src = src
         self.length = length
         self.default = default
         self.compressed = compressed
@@ -263,8 +264,14 @@ class RustyIntegerVariable:
 
     def write(self, f: RawIOBase):
         output = realpath(f.name)
-        encode_int_from_p(self.input, self.column, self.length, self.default, self.base, self.compressed, self.delta, self.comment, output)
 
+        if type(self.src) is int:
+            encode_int_from_p(self.input, self.src, self.length, self.default, self.base, self.compressed, self.delta, self.comment, output)
+        elif type(self.src) is tuple and len(self.src) == 2 and type(self.src[0]) is str and type(self.src[1]) is str:
+            tag, attr = self.src
+            encode_int_from_a(self.input, tag, attr, self.length, self.default, self.base, self.compressed, self.delta, self.comment, output)
+        else:
+            raise TypeError("wrong type for src, must be int or (str, str)")
 
 
 class SetVariable(Variable):

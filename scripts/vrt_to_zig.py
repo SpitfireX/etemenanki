@@ -277,9 +277,9 @@ for attr, annos in s_annos.items():
             elif type == "plain":
                 variable = PlainStringVariable(base_layer, data, compressed = not args.uncompressed, comment = c)
             elif type == "int":
-                variable = IntegerVariable(base_layer, [parse_int(s, default=args.int_default) for s in data], compressed = not args.uncompressed, comment = c)
+                variable = RustyIntegerVariable(primary_layer, f, (attr, anno), clen, compressed = not args.uncompressed, comment = c, default=args.int_default)
             elif type == "delta":
-                variable = IntegerVariable(base_layer, [parse_int(s, default=args.int_default) for s in data], compressed = not args.uncompressed, delta=True, comment = c)
+                variable = RustyIntegerVariable(primary_layer, f, (attr, anno), clen, compressed = not args.uncompressed, comment = c, default=args.int_default, delta=True)
             elif type == "set":
                 variable = SetVariable(base_layer, [parse_set(s) for s in data], comment = c)
             else:

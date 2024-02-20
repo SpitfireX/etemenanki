@@ -14,6 +14,7 @@ use uuid::Uuid;
 #[pymodule]
 #[pyo3(name="_rustypy")]
 fn module(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(encode_int_from_a, m)?)?;
     m.add_function(wrap_pyfunction!(encode_int_from_p, m)?)?;
     m.add_function(wrap_pyfunction!(vrt_stats, m)?)?;
     m.add_class::<IntVariableCore>()?;
@@ -56,6 +57,25 @@ fn encode_int_from_p(input: &str, column: usize, length: usize, default: i64, ba
         .create(true)
         .open(output)
         .unwrap();
+    IntegerVariable::encode_to_file(file, values, length, "bla".to_owned(), base_uuid, compressed, delta, comment);
+}
+
+#[pyfunction]
+fn encode_int_from_a(input: &str, tag: &str, attr: &str, length: usize, default: i64, base: &str, compressed: bool, delta: bool, comment: &str, output: &str) {
+    let parser = open_parser(input).unwrap();
+    let values = parser
+        .a_iter(tag, attr)
+        .map(|(_, _, str)| str.parse().unwrap_or(default));
+
+    let base_uuid = Uuid::from_str(base).unwrap();
+
+    let file = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(output)
+        .unwrap();
+
     IntegerVariable::encode_to_file(file, values, length, "bla".to_owned(), base_uuid, compressed, delta, comment);
 }
 
@@ -339,6 +359,48 @@ impl<R: Read> VrtParser<R> {
         }
 
         None
+    }
+
+    pub fn a_iter(self, tag: &str, attr: &str) -> AIter<R> {
+        AIter { 
+            tag: tag.to_string(),
+            attr: attr.to_string(),
+            parser: self,
+        }
+    }
+
+    pub fn s_iter(self, tag: &str) -> SIter<R> {
+        SIter { 
+            tag: tag.to_string(),
+            parser: self,
+        }
+    }
+}
+
+pub struct SIter<R: Read> {
+    tag: String,
+    parser: VrtParser<R>,
+}
+
+impl<R: Read> Iterator for SIter<R> {
+    type Item = (usize, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.parser.next_s(&self.tag)
+    }
+}
+
+pub struct AIter<R: Read> {
+    tag: String,
+    attr: String,
+    parser: VrtParser<R>,
+}
+
+impl<R: Read> Iterator for AIter<R> {
+    type Item = (usize, usize, String);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.parser.next_a(&self.tag, &self.attr)
     }
 }
 
