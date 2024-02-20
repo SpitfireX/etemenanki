@@ -18,7 +18,7 @@ use num_enum::{IntoPrimitive, TryFromPrimitive, TryFromPrimitiveError};
 use crate::container::BomEntry;
 
 #[repr(u16)]
-#[derive(Debug, IntoPrimitive, TryFromPrimitive)]
+#[derive(Clone, Copy, Debug, IntoPrimitive, TryFromPrimitive)]
 pub enum Type {
     Blob = 0x0100,
     StringList = 0x0200,

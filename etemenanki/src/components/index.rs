@@ -127,6 +127,7 @@ impl<'map> Index<'map> {
         let mut values = values.take(n);
 
         let mut buffer = [0u8; 9*17]; // byte buffer for encoded data
+        *r = 0; // zero total number of regular items
         let mut total_overflow = 0; // total number of overflow items in blocks
         let mut keys = Vec::with_capacity(16); // keys of the current block
         let mut positions = Vec::with_capacity(100); // values of the current block
@@ -207,7 +208,7 @@ impl<'map> Index<'map> {
         writer.flush().unwrap();
         let mut tmpfile = writer.into_inner().unwrap();
 
-        assert!(n == *r as usize + total_overflow, "encoded fewer values than specified");
+        assert!(n == *r as usize + total_overflow, "encoded different number of values than specified");
 
         // copy encoded data from tmp file into container
         let mr = (*r as usize - 1) / 16 + 1; // actual number of blocks

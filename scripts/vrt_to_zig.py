@@ -247,11 +247,8 @@ s_attr_layers = dict()
 ## Segmentation Layers for s attributes
 
 for attr in s_attrs:
-    with open_input() as f:
-        fileiter = SFileIter(f, attr, fix=args.invalid_xml)
-        ranges = [r for r, _ in fileiter]
 
-    layer = SegmentationLayer(primary_layer, len(ranges), ranges, compressed = not args.uncompressed, comment = f"s-attr {attr}")
+    layer = RustySegmentationLayer(primary_layer, open_input(), attr, scounts[attr], compressed = not args.uncompressed, comment = f"s-attr {attr}")
 
     s_attr_layers[attr] = layer
     write_datastore_object(layer, f"{attr}/{attr}")
@@ -277,9 +274,9 @@ for attr, annos in s_annos.items():
             elif type == "plain":
                 variable = PlainStringVariable(base_layer, data, compressed = not args.uncompressed, comment = c)
             elif type == "int":
-                variable = RustyIntegerVariable(primary_layer, f, (attr, anno), clen, compressed = not args.uncompressed, comment = c, default=args.int_default)
+                variable = RustyIntegerVariable(base_layer, f, (attr, anno), base_layer.n, compressed = not args.uncompressed, comment = c, default=args.int_default)
             elif type == "delta":
-                variable = RustyIntegerVariable(primary_layer, f, (attr, anno), clen, compressed = not args.uncompressed, comment = c, default=args.int_default, delta=True)
+                variable = RustyIntegerVariable(base_layer, f, (attr, anno), base_layer.n, compressed = not args.uncompressed, comment = c, default=args.int_default, delta=True)
             elif type == "set":
                 variable = SetVariable(base_layer, [parse_set(s) for s in data], comment = c)
             else:

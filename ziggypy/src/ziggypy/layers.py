@@ -2,6 +2,9 @@ from abc import ABC
 from typing import Optional, Iterable
 from uuid import UUID, uuid4
 from io import RawIOBase
+from os.path import realpath
+
+from ziggypy._rustypy import encode_seg_from_s
 
 from .container import Container
 from .components import *
@@ -66,3 +69,19 @@ class SegmentationLayer(Layer):
             base_uuids=(base_layer.uuid, None),
             comment=comment,
         )
+
+class RustySegmentationLayer(Layer):
+    def __init__(self, base_layer: Layer, file: RawIOBase, s_tag: str, length: int, uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
+        super().__init__(length, None)
+
+        self.base = str(base_layer.uuid)
+        self.input = realpath(file.name)
+        self.s_tag = s_tag
+        self.compressed = compressed
+        self.comment = comment
+
+    def write(self, f: RawIOBase):
+        output = realpath(f.name)
+        encodedlen, uuid = encode_seg_from_s(self.input, self.s_tag, self.n, self.base, self.compressed, self.comment, output)
+        assert encodedlen == self.n, "discrepancy between specified and actual encoded len"
+        self.uuid = UUID(uuid)

@@ -3,7 +3,7 @@
 extern crate test;
 
 use std::{collections::{HashMap, VecDeque}, fs::File, io::{BufRead, BufReader, Read, Result as IoResult}, str::FromStr};
-use etemenanki::variables::IntegerVariable;
+use etemenanki::{layers::SegmentationLayer, variables::IntegerVariable};
 use flate2::read::GzDecoder;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
@@ -14,6 +14,7 @@ use uuid::Uuid;
 #[pymodule]
 #[pyo3(name="_rustypy")]
 fn module(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(encode_seg_from_s, m)?)?;
     m.add_function(wrap_pyfunction!(encode_int_from_a, m)?)?;
     m.add_function(wrap_pyfunction!(encode_int_from_p, m)?)?;
     m.add_function(wrap_pyfunction!(vrt_stats, m)?)?;
@@ -77,6 +78,25 @@ fn encode_int_from_a(input: &str, tag: &str, attr: &str, length: usize, default:
         .unwrap();
 
     IntegerVariable::encode_to_file(file, values, length, "bla".to_owned(), base_uuid, compressed, delta, comment);
+}
+
+#[pyfunction]
+fn encode_seg_from_s(input: &str, s_tag: &str, length: usize, base: &str, compressed: bool, comment: &str, output: &str) -> (usize, String) {
+    let parser = open_parser(input).unwrap();
+    let values = parser
+        .s_iter(s_tag);
+
+    let base_uuid = Uuid::from_str(base).unwrap();
+
+    let file = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(output)
+        .unwrap();
+
+    let layer = SegmentationLayer::encode_to_file(file, values, length, "bla".to_owned(), base_uuid, compressed, comment);
+    (layer.len(), layer.header.uuid().to_string())
 }
 
 #[pyfunction]

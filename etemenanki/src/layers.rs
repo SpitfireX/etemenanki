@@ -1,12 +1,13 @@
 use enum_as_inner::EnumAsInner;
-use memmap2::Mmap;
+use memmap2::{Mmap, MmapOptions};
 use uuid::Uuid;
 
 use std::collections::{hash_map, HashMap};
+use std::fs::File;
 use std::ops;
 
-use crate::components::{CachedIndex, CachedVector};
-use crate::container::{self, Container};
+use crate::components::{CachedIndex, CachedVector, Component, Index, Vector};
+use crate::container::{self, Container, ContainerBuilder};
 use crate::macros::{check_and_return_component, get_container_base};
 use crate::variables::Variable;
 use crate::{components, variables};
@@ -255,6 +256,66 @@ impl<'map> SegmentationLayer<'map> {
 
     pub fn len(&self) -> usize {
         self.header.dim1()
+    }
+
+    pub fn encode_to_file<I>(file: File, values: I, n: usize, name: String, base: Uuid, compressed: bool, comment: &str) -> Self where I: Iterator<Item=(usize, usize)> {
+        let vectype = if compressed { components::Type::VectorDelta } else { components::Type::Vector };
+        let idxtype = if compressed { components::Type::IndexComp } else { components::Type::Index };
+        
+        let mut builder = ContainerBuilder::new_into_file(name, file, 3)
+            .edit_header(| h | {
+                h.comment(comment)
+                    .ziggurat_type(container::Type::SegmentationLayer)
+                    .dim1(n)
+                    .dim2(0)
+                    .base1(Some(base));
+            })
+            .add_component("RangeStream", vectype, | bom_entry, file | {
+                unsafe {
+                    if compressed {
+                        let values = values.map(|(s, e)| [s as i64, e as i64]);
+                        Vector::encode_delta_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
+                    } else {
+                        let values = values.map(|(s, e)| [s as i64, e as i64]).flatten();
+                        Vector::encode_uncompressed_to_container_file(values, n, 1, file, bom_entry, bom_entry.offset as u64);
+                    }
+                }
+            });
+
+        let vecbom = *builder.get_component(0);
+        let vecmmap = unsafe { MmapOptions::new()
+            .offset(vecbom.offset as u64)
+            .len(vecbom.size as usize)
+            .map(builder.file())
+            .unwrap()
+        };
+
+        let range_stream = Component::from_raw_parts(&vecbom, vecmmap.as_ptr()).unwrap().into_vector().unwrap();
+        let range_stream = CachedVector::<2>::new(range_stream).unwrap();
+
+        builder = builder.add_component("StartSort", idxtype, | bom_entry, file | {
+            unsafe {
+                let values = range_stream.iter().map(|[s, e]| (s, e));
+                if compressed {
+                    Index::encode_compressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
+                } else {
+                    Index::encode_uncompressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
+                }
+            }
+        });
+
+        builder = builder.add_component("EndSort", idxtype, | bom_entry, file | {
+            unsafe {
+                let values = range_stream.iter().map(|[s, e]| (e, s));
+                if compressed {
+                    Index::encode_compressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
+                } else {
+                    Index::encode_uncompressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
+                }
+            }
+        });
+
+        builder.build().try_into().expect("SegmentationLayer returned by its constructor is inconsistent")
     }
 }
 
