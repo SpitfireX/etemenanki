@@ -142,7 +142,8 @@ class Container():
         for i, c in enumerate(self.components[:-1], start=1):
             self.offsets.append(align_offset(self.offsets[i-1] + c.bytelen()))
 
-        print(f'offset table for container {self.uuid}:')
+        if len(self.components) > 0:
+            print(f'offset table for container {self.uuid}:')
         for i, (o, c) in enumerate(zip(self.offsets, self.components)):
             print(f'\tcomponent {i+1} "{c.name}"\t{hex(o)}\tlen({c.bytelen()})')
 
