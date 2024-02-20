@@ -3,10 +3,10 @@ use std::fs::File;
 use std::rc::Rc;
 
 use enum_as_inner::EnumAsInner;
-use memmap2::{Mmap, MmapOptions};
+use memmap2::Mmap;
 use uuid::Uuid;
 
-use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector, Component, Index, Vector};
+use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector, Index, Vector};
 use crate::container::{self, Container, ContainerBuilder};
 use crate::macros::{check_and_return_component, get_container_base};
 
@@ -365,6 +365,11 @@ impl<'map> IntegerVariable<'map> {
             components::Type::Vector
         };
         let idxtype = if compressed { components::Type::IndexComp } else { components::Type::Index };
+
+        // we need to load all values into memory so we can sort them later
+        // this step is very memory-intensive and could be replaced with a reverse index component later on
+        // format: [(value, index); n]
+        let mut values: Vec<(i64, i64)> = values.take(n).enumerate().map(|(i, v)| (v, i as i64)).collect();
         
         let mut builder = ContainerBuilder::new_into_file(name, file, 2)
             .edit_header(| h | {
@@ -377,36 +382,27 @@ impl<'map> IntegerVariable<'map> {
             .add_component("IntStream", vectype, | bom_entry, file | {
                 unsafe {
                     if compressed {
-                        let values = values.map(|i| [i; 1]);
+                        let values = values.iter().map(|(v, _)| [*v; 1]);
                         if delta {
                             Vector::encode_delta_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
                         } else {
                             Vector::encode_compressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
                         }
                     } else {
-                        Vector::encode_uncompressed_to_container_file(values, n, 1, file, bom_entry, bom_entry.offset as u64);
+                        Vector::encode_uncompressed_to_container_file(values.iter().map(|(v, _)| *v), n, 1, file, bom_entry, bom_entry.offset as u64);
                     }
                 }
             });
 
-        let vecbom = *builder.get_component(0);
-        let vecmmap = unsafe { MmapOptions::new()
-            .offset(vecbom.offset as u64)
-            .len(vecbom.size as usize)
-            .map(builder.file())
-            .unwrap()
-        };
-
-        let int_stream = Component::from_raw_parts(&vecbom, vecmmap.as_ptr()).unwrap().into_vector().unwrap();
-        let int_stream = CachedVector::<1>::new(int_stream).unwrap();
+        // sort values via their value
+        values.sort_by_key(|(v, _)| *v);
 
         builder = builder.add_component("IntSort", idxtype, | bom_entry, file | {
             unsafe {
-                let values = int_stream.column_iter(0).map(| i | (i, i));
                 if compressed {
-                    Index::encode_compressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
+                    Index::encode_compressed_to_container_file(values.iter().copied(), n, file, bom_entry, bom_entry.offset as u64);
                 } else {
-                    Index::encode_uncompressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
+                    Index::encode_uncompressed_to_container_file(values.iter().copied(), n, file, bom_entry, bom_entry.offset as u64);
                 }
             }
         });
