@@ -636,6 +636,50 @@ impl<'map> PointerVariable<'map> {
     pub fn len(&self) -> usize {
         self.header.dim1()
     }
+
+    pub fn encode_to_file<I>(file: File, heads: I, n: usize, name: String, base: Uuid, compressed: bool, comment: &str) -> Self where I: Iterator<Item=i64> {
+        let vectype = if compressed { components::Type::VectorDelta } else { components::Type::Vector };
+        let idxtype = if compressed { components::Type::IndexComp } else { components::Type::Index };
+
+        // we need to load all values into memory so we can sort them later
+        // this step is very memory-intensive and could be replaced with a reverse index component later on
+        // format: [(head, cpos); n]
+        let mut values: Vec<(i64, i64)> = heads.take(n).enumerate().map(|(cpos, head)| (head, cpos as i64)).collect();
+        
+        let mut builder = ContainerBuilder::new_into_file(name, file, 2)
+            .edit_header(| h | {
+                h.comment(comment)
+                    .ziggurat_type(container::Type::PointerVariable)
+                    .dim1(n)
+                    .dim2(0)
+                    .base1(Some(base));
+            })
+            .add_component("HeadStream", vectype, | bom_entry, file | {
+                unsafe {
+                    if compressed {
+                        let values = values.iter().map(|(head, _)| [*head; 1]);
+                        Vector::encode_delta_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
+                    } else {
+                        Vector::encode_uncompressed_to_container_file(values.iter().map(|(head, _)| *head), n, 1, file, bom_entry, bom_entry.offset as u64);
+                    }
+                }
+            });
+
+        // sort values via their value
+        values.sort_by_key(|(head, _)| *head);
+
+        builder = builder.add_component("HeadSort", idxtype, | bom_entry, file | {
+            unsafe {
+                if compressed {
+                    Index::encode_compressed_to_container_file(values.iter().copied(), n, file, bom_entry, bom_entry.offset as u64);
+                } else {
+                    Index::encode_uncompressed_to_container_file(values.iter().copied(), n, file, bom_entry, bom_entry.offset as u64);
+                }
+            }
+        });
+
+        builder.build().try_into().expect("PointerVariable returned by its constructor is inconsistent")
+    }
 }
 
 impl<'map> TryFrom<Container<'map>> for PointerVariable<'map> {

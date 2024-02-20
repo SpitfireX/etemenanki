@@ -3,7 +3,7 @@
 extern crate test;
 
 use std::{collections::{HashMap, VecDeque}, fs::File, io::{BufRead, BufReader, Read, Result as IoResult}, str::FromStr};
-use etemenanki::{layers::SegmentationLayer, variables::IntegerVariable};
+use etemenanki::{layers::SegmentationLayer, variables::{IntegerVariable, PointerVariable}};
 use flate2::read::GzDecoder;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
@@ -14,6 +14,7 @@ use uuid::Uuid;
 #[pymodule]
 #[pyo3(name="_rustypy")]
 fn module(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(encode_ptr_from_p, m)?)?;
     m.add_function(wrap_pyfunction!(encode_seg_from_s, m)?)?;
     m.add_function(wrap_pyfunction!(encode_int_from_a, m)?)?;
     m.add_function(wrap_pyfunction!(encode_int_from_p, m)?)?;
@@ -100,9 +101,53 @@ fn encode_seg_from_s(input: &str, s_tag: &str, length: usize, base: &str, compre
 }
 
 #[pyfunction]
+fn encode_ptr_from_p(input: &str, basecol: usize, headcol: usize, length: usize, base: &str, compressed: bool, comment: &str, output: &str) -> usize {
+    let tails = open_reader(input).unwrap().iter_p(basecol);
+    let heads = open_reader(input).unwrap().iter_p(headcol);
+
+    let values = tails.zip(heads).map(|((cpos, base), (_, head))| {
+        if let Ok(h) = head.parse::<i64>() {
+            if let Ok(b) = base.parse::<i64>() {
+                if h == 0 {
+                    return cpos as i64;
+                } else {
+                    return cpos as i64 + (h - b);
+                }
+            }
+        }
+        -1
+    });
+
+    let base_uuid = Uuid::from_str(base).unwrap();
+
+    let file = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(output)
+        .unwrap();
+
+    let variable = PointerVariable::encode_to_file(file, values, length, "".to_owned(), base_uuid, compressed, comment);
+    variable.len()
+}
+
+#[pyfunction]
 fn vrt_stats(input: &str) -> (usize, usize, HashMap<String, usize>) {
     let mut reader = open_reader(input).unwrap();
     reader.stats()
+}
+
+pub struct PIter<R: Read> {
+    reader: VrtReader<R>,
+    column: usize,
+}
+
+impl<R: Read> Iterator for PIter<R> {
+    type Item = (usize, String);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.reader.next_p(self.column).map(|(i, s)| (i, s.to_string()))
+    }
 }
 
 struct PIntIter<R: Read> {
@@ -211,6 +256,10 @@ impl<R: Read> VrtReader<R> {
         }
 
         (self.cpos, pcount, scounts)
+    }
+
+    pub fn iter_p(self, column: usize) -> PIter<R> {
+        PIter { reader: self, column}
     }
 }
 

@@ -180,26 +180,6 @@ def write_datastore_object(obj, filename):
 def parse_set(str):
     return set(s.encode("utf-8") for s in str.strip().split("|") if s)
 
-def parse_int(str, default=None):
-    try:
-        return int(str)
-    except Exception as e:
-        if default is None:
-            raise e
-        else:
-            return default
-
-def parse_ptr(cpos: int, base: str, head: str):
-    try:
-        h = int(head)
-        if h == 0:
-            return cpos
-        else:
-            b = int(base)
-            return cpos + (h - b)
-    except:
-        return -1
-
 
 ## Primary Layer with corpus dimensions
 primary_layer = PrimaryLayer(clen, comment = f"{args.input.name}")
@@ -227,9 +207,7 @@ for i, (name, type) in enumerate(p_attrs):
                 variable = FileSetVariable(primary_layer, fileiter, clen, parse_set, comment = c)
             elif type == "ptr":
                 base_index = next(i for i, (n, _) in enumerate(p_attrs) if n == args.ptr_base)
-                with open_input() as f2:
-                    base = PFileIter(f2, base_index, len(p_attrs))
-                    variable = PointerVariable(primary_layer, [parse_ptr(cpos, b, h) for cpos, (b, h) in enumerate(zip(base, fileiter))], compressed = not args.uncompressed, comment = c)
+                variable = RustyPointerVariable(primary_layer, f, base_index, i, clen, compressed = not args.uncompressed, comment = c)
             elif type == "skip":
                 continue
             else:

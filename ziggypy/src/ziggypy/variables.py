@@ -7,7 +7,7 @@ from typing import Callable
 from os.path import realpath
 
 from ziggypy.util import ResettableIter
-from ziggypy._rustypy import encode_int_from_p, encode_int_from_a
+from ziggypy._rustypy import encode_int_from_p, encode_int_from_a, encode_ptr_from_p
 
 from .container import Container
 from .components import *
@@ -401,3 +401,18 @@ class PointerVariable(Variable):
             (base_layer.uuid, None),
             comment,
         )
+
+class RustyPointerVariable:
+    def __init__(self, base_layer: Layer, file: RawIOBase, basecol: int, headcol: int, length: int, uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
+        self.base = str(base_layer.uuid)
+        self.input = realpath(file.name)
+        self.basecol = basecol
+        self.headcol = headcol
+        self.length = length
+        self.compressed = compressed
+        self.comment = comment
+
+    def write(self, f: RawIOBase):
+        output = realpath(f.name)
+        encodedlen = encode_ptr_from_p(self.input, self.basecol, self.headcol, self.length, self.base, self.compressed, self.comment, output)
+        assert encodedlen == self.length, "discrepancy between specified and actual encoded len"
