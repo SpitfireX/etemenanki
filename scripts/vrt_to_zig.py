@@ -14,7 +14,7 @@ from ziggypy._rustypy import vrt_stats
 from os.path import realpath
 from pathlib import Path
 
-parser = argparse.ArgumentParser(description="Script to convert a VRT file to a ziggurat basic layer")
+parser = argparse.ArgumentParser(description="Script to convert a VRT file to a Ziggurat Datastore. Prints VRT stats when no attributes get declared.")
 parser.add_argument("input", type=Path,
                     help="The VRT file to convert")
 parser.add_argument("-o", type=Path, required=False, dest="output",
@@ -109,6 +109,7 @@ def open_input():
 # scan file
 clen, pcount, scounts = vrt_stats(realpath(args.input))
 
+print(f"Input corpus has {clen} corpus positions")
 print(f"\t found {pcount} p-attrs in input")
 print(f"\t found {len(scounts.keys())} s-attrs: {scounts}")
 
@@ -137,8 +138,6 @@ if not p_attrs and not s_attrs and not s_annos:
     print("\tNo attributes for encoding")
     print("Hint: you should probably specify some with -p, -s, or -a (see --help)")
     exit()
-
-print(f"Input corpus has {clen} corpus positions")
 
 
 # output file handling
