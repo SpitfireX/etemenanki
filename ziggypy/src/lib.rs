@@ -4,7 +4,7 @@ extern crate test;
 
 use std::{collections::{HashMap, VecDeque}, fs::File, io::{BufRead, BufReader, Read, Result as IoResult}, str::FromStr};
 use etemenanki::{layers::SegmentationLayer, variables::{IntegerVariable, PointerVariable}};
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 
@@ -266,7 +266,7 @@ impl<R: Read> VrtReader<R> {
 pub fn open_reader(filename: &str) -> IoResult<VrtReader<Box<dyn Read>>> {
     let file = File::open(filename)?;
     if filename.ends_with("gz") {
-        Ok(VrtReader::new(Box::new(GzDecoder::new(file))))
+        Ok(VrtReader::new(Box::new(MultiGzDecoder::new(file))))
     } else {
         Ok(VrtReader::new(Box::new(file)))
     }
@@ -275,7 +275,7 @@ pub fn open_reader(filename: &str) -> IoResult<VrtReader<Box<dyn Read>>> {
 pub fn open_parser(filename: &str) -> IoResult<VrtParser<Box<dyn Read>>> {
     let file = File::open(filename)?;
     if filename.ends_with("gz") {
-        Ok(VrtParser::new(Box::new(GzDecoder::new(file))))
+        Ok(VrtParser::new(Box::new(MultiGzDecoder::new(file))))
     } else {
         Ok(VrtParser::new(Box::new(file)))
     }
