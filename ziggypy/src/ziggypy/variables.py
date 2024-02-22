@@ -7,7 +7,7 @@ from typing import Callable
 from os.path import realpath
 
 from ziggypy.util import ResettableIter
-from ziggypy._rustypy import encode_int_from_p, encode_int_from_a, encode_ptr_from_p
+from ziggypy._rustypy import encode_indexed_from_p, encode_int_from_p, encode_int_from_a, encode_ptr_from_p
 
 from .container import Container
 from .components import *
@@ -115,6 +115,26 @@ class IndexedStringVariable(Variable):
             (base_layer.uuid, None),
             comment,
         )
+
+class RustyIndexedStringVariable:
+    def __init__(self, base_layer: Layer, file: RawIOBase, src: int | tuple[str, str], length: int, uuid: Optional[UUID] = None, compressed: bool = True, comment: str = ""):
+        self.base = str(base_layer.uuid)
+        self.input = realpath(file.name)
+        self.src = src
+        self.length = length
+        self.compressed = compressed
+        self.comment = comment
+
+    def write(self, f: RawIOBase):
+        output = realpath(f.name)
+
+        if type(self.src) is int:
+            encode_indexed_from_p(self.input, self.src, self.length, self.base, self.compressed, self.comment, output)
+        elif type(self.src) is tuple and len(self.src) == 2 and type(self.src[0]) is str and type(self.src[1]) is str:
+            tag, attr = self.src
+            # encode_int_from_a(self.input, tag, attr, self.length, self.default, self.base, self.compressed, self.delta, self.comment, output)
+        else:
+            raise TypeError("wrong type for src, must be int or (str, str)")
 
 
 class FileIndexedStringVariable(Variable):

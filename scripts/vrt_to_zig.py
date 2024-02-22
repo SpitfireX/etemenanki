@@ -195,7 +195,7 @@ for i, (name, type) in enumerate(p_attrs):
 
         try:
             if type == "indexed":
-                variable = FileIndexedStringVariable(primary_layer, fileiter, compressed = not args.uncompressed, comment = c)
+                variable = RustyIndexedStringVariable(primary_layer, f, i, clen, compressed = not args.uncompressed, comment = c)
             elif type == "plain":
                 variable = PlainStringVariable(primary_layer, fileiter, compressed = not args.uncompressed, comment = c)
             elif type == "int":

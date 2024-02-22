@@ -3,7 +3,7 @@
 extern crate test;
 
 use std::{collections::{HashMap, VecDeque}, fs::File, io::{BufRead, BufReader, Read, Result as IoResult}, str::FromStr};
-use etemenanki::{layers::SegmentationLayer, variables::{IntegerVariable, PointerVariable}};
+use etemenanki::{layers::SegmentationLayer, variables::{IndexedStringVariable, IntegerVariable, PointerVariable}};
 use flate2::read::MultiGzDecoder;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
@@ -14,6 +14,7 @@ use uuid::Uuid;
 #[pymodule]
 #[pyo3(name="_rustypy")]
 fn module(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(encode_indexed_from_p, m)?)?;
     m.add_function(wrap_pyfunction!(encode_ptr_from_p, m)?)?;
     m.add_function(wrap_pyfunction!(encode_seg_from_s, m)?)?;
     m.add_function(wrap_pyfunction!(encode_int_from_a, m)?)?;
@@ -40,6 +41,23 @@ impl IntVariableCore {
     fn __len__(&self) -> usize {
         self.length
     }
+}
+
+#[pyfunction]
+fn encode_indexed_from_p(input: &str, column: usize, length: usize, base: &str, compressed: bool, comment: &str, output: &str){
+    let reader = open_reader(input).unwrap();
+    let strings = reader.iter_p(column).map(|(_, s)| s);
+
+    let base_uuid = Uuid::from_str(base).unwrap();
+
+    let file = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(output)
+        .unwrap();
+
+    IndexedStringVariable::encode_to_file(file, strings, length, "mar".to_owned(), base_uuid, compressed, comment);
 }
 
 #[pyfunction]

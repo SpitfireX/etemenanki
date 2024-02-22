@@ -6,7 +6,7 @@ use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use uuid::Uuid;
 
-use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector, Index, Vector};
+use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector, Index, LexiconBuilder, Vector};
 use crate::container::{self, Container, ContainerBuilder};
 use crate::macros::{check_and_return_component, get_container_base};
 
@@ -66,6 +66,40 @@ pub struct IndexedStringVariable<'map> {
 }
 
 impl<'map> IndexedStringVariable<'map> {
+    pub fn encode_to_file<I>(file: File, strings: I, n: usize, name: String, base: Uuid, compressed: bool, comment: &str) -> Self where I: Iterator<Item=String> {
+        let vectype = if compressed { components::Type::VectorDelta } else { components::Type::Vector };
+        let idxtype = if compressed { components::Type::IndexComp } else { components::Type::Index };
+
+        let lexbuilder = LexiconBuilder::from_strings(strings);
+        assert!(lexbuilder.tokens() == n, "found fewer tokens than layer size");
+
+        let builder = ContainerBuilder::new_into_file(name, file, 4)
+            .edit_header(| h | {
+                h.comment(comment)
+                    .ziggurat_type(container::Type::IndexedStringVariable)
+                    .dim1(lexbuilder.tokens())
+                    .dim2(lexbuilder.types())
+                    .base1(Some(base));
+            })
+            .add_component("Lexicon", components::Type::StringVector, | bom_entry, file | {
+                unsafe {
+                    lexbuilder.write_lexicon(file, bom_entry, bom_entry.offset as u64);
+                }
+            })
+            .add_component("LexHash", idxtype, | bom_entry, file | {
+                unsafe {
+                    lexbuilder.write_index(file, bom_entry, bom_entry.offset as u64, compressed);
+                }
+            })
+            .add_component("LexIDStream", vectype, | bom_entry, file | {
+                unsafe {
+                    lexbuilder.write_id_stream(file, bom_entry, bom_entry.offset as u64, compressed);
+                }
+            });
+
+        builder.build().try_into().expect("IndexedStringVariable returned by its constructor is inconsistent")
+    }
+
     pub fn get(&self, index: usize) -> Option<&str> {
         if index < self.lex_id_stream.len() {
             Some(self.get_unchecked(index))
