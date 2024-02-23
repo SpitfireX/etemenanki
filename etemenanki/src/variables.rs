@@ -67,7 +67,7 @@ pub struct IndexedStringVariable<'map> {
 
 impl<'map> IndexedStringVariable<'map> {
     pub fn encode_to_file<I>(file: File, strings: I, n: usize, name: String, base: Uuid, compressed: bool, comment: &str) -> Self where I: Iterator<Item=String> {
-        let vectype = if compressed { components::Type::VectorDelta } else { components::Type::Vector };
+        let vectype = if compressed { components::Type::VectorComp } else { components::Type::Vector };
         let idxtype = if compressed { components::Type::IndexComp } else { components::Type::Index };
 
         let lexbuilder = LexiconBuilder::from_strings(strings);
@@ -95,6 +95,9 @@ impl<'map> IndexedStringVariable<'map> {
                 unsafe {
                     lexbuilder.write_id_stream(file, bom_entry, bom_entry.offset as u64, compressed);
                 }
+            })
+            .add_component("LexIDIndex", components::Type::InvertedIndex, | bom_entry, file | {
+                lexbuilder.write_inverted_index(file, bom_entry, bom_entry.offset as u64);
             });
 
         builder.build().try_into().expect("IndexedStringVariable returned by its constructor is inconsistent")
@@ -102,7 +105,8 @@ impl<'map> IndexedStringVariable<'map> {
 
     pub fn get(&self, index: usize) -> Option<&str> {
         if index < self.lex_id_stream.len() {
-            Some(self.get_unchecked(index))
+            let ti = self.lex_id_stream.get_row_unchecked(index)[0];
+            self.lexicon.get(ti as usize)
         } else {
             None
         }
@@ -231,7 +235,7 @@ impl<'map> Iterator for IndexedStringIterator<'map> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.end {
-            let lexid = self.id_stream.get_row_unchecked(self.index)[0] as usize;
+            let lexid = dbg!(self.id_stream.get_row_unchecked(self.index)[0]) as usize;
             self.index += 1;
 
             Some(&self.lexicon.get_unchecked(lexid))

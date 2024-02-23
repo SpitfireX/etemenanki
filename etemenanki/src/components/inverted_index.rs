@@ -1,6 +1,9 @@
-use std::{cell::RefCell, num::NonZeroUsize, rc::Rc};
+use std::{cell::RefCell, fs::File, io::{BufWriter, Seek, Write}, num::NonZeroUsize, rc::Rc};
 
 use lru::LruCache;
+use ziggurat_varint::EncodeVarint;
+
+use crate::container::BomEntry;
 
 #[derive(Debug, Clone, Copy)]
 pub struct InvertedIndex<'map> {
@@ -49,6 +52,54 @@ impl<'map> InvertedIndex<'map> {
             offset: 0,
             value: 0,
         }
+    }
+
+    pub fn encode_to_container_file<I>(n_types: usize, id_stream: I, n: usize, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) where I: Iterator<Item=i64> {
+        // (frequency, last position, encoded postings) for each type
+        let mut postings = vec![(0i64, 0i64, Vec::new()); n_types];
+
+        let mut i = 0;
+        let mut buffer = [0u8; 9];
+
+        // encode and populate postings
+        for id in id_stream.take(n) {
+            let (freq, last, data) = &mut postings[id as usize];
+
+            let len = if *freq == 0 {
+                i.encode_varint_into(&mut buffer)
+            } else {
+                (i - *last).encode_varint_into(&mut buffer)
+            };
+            data.extend_from_slice(&buffer[..len]);
+
+            *last = id;
+            *freq += 1;
+            i += 1;
+        }
+
+        assert!(i as usize == n, "encoded fewer values than n");
+
+        file.seek(std::io::SeekFrom::Start(start_offset)).unwrap();
+        let mut writer = BufWriter::new(file);
+        
+        // write sync
+        let mut offset = 0i64;
+        for pi in 1..n_types {
+            let freq = postings[pi].0;
+            writer.write_all(&freq.to_le_bytes()).unwrap();
+            writer.write_all(&offset.to_le_bytes()).unwrap();
+            offset += postings[pi].2.len() as i64;
+        }
+
+        // write data
+        for (_, _, encoded) in postings {
+            writer.write_all(&encoded).unwrap();
+            offset += encoded.len() as i64;
+        }
+
+        bom_entry.size = offset;
+        bom_entry.param1 = n_types as i64;
+        bom_entry.param2 = 0;
     }
 }
 

@@ -6,7 +6,7 @@ use memmap2::MmapOptions;
 
 use crate::container::BomEntry;
 
-use super::{CachedVector, FnvHash, Index, Vector};
+use super::{CachedVector, FnvHash, Index, InvertedIndex, Vector};
 
 #[derive(Debug, Clone, Copy)]
 pub struct StringVector<'map> {
@@ -415,5 +415,10 @@ impl LexiconBuilder {
             let cvec = CachedVector::<1>::new(self.get_id_stream()).unwrap();
             Vector::encode_uncompressed_to_container_file(cvec.column_iter(0), cvec.len(), cvec.width(), file, bom_entry, start_offset);
         }
+    }
+
+    pub fn write_inverted_index(&self, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) {
+        let cvec = CachedVector::<1>::new(self.get_id_stream()).unwrap();
+        InvertedIndex::encode_to_container_file(self.types(), cvec.column_iter(0), self.tokens(), file, bom_entry, start_offset);
     }
 }
