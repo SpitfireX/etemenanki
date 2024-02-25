@@ -20,6 +20,15 @@ fn main() -> Result<()> {
         println!("{}: {}", i, w);
     }
 
+    let expected = "the";
+    let the_id = words.lexicon().iter().position(|s| s == expected).unwrap();
+    dbg!(the_id);
+    dbg!(words.inverted_index().frequency(the_id).unwrap());
+    let the: Vec<_> = words.inverted_index().positions(the_id).unwrap().collect();
+    for tpos in the {
+        let token = words.get_unchecked(tpos);
+        assert!(token == expected, "token not expected");
+    }
 
 
     // // let words = datastore["primary"]["word"]

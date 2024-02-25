@@ -14,6 +14,7 @@ use uuid::Uuid;
 #[pymodule]
 #[pyo3(name="_rustypy")]
 fn module(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(encode_indexed_from_a, m)?)?;
     m.add_function(wrap_pyfunction!(encode_indexed_from_p, m)?)?;
     m.add_function(wrap_pyfunction!(encode_ptr_from_p, m)?)?;
     m.add_function(wrap_pyfunction!(encode_seg_from_s, m)?)?;
@@ -41,6 +42,26 @@ impl IntVariableCore {
     fn __len__(&self) -> usize {
         self.length
     }
+}
+
+#[pyfunction]
+fn encode_indexed_from_a(input: &str, tag: &str, attr: &str, length: usize, base: &str, compressed: bool, comment: &str, output: &str){
+    let parser = open_parser(input).unwrap();
+    let strings = parser
+        .a_iter(tag, attr)
+        .map(|(_, _, str)| str);
+
+
+    let base_uuid = Uuid::from_str(base).unwrap();
+
+    let file = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(output)
+        .unwrap();
+
+    IndexedStringVariable::encode_to_file(file, strings, length, "mar".to_owned(), base_uuid, compressed, comment);
 }
 
 #[pyfunction]

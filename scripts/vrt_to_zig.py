@@ -238,29 +238,28 @@ for attr, annos in s_annos.items():
 
     for anno, type in annos:
         with open_input() as f:
-            fileiter = SFileIter(f, attr, fix=args.invalid_xml)
-            data = [a[anno] for _, a in fileiter]
+            c = f"s-attr {attr}_{anno}"
 
-        assert len(data) == base_layer.n, f"Inconsistend number of annotations for annotation '{anno}' for s attribute '{attr}'"
-
-        c = f"s-attr {attr}_{anno}"
-
-        try:
-            if type == "indexed":
-                variable = IndexedStringVariable(base_layer, [s.encode("utf-8") for s in data], compressed = not args.uncompressed, comment = c)
-            elif type == "plain":
-                variable = PlainStringVariable(base_layer, data, compressed = not args.uncompressed, comment = c)
-            elif type == "int":
-                variable = RustyIntegerVariable(base_layer, f, (attr, anno), base_layer.n, compressed = not args.uncompressed, comment = c, default=args.int_default)
-            elif type == "delta":
-                variable = RustyIntegerVariable(base_layer, f, (attr, anno), base_layer.n, compressed = not args.uncompressed, comment = c, default=args.int_default, delta=True)
-            elif type == "set":
-                variable = SetVariable(base_layer, [parse_set(s) for s in data], comment = c)
-            else:
-                print(f"Invalid type '{type}' for annotation '{anno}' of s attribute '{attr}'")
-                continue
-        except Exception as e:
-            print(f"Error while encoding annotation {anno} for s attribute '{attr}': {e}")
-            exit()
+            try:
+                if type == "indexed":
+                    variable = RustyIndexedStringVariable(primary_layer, f, (attr, anno), base_layer.n, compressed = not args.uncompressed, comment = c)
+                elif type == "plain":
+                    fileiter = SFileIter(f, attr, fix=args.invalid_xml)
+                    data = [a[anno] for _, a in fileiter]
+                    variable = PlainStringVariable(base_layer, data, compressed = not args.uncompressed, comment = c)
+                elif type == "int":
+                    variable = RustyIntegerVariable(base_layer, f, (attr, anno), base_layer.n, compressed = not args.uncompressed, comment = c, default=args.int_default)
+                elif type == "delta":
+                    variable = RustyIntegerVariable(base_layer, f, (attr, anno), base_layer.n, compressed = not args.uncompressed, comment = c, default=args.int_default, delta=True)
+                elif type == "set":
+                    fileiter = SFileIter(f, attr, fix=args.invalid_xml)
+                    data = [a[anno] for _, a in fileiter]
+                    variable = SetVariable(base_layer, [parse_set(s) for s in data], comment = c)
+                else:
+                    print(f"Invalid type '{type}' for annotation '{anno}' of s attribute '{attr}'")
+                    continue
+            except Exception as e:
+                print(f"Error while encoding annotation {anno} for s attribute '{attr}': {e}")
+                exit()
 
         write_datastore_object(variable, f"{attr}/{anno}")

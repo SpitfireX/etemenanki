@@ -7,7 +7,7 @@ from typing import Callable
 from os.path import realpath
 
 from ziggypy.util import ResettableIter
-from ziggypy._rustypy import encode_indexed_from_p, encode_int_from_p, encode_int_from_a, encode_ptr_from_p
+from ziggypy._rustypy import encode_indexed_from_a, encode_indexed_from_p, encode_int_from_p, encode_int_from_a, encode_ptr_from_p
 
 from .container import Container
 from .components import *
@@ -132,7 +132,7 @@ class RustyIndexedStringVariable:
             encode_indexed_from_p(self.input, self.src, self.length, self.base, self.compressed, self.comment, output)
         elif type(self.src) is tuple and len(self.src) == 2 and type(self.src[0]) is str and type(self.src[1]) is str:
             tag, attr = self.src
-            # encode_int_from_a(self.input, tag, attr, self.length, self.default, self.base, self.compressed, self.delta, self.comment, output)
+            encode_indexed_from_a(self.input, tag, attr, self.length, self.base, self.compressed, self.comment, output)
         else:
             raise TypeError("wrong type for src, must be int or (str, str)")
 
