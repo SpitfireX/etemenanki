@@ -311,41 +311,41 @@ impl LexiconBuilder {
             id_stream[i] = lut[id_stream[i]];
         }
 
-        let mut bi = 0;
+        let mut bufi = 0;
         let mut idbuf = [0i64; 16];
 
         // compress id_stream
         for (i, id) in id_stream.iter().enumerate() {
             self.length += 1;
-            bi = i % 16;
-            idbuf[bi] = *id as i64;
-            if bi == 15 {
+            bufi = i % 16;
+            idbuf[bufi] = *id as i64;
+            if bufi == 15 {
                 self.encode_block(&idbuf);
+                bufi = 0;
             }
         }
-        bi += 1;
 
         // encode the remainder (if any)
         for s in strings {
             let id = self.get_id_or_add(s.as_ref());
 
             // the id stream gets collected into compressed Vector blocks
-            if bi < idbuf.len() {
-                idbuf[bi] = id as i64;
-                bi += 1;
+            if bufi < idbuf.len() {
+                idbuf[bufi] = id as i64;
+                bufi += 1;
             } else {
                 // spill buffer
                 self.encode_block(&idbuf);
 
                 idbuf[0] = id as i64;
-                bi = 1;
+                bufi = 1;
             }
 
             self.length += 1;
         }
 
         // finish last id_stream block
-        for i in bi..idbuf.len() {
+        for i in bufi..idbuf.len() {
             idbuf[i] = -1;
         }
         self.encode_block(&idbuf);
@@ -399,8 +399,9 @@ impl LexiconBuilder {
         if compressed {
             file.seek(SeekFrom::Start(start_offset)).unwrap();
 
-            let synclen = self.id_stream_sync.len() - 1;
-            let sync = slice::from_raw_parts(self.id_stream_sync.as_ptr() as *const u8, mem::size_of::<i64>() * synclen);
+            let m = (self.length-1) / 16 + 1;
+            assert!(self.id_stream_sync.len() == m+1, "somehow encoded too many blocks?");
+            let sync = slice::from_raw_parts(self.id_stream_sync.as_ptr() as *const u8, mem::size_of::<i64>() * m);
             file.write_all(sync).unwrap();
             bom_entry.size = sync.len() as i64;
 
