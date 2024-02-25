@@ -72,7 +72,7 @@ impl<'map> InvertedIndex<'map> {
             };
             data.extend_from_slice(&buffer[..len]);
 
-            *last = id;
+            *last = i;
             *freq += 1;
             i += 1;
         }

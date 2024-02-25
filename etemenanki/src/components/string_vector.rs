@@ -345,7 +345,7 @@ impl LexiconBuilder {
         }
 
         // finish last id_stream block
-        for i in bufi..idbuf.len() {
+        for i in bufi+1..idbuf.len() {
             idbuf[i] = -1;
         }
         self.encode_block(&idbuf);
