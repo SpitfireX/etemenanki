@@ -16,14 +16,11 @@ fn main() -> Result<()> {
         .as_indexed_string()
         .unwrap();
 
-    // for (i, w) in words.iter().enumerate() {
-    //     println!("{}: {}", i, w);
-    // }
-
-    for i in words.id_stream().column_iter(0) {
-        print!("{}: ", i);
-        println!("{:?}", words.get(i as usize));
+    for (i, w) in words.iter().enumerate() {
+        println!("{}: {}", i, w);
     }
+
+
 
     // // let words = datastore["primary"]["word"]
     // //     .as_indexed_string()

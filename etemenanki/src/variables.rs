@@ -68,7 +68,6 @@ pub struct IndexedStringVariable<'map> {
 impl<'map> IndexedStringVariable<'map> {
     pub fn encode_to_file<I>(file: File, strings: I, n: usize, name: String, base: Uuid, compressed: bool, comment: &str) -> Self where I: Iterator<Item=String> {
         let vectype = if compressed { components::Type::VectorComp } else { components::Type::Vector };
-        let idxtype = if compressed { components::Type::IndexComp } else { components::Type::Index };
 
         let lexbuilder = LexiconBuilder::from_strings(strings);
         assert!(lexbuilder.tokens() == n, "found fewer tokens than layer size");
@@ -86,9 +85,9 @@ impl<'map> IndexedStringVariable<'map> {
                     lexbuilder.write_lexicon(file, bom_entry, bom_entry.offset as u64);
                 }
             })
-            .add_component("LexHash", idxtype, | bom_entry, file | {
+            .add_component("LexHash", components::Type::Index, | bom_entry, file | {
                 unsafe {
-                    lexbuilder.write_index(file, bom_entry, bom_entry.offset as u64, compressed);
+                    lexbuilder.write_index(file, bom_entry, bom_entry.offset as u64);
                 }
             })
             .add_component("LexIDStream", vectype, | bom_entry, file | {
@@ -235,7 +234,7 @@ impl<'map> Iterator for IndexedStringIterator<'map> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.end {
-            let lexid = dbg!(self.id_stream.get_row_unchecked(self.index)[0]) as usize;
+            let lexid = self.id_stream.get_row_unchecked(self.index)[0] as usize;
             self.index += 1;
 
             Some(&self.lexicon.get_unchecked(lexid))

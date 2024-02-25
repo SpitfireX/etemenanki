@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fs::File, io::{BufWriter, Seek, Write}, num::NonZeroUsize, rc::Rc};
+use std::{cell::RefCell, fs::File, io::{BufWriter, Seek, Write}, mem, num::NonZeroUsize, rc::Rc};
 
 use lru::LruCache;
 use ziggurat_varint::EncodeVarint;
@@ -83,21 +83,23 @@ impl<'map> InvertedIndex<'map> {
         let mut writer = BufWriter::new(file);
         
         // write sync
-        let mut offset = 0i64;
-        for pi in 1..n_types {
-            let freq = postings[pi].0;
+        let mut typeinfolen = 0i64;
+        let mut datalen = 0i64;
+        for pi in 0..postings.len() {
+            let (freq, _, encoded) = &mut postings[pi];
             writer.write_all(&freq.to_le_bytes()).unwrap();
-            writer.write_all(&offset.to_le_bytes()).unwrap();
-            offset += postings[pi].2.len() as i64;
+            writer.write_all(&datalen.to_le_bytes()).unwrap();
+            datalen += encoded.len() as i64;
+            typeinfolen += mem::size_of::<i64>() as i64 * 2;
         }
 
         // write data
         for (_, _, encoded) in postings {
             writer.write_all(&encoded).unwrap();
-            offset += encoded.len() as i64;
         }
+        writer.flush().unwrap();
 
-        bom_entry.size = offset;
+        bom_entry.size = typeinfolen + datalen;
         bom_entry.param1 = n_types as i64;
         bom_entry.param2 = 0;
     }

@@ -113,9 +113,12 @@ impl<'map> StringVector<'map> {
 
         for s in strings.take(n) {
             offsets[count] = soffset;
+
             let bytes = s.as_ref().as_bytes();
             writer.write_all(bytes).unwrap();
-            soffset += bytes.len();
+            writer.write_all(&0u8.to_le_bytes()).unwrap(); // null terminator
+
+            soffset += bytes.len()+1;
             count += 1;
         }
         offsets[count] = soffset;
@@ -320,6 +323,7 @@ impl LexiconBuilder {
                 self.encode_block(&idbuf);
             }
         }
+        bi += 1;
 
         // encode the remainder (if any)
         for s in strings {
@@ -384,24 +388,21 @@ impl LexiconBuilder {
         StringVector::encode_to_container_file(strings, self.types(), file, bom_entry, start_offset)
     }
 
-    pub unsafe fn write_index(&self, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64, compressed: bool) {
+    pub unsafe fn write_index(&self, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) {
         let mut pairs: Vec<_> = self.type_idx.iter().map(|(k, v)| (*k, *v as i64)).collect();
         pairs.sort_unstable_by_key(|(k, _)| *k);
         
-        if compressed {
-            Index::encode_compressed_to_container_file(pairs.iter().copied(), self.types(), file, bom_entry, start_offset);
-        } else {
-            Index::encode_uncompressed_to_container_file(pairs.iter().copied(), self.types(), file, bom_entry, start_offset);
-        }
+        Index::encode_uncompressed_to_container_file(pairs.iter().copied(), self.types(), file, bom_entry, start_offset);
     }
 
     pub unsafe fn write_id_stream(&self, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64, compressed: bool) {
         if compressed {
             file.seek(SeekFrom::Start(start_offset)).unwrap();
 
-            let sync = slice::from_raw_parts(self.id_stream_sync.as_ptr() as *const u8, mem::size_of::<i64>() * self.id_stream_sync.len());
+            let synclen = self.id_stream_sync.len() - 1;
+            let sync = slice::from_raw_parts(self.id_stream_sync.as_ptr() as *const u8, mem::size_of::<i64>() * synclen);
             file.write_all(sync).unwrap();
-            bom_entry.size += sync.len() as i64;
+            bom_entry.size = sync.len() as i64;
 
             file.write_all(&self.id_stream_data).unwrap();
             bom_entry.size += self.id_stream_data.len() as i64;
