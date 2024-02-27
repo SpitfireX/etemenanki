@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 etemenanki = { path = "../etemenanki" }
 libcl-rs = { path = "../libcl-rs" }
+rand = "0.8.5"
 
 [dev-dependencies]
 criterion = { version = "0.4", features = ["html_reports"] }
