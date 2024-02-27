@@ -1,7 +1,8 @@
 [workspace]
 resolver = "2"
 
-members = [
+members = [ "benchmarks",
+    "benchmarks",
     "etemenanki",
     "libcl-rs",
     "ziggurat-varint",
