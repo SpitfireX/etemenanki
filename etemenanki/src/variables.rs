@@ -6,7 +6,7 @@ use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use uuid::Uuid;
 
-use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector, Index, LexiconBuilder, Vector};
+use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector, ColumnIterator, Index, LexiconBuilder, Vector};
 use crate::container::{self, Container, ContainerBuilder};
 use crate::macros::{check_and_return_component, get_container_base};
 
@@ -362,7 +362,7 @@ impl<'map> Iterator for PlainStringIterator<'map> {
     }
 }
 
-impl<'map> IntoIterator for &'map PlainStringVariable<'map> {
+impl<'a, 'map> IntoIterator for &'a PlainStringVariable<'map> {
     type Item = &'map str;
     type IntoIter = PlainStringIterator<'map>;
 
@@ -459,11 +459,8 @@ impl<'map> IntegerVariable<'map> {
         self.int_stream.get_row_unchecked(index)[0]
     }
 
-    pub fn iter(&self) -> IntegerIterator<'map> {
-        IntegerIterator {
-            int_stream: self.int_stream.clone(),
-            index: 0,
-        }
+    pub fn iter(&self) -> ColumnIterator<'map, 1> {
+        self.int_stream.column_iter(0)
     }
 
     pub fn len(&self) -> usize {
@@ -472,6 +469,15 @@ impl<'map> IntegerVariable<'map> {
 
     pub fn b(&self) -> usize {
         self.header.dim2()
+    }
+}
+
+impl<'a, 'map> IntoIterator for &'a IntegerVariable<'map> {
+    type Item = i64;
+    type IntoIter = ColumnIterator<'map, 1>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
 
@@ -512,25 +518,6 @@ impl<'map> TryFrom<Container<'map>> for IntegerVariable<'map> {
             }
 
             _ => Err(Self::Error::WrongContainerType),
-        }
-    }
-}
-
-pub struct IntegerIterator<'map> {
-    int_stream: CachedVector<'map, 1>,
-    index: usize,
-}
-
-impl<'map> Iterator for IntegerIterator<'map> {
-    type Item = i64;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.int_stream.len() {
-            let value = self.int_stream.get_row_unchecked(self.index)[0];
-            self.index += 1;
-            Some(value)
-        } else {
-            None
         }
     }
 }
