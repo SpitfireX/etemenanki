@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion};
-use rand::{distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng, seq::SliceRandom};
+use rand::{Rng, distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng, seq::SliceRandom};
 use etemenanki::Datastore;
 use libcl_rs::Corpus;
 
@@ -36,6 +36,23 @@ fn setup_windows(len: usize, wmin: usize, wmax: usize) -> Vec<(usize, usize)> {
     windows.shuffle(&mut rng);
 
     windows
+}
+
+fn setup_jumps(len: usize, maxjumps: usize, jumplen: isize) -> Vec<Vec<isize>> {
+    let mut rng = StdRng::seed_from_u64(42);
+    let ndist = Uniform::new(0, maxjumps);
+    let lendist = Uniform::new(-jumplen, jumplen);
+    let mut jumps: Vec<Vec<isize>> = vec![Vec::new(); len];
+
+    for vec in jumps.iter_mut() {
+        if rng.gen_bool(0.5) {
+            for _ in 0..ndist.sample(&mut rng) {
+                vec.push(lendist.sample(&mut rng));
+            }
+        }
+    }
+
+    jumps
 }
 
 fn open_ziggurat() -> Datastore<'static> {
@@ -184,6 +201,44 @@ fn c_alternating_decode(b: &mut Bencher) {
     })
 }
 
+// Sequential, Head Locally Random Decode
+
+fn z_headlocal_decode(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+    let jumps = setup_jumps(words.len(), 5, 10);
+
+    b.iter(|| {
+        for ((cpos, s), jumps) in words.iter().enumerate().zip(jumps.iter()) {
+            black_box(s);
+            for offset in jumps {
+                if let Some(s) = words.get((cpos as isize + offset) as usize) {
+                    black_box(s);
+                }
+            }
+        }
+    })
+}
+
+fn c_headlocal_decode(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+    let jumps = setup_jumps(words.max_cpos().unwrap() as usize, 5, 10);
+
+    b.iter(|| {
+        for (cpos, jumps) in (0..words.max_cpos().unwrap()).zip(jumps.iter()) {
+            black_box(words.cpos2str(cpos).unwrap());
+            for offset in jumps {
+                if let Ok(s) = words.cpos2str(cpos as i32 + *offset as i32) {
+                    black_box(s);
+                }
+            }
+        }
+    })
+}
+
 //
 // Criterion Main
 //
@@ -211,4 +266,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Narrowing Alternating Window Decode
     group.bench_function("ziggurat narrowing alternating window layer decode", z_alternating_decode);
     group.bench_function("libcl narrowing alternating window layer decode", c_alternating_decode);
+
+    // Sequential, Head Locally Random Decode
+    group.bench_function("ziggurat head locally random layer decode", z_headlocal_decode);
+    group.bench_function("libcl head locally random layer decode", c_headlocal_decode);
 }
