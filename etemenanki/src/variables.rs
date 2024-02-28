@@ -128,16 +128,11 @@ impl<'map> IndexedStringVariable<'map> {
         self.lex_id_stream.get_row_unchecked(index)[0] as usize
     }
 
-    pub fn get_range(&self, start: usize, end: usize) -> IndexedStringIterator<'map> {
-        IndexedStringIterator {
-            lexicon: self.lexicon,
-            id_stream: self.lex_id_stream.clone(),
-            index: start,
-            end,
-        }
+    pub fn get_range(&self, start: usize, end: usize) -> Option<IndexedStringIterator<'map>> {
+        IndexedStringIterator::new(self, start, end)
     }
 
-    pub fn id_stream(&'map self) -> components::CachedVector<'map, 1> {
+    pub fn id_stream(&self) -> components::CachedVector<'map, 1> {
         self.lex_id_stream.clone()
     }
 
@@ -149,15 +144,15 @@ impl<'map> IndexedStringVariable<'map> {
         self.lex_id_index.clone()
     }
 
-    pub fn iter(&'map self) -> IndexedStringIterator<'map> {
-        self.into_iter()
+    pub fn iter(&self) -> IndexedStringIterator<'map> {
+        self.get_range(0, self.len()).unwrap()
     }
 
     pub fn len(&self) -> usize {
         self.header.dim1()
     }
 
-    pub fn lexicon(&self) -> &components::StringVector {
+    pub fn lexicon(&self) -> &components::StringVector<'map> {
         &self.lexicon
     }
 
@@ -224,37 +219,38 @@ impl<'map> TryFrom<Container<'map>> for IndexedStringVariable<'map> {
 
 pub struct IndexedStringIterator<'map> {
     lexicon: components::StringVector<'map>,
-    id_stream: components::CachedVector<'map, 1>,
-    index: usize,
-    end: usize,
+    ids: components::ColumnIterator<'map, 1>,
+}
+
+impl<'map> IndexedStringIterator<'map> {
+    pub fn new(var: &IndexedStringVariable<'map>, start: usize, end: usize) -> Option<Self> {
+        var.id_stream().column_iter_range(start, end, 0)
+            .map(| ids | {
+                IndexedStringIterator {
+                    lexicon: *var.lexicon(),
+                    ids,
+                }
+            })
+    }
 }
 
 impl<'map> Iterator for IndexedStringIterator<'map> {
     type Item = &'map str;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.end {
-            let lexid = self.id_stream.get_row_unchecked(self.index)[0] as usize;
-            self.index += 1;
-
-            Some(&self.lexicon.get_unchecked(lexid))
-        } else {
-            None
-        }
+        self.ids.next()
+            .and_then(| id | {
+                self.lexicon.get(id as usize)
+            })
     }
 }
 
-impl<'map> IntoIterator for &'map IndexedStringVariable<'map> {
+impl<'a, 'map> IntoIterator for &'a IndexedStringVariable<'map> {
     type Item = &'map str;
     type IntoIter = IndexedStringIterator<'map>;
 
     fn into_iter(self) -> Self::IntoIter {
-        IndexedStringIterator {
-            lexicon: self.lexicon,
-            id_stream: self.lex_id_stream.clone(),
-            index: 0,
-            end: self.len(),
-        }
+        IndexedStringIterator::new(self, 0, self.len()).unwrap()
     }
 }
 
