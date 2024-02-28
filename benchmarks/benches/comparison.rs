@@ -139,6 +139,51 @@ fn c_window_decode(b: &mut Bencher) {
     })
 }
 
+// Narrowing Alternating Window Decode
+
+fn z_alternating_decode(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+    let windows = setup_windows(words.len(), 20, 50);
+
+
+    b.iter(|| {
+        for (start, end) in windows.iter() {
+            let zigzag = (*start..*end)
+                .zip((*start..*end).rev())
+                .map(|(v1, v2)| [v1, v2])
+                .flatten()
+                .take(*end - *start);
+
+            for cpos in zigzag {
+                black_box(words.get(cpos).unwrap());
+            }
+        }
+    })
+}
+
+fn c_alternating_decode(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+    let windows = setup_windows(words.max_cpos().unwrap() as usize, 20, 50);
+
+    b.iter(|| {
+        for (start, end) in windows.iter() {
+            let zigzag = (*start..*end)
+                .zip((*start..*end).rev())
+                .map(|(v1, v2)| [v1, v2])
+                .flatten()
+                .take(*end - *start);
+
+            for cpos in zigzag {
+                black_box(words.cpos2str(cpos as i32).unwrap());
+            }
+        }
+    })
+}
+
 //
 // Criterion Main
 //
@@ -148,6 +193,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.sample_size(10);
     group.measurement_time(Duration::new(60, 0));
     // group.measurement_time(Duration::new(600, 0));
+    group.sampling_mode(criterion::SamplingMode::Flat);
 
 
     // Sequential Layer Decode
@@ -161,4 +207,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Windowed Sequential Layer Decode
     group.bench_function("ziggurat windowed sequential layer decode", z_window_decode);
     group.bench_function("libcl windowed sequential layer decode", c_window_decode);
+
+    // Narrowing Alternating Window Decode
+    group.bench_function("ziggurat narrowing alternating window layer decode", z_alternating_decode);
+    group.bench_function("libcl narrowing alternating window layer decode", c_alternating_decode);
 }
