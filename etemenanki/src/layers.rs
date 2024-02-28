@@ -250,7 +250,7 @@ impl<'map> SegmentationLayer<'map> {
         (row[0] as usize, row[1] as usize)
     }
 
-    pub fn iter(&'map self) -> SegmentationLayerIterator<'map> {
+    pub fn iter(&self) -> SegmentationLayerIterator<'map> {
         self.into_iter()
     }
 
@@ -367,32 +367,25 @@ impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {
 }
 
 pub struct SegmentationLayerIterator<'map> {
-    ranges: components::CachedVector<'map, 2>,
-    index: usize,
+    ranges: components::RowIterator<'map, 2>,
 }
 
 impl<'map> Iterator for SegmentationLayerIterator<'map> {
     type Item = (usize, usize);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.ranges.len() {
-            let row = self.ranges.get_row_unchecked(self.index);
-            self.index += 1;
-            Some((row[0] as usize, row[1] as usize))
-        } else {
-            None
-        }
+        self.ranges.next()
+            .map(| row | (row[0] as usize, row[1] as usize))
     }
 }
 
-impl<'map> IntoIterator for &'map SegmentationLayer<'map> {
+impl<'a, 'map> IntoIterator for &'a SegmentationLayer<'map> {
     type Item = (usize, usize);
     type IntoIter = SegmentationLayerIterator<'map>;
 
     fn into_iter(self) -> Self::IntoIter {
         SegmentationLayerIterator {
-            ranges: self.range_stream.clone(),
-            index: 0,
+            ranges: self.range_stream.iter()
         }
     }
 }
