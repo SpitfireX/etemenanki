@@ -242,7 +242,7 @@ for attr, annos in s_annos.items():
 
             try:
                 if type == "indexed":
-                    variable = RustyIndexedStringVariable(primary_layer, f, (attr, anno), base_layer.n, compressed = not args.uncompressed, comment = c)
+                    variable = RustyIndexedStringVariable(base_layer, f, (attr, anno), base_layer.n, compressed = not args.uncompressed, comment = c)
                 elif type == "plain":
                     fileiter = SFileIter(f, attr, fix=args.invalid_xml)
                     data = [a[anno] for _, a in fileiter]
