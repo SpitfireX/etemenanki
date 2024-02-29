@@ -8,14 +8,18 @@ use libcl_rs::Corpus;
 criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);
 
+fn rng() -> StdRng {
+    StdRng::seed_from_u64(42)
+}
+
 fn setup_rand(len: usize, max: usize) -> Vec<usize> {
-    let rng = StdRng::seed_from_u64(42);
+    let rng = rng();
     let dist = Uniform::new(0, max);
     Vec::from_iter(dist.sample_iter(rng).take(len))
 }
 
 fn setup_windows(len: usize, wmin: usize, wmax: usize) -> Vec<(usize, usize)> {
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = rng();
     let dist = Uniform::new(wmin, wmax);
     let mut windows: Vec<(usize, usize)> = Vec::new();
 
@@ -39,7 +43,7 @@ fn setup_windows(len: usize, wmin: usize, wmax: usize) -> Vec<(usize, usize)> {
 }
 
 fn setup_jumps(len: usize, maxjumps: usize, jumplen: isize) -> Vec<Vec<isize>> {
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = rng();
     let ndist = Uniform::new(0, maxjumps);
     let lendist = Uniform::new(-jumplen, jumplen);
     let mut jumps: Vec<Vec<isize>> = vec![Vec::new(); len];
@@ -67,6 +71,9 @@ fn open_cwb() -> Corpus {
 
 //
 // Benchmarks
+//
+
+// Raw Access
 //
 
 // Sequential Layer Decode
@@ -239,6 +246,238 @@ fn c_headlocal_decode(b: &mut Bencher) {
     })
 }
 
+// Sequential Segmentation Decode
+
+fn z_seq_seg_decode(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let s = datastore["s"]
+        .as_segmentation()
+        .unwrap();
+
+    b.iter(|| {
+        for seg in s.iter() {
+            black_box(seg);
+        }
+    })
+}
+
+fn c_seq_seg_decode(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let s = corpus.get_s_attribute("s").unwrap();
+
+    b.iter(|| {
+        for struc in 0..s.max_struc().unwrap() {
+            black_box(s.cpos2struc2cpos(struc).unwrap());
+        }
+    })
+}
+
+// Random Segmentation Decode
+
+fn z_rnd_seg_decode(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let s = datastore["s"]
+        .as_segmentation()
+        .unwrap();
+    let mut positions: Vec<_> = (0..s.len()).collect();
+    positions.shuffle(&mut rng());
+
+    b.iter(|| {
+        for pos in positions.iter() {
+            black_box(s.get(*pos).unwrap());
+        }
+    })
+}
+
+fn c_rnd_seg_decode(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let s = corpus.get_s_attribute("s").unwrap();
+    let mut positions: Vec<_> = (0..s.max_struc().unwrap()).collect();
+    positions.shuffle(&mut rng());
+
+    b.iter(|| {
+        for pos in positions.iter() {
+            black_box(s.cpos2struc2cpos(*pos).unwrap());
+        }
+    })
+}
+
+// Sequential Segmentation Lookup
+
+fn z_seq_seg_lookup(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+    let s = datastore["s"]
+        .as_segmentation()
+        .unwrap();
+
+    b.iter(|| {
+        for cpos in 0..words.len() {
+            black_box(s.find_containing(cpos));
+        }
+    })
+}
+
+fn c_seq_seg_lookup(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+    let s = corpus.get_s_attribute("s").unwrap();
+
+    b.iter(|| {
+        for cpos in 0..words.max_cpos().unwrap() {
+            black_box(s.cpos2struc(cpos).ok());
+        }
+    })
+}
+
+
+// Random Segmentation Lookup
+
+fn z_rnd_seg_lookup(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+    let s = datastore["s"]
+        .as_segmentation()
+        .unwrap();
+    let mut positions: Vec<_> = (0..words.len()).collect();
+    positions.shuffle(&mut rng());
+
+
+    b.iter(|| {
+        for cpos in positions.iter() {
+            black_box(s.find_containing(*cpos));
+        }
+    })
+}
+
+fn c_rnd_seg_lookup(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+    let s = corpus.get_s_attribute("s").unwrap();
+    let mut positions: Vec<_> = (0..words.max_cpos().unwrap()).collect();
+    positions.shuffle(&mut rng());
+
+    b.iter(|| {
+        for cpos in positions.iter() {
+            black_box(s.cpos2struc(*cpos).ok());
+        }
+    })
+}
+
+// Windowed Segmentation Lookup
+
+fn z_window_seg_lookup(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+    let s = datastore["s"]
+        .as_segmentation()
+        .unwrap();
+    let windows = setup_windows(words.len(), 20, 50);
+
+    b.iter(|| {
+        for (start, end) in windows.iter() {
+            for cpos in *start..*end {
+                black_box(s.find_containing(cpos));
+            }
+        }
+    })
+}
+
+fn c_window_seg_lookup(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+    let s = corpus.get_s_attribute("s").unwrap();
+    let windows = setup_windows(words.max_cpos().unwrap() as usize, 20, 50);
+
+    b.iter(|| {
+        for (start, end) in windows.iter() {
+            for cpos in *start..*end {
+                black_box(s.cpos2struc(cpos as i32).ok());
+            }
+        }
+    })
+}
+
+// Segmentation Start
+
+fn z_seg_start(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+    let s = datastore["s"]
+        .as_segmentation()
+        .unwrap();
+
+    b.iter(|| {
+        for cpos in 0..words.len() {
+            black_box(s.contains_start(cpos));
+        }
+    })
+}
+
+fn c_seg_start(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+    let s = corpus.get_s_attribute("s").unwrap();
+
+    b.iter(|| {
+        for cpos in 0..words.max_cpos().unwrap() {
+            black_box(s.cpos2boundary(cpos).unwrap() == 2);
+        }
+    })
+}
+
+// Combined Access
+//
+
+// Join Performance
+
+fn z_join(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+    let s = datastore["s"]
+        .as_segmentation()
+        .unwrap();
+    let positions = setup_rand(1_000_000, words.len());
+
+    b.iter(|| {
+        for cpos in positions.iter() {
+           if let Some(spos) = s.find_containing(*cpos) {
+                let (start, end) = s.get_unchecked(spos);
+                for s in words.get_range(start, end).unwrap() {
+                    black_box(s);
+                }
+           }
+        }
+    })
+}
+
+fn c_join(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+    let s = corpus.get_s_attribute("s").unwrap();
+    let positions = setup_rand(1_000_000, words.max_cpos().unwrap() as usize);
+
+    b.iter(|| {
+        for cpos in positions.iter() {
+            if let Ok((start, end)) = s.cpos2struc2cpos(*cpos as i32) {
+                for i in start..end {
+                    black_box(words.cpos2str(i).unwrap());
+                }
+            }
+        }
+    })
+}
+
 //
 // Criterion Main
 //
@@ -270,4 +509,32 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Sequential, Head Locally Random Decode
     group.bench_function("ziggurat head locally random layer decode", z_headlocal_decode);
     group.bench_function("libcl head locally random layer decode", c_headlocal_decode);
+
+    // Sequential Segmentation Decode
+    group.bench_function("ziggurat sequential segmentation decode", z_seq_seg_decode);
+    group.bench_function("libcl sequential segmentation decode", c_seq_seg_decode);
+
+    // Random Segmentation Decode
+    group.bench_function("ziggurat random segmentation decode", z_rnd_seg_decode);
+    group.bench_function("libcl random segmentation decode", c_rnd_seg_decode);
+
+    // Sequential Segmentation Lookup
+    group.bench_function("ziggurat sequential segmentation lookup", z_seq_seg_lookup);
+    group.bench_function("libcl sequential segmentation lookup", c_seq_seg_lookup);
+
+    // Random Segmentation Lookup
+    group.bench_function("ziggurat random segmentation lookup", z_rnd_seg_lookup);
+    group.bench_function("libcl random segmentation lookup", c_rnd_seg_lookup);
+
+    // Windowed Segmentation Lookup
+    group.bench_function("ziggurat windowed segmentation lookup", z_window_seg_lookup);
+    group.bench_function("libcl windowed segmentation lookup", c_window_seg_lookup);
+
+    // Segmentation Start
+    group.bench_function("ziggurat segmentation start check", z_seg_start);
+    group.bench_function("libcl segmentation start check", c_seg_start);
+
+    // Join Performance
+    group.bench_function("ziggurat join performance", z_join);
+    group.bench_function("libcl join performance", c_join);
 }
