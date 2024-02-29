@@ -5,7 +5,7 @@ use memmap2::Mmap;
 use test::{Bencher, black_box};
 use rand::{distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
 
-use crate::{components::{CachedIndex, CachedInvertedIndex, CachedVector, Index, IndexBlock, InvertedIndex, Vector, VectorBlock}, container::Container, layers::SegmentationLayer};
+use crate::{components::{CachedIndex, CachedInvertedIndex, CachedVector, Index, IndexBlock, InvertedIndex, Vector, VectorBlock}, container::Container, layers::SegmentationLayer, Datastore};
 
 const DATASTORE_PATH: &'static str = "testdata/simpledickens/";
 
@@ -442,4 +442,69 @@ fn idx_decode_cache(b: &mut Bencher) {
             black_box(cidx.get_all(n as i64).count());
         }
     });
+}
+
+#[test]
+fn string_vec_startswith() {
+    let datastore = Datastore::open("testdata/simpledickens").unwrap();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    for id in words.lexicon().all_starting_with("be") {
+        println!("{}: {}", id, words.lexicon().get_unchecked(id));
+    }
+}
+
+#[test]
+fn string_vec_endswith() {
+    let datastore = Datastore::open("testdata/simpledickens").unwrap();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    for id in words.lexicon().all_ending_with("car") {
+        println!("{}: {}", id, words.lexicon().get_unchecked(id));
+    }
+}
+
+#[test]
+fn string_vec_regex() {
+    let datastore = Datastore::open("testdata/simpledickens").unwrap();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    for id in words.lexicon().all_matching_regex("^be.*$").unwrap() {
+        println!("{}: {}", id, words.lexicon().get_unchecked(id));
+    }
+}
+
+
+#[bench]
+fn string_vec_startswith_raw(b: &mut Bencher) {
+    let datastore = Datastore::open("testdata/simpledickens").unwrap();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    b.iter(|| {
+        for id in words.lexicon().all_starting_with("be") {
+            black_box(id);
+        }
+    })
+}
+
+#[bench]
+fn string_vec_startswith_str(b: &mut Bencher) {
+    let datastore = Datastore::open("testdata/simpledickens").unwrap();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    b.iter(|| {
+        for id in words.lexicon().all_starting_with("be").as_strs() {
+            black_box(id);
+        }
+    })
 }

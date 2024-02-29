@@ -15,6 +15,7 @@ paste = "1.0"
 fnv = "1.0.7"
 lru = "0.12.1"
 tempfile = "3.10.0"
+regex = "1.10.3"
 
 [dependencies.uuid]
 version = "1.7.0"

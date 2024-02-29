@@ -3,6 +3,7 @@ use std::{
 };
 
 use memmap2::MmapOptions;
+use regex::Regex;
 
 use crate::container::BomEntry;
 
@@ -16,42 +17,62 @@ pub struct StringVector<'map> {
 }
 
 impl<'map> StringVector<'map> {
-    pub fn all_containing<'a: 'map, P>(&'a self, pat: P) -> PatternIterator<'map, 'a, P>
+    pub fn all_matching_regex(&self, regex: &str) -> Option<MatchIterator<'map, impl Iterator<Item = usize> + '_>> {
+        Regex::new(regex).ok()
+            .map(|regex| {
+                let iter = self.iter().enumerate()
+                    .filter(move |(_, s)| regex.is_match(s))
+                    .map(|(i, _)| i);
+
+                MatchIterator {
+                    strvec: *self,
+                    inner: iter,
+                }
+            })
+    }
+
+    pub fn all_containing<'a, P>(&'a self, pattern: P) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
     where
-        P: Pattern<'a> + Copy,
+        P: Pattern<'a> + Copy + 'a,
         <P as Pattern<'a>>::Searcher: ReverseSearcher<'a>,
     {
-        PatternIterator {
-            strvec: self,
-            index: 0,
-            pattern: pat,
-            fun: str::contains,
+        let iter = self.iter().enumerate()
+            .filter(move |(_, s)| pattern.is_contained_in(*s))
+            .map(|(i, _)| i);
+
+        MatchIterator {
+            strvec: *self,
+            inner: iter,
         }
     }
 
-    pub fn all_ending_with<'a: 'map, P>(&'a self, pat: P) -> PatternIterator<'map, 'a, P>
+    pub fn all_ending_with<'a: 'map, P>(&'a self, pattern: P) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
     where
-        P: Pattern<'a> + Copy,
-        <P as Pattern<'a>>::Searcher: ReverseSearcher<'a>,
+    P: Pattern<'a> + Copy + 'a,
+    <P as Pattern<'a>>::Searcher: ReverseSearcher<'a>,
     {
-        PatternIterator {
-            strvec: self,
-            index: 0,
-            pattern: pat,
-            fun: str::ends_with,
+        let iter = self.iter().enumerate()
+            .filter(move |(_, s)| pattern.is_suffix_of(*s))
+            .map(|(i, _)| i);
+        
+        MatchIterator {
+            strvec: *self,
+            inner: iter,
         }
     }
 
-    pub fn all_starting_with<'a: 'map, P>(&'a self, pat: P) -> PatternIterator<'map, 'a, P>
+    pub fn all_starting_with<'a: 'map, P>(&'a self, pattern: P) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
     where
-        P: Pattern<'a> + Copy,
-        <P as Pattern<'a>>::Searcher: ReverseSearcher<'a>,
+    P: Pattern<'a> + Copy + 'a,
+    <P as Pattern<'a>>::Searcher: ReverseSearcher<'a>,
     {
-        PatternIterator {
-            strvec: self,
-            index: 0,
-            pattern: pat,
-            fun: str::starts_with,
+        let iter = self.iter().enumerate()
+            .filter(move |(_, s)| pattern.is_prefix_of(*s))
+            .map(|(i, _)| i);
+
+        MatchIterator {
+            strvec: *self,
+            inner: iter,
         }
     }
 
@@ -141,7 +162,7 @@ impl<'map> ops::Index<usize> for StringVector<'map> {
 }
 
 pub struct StringVectorIterator<'map> {
-    vec: &'map StringVector<'map>,
+    vec: StringVector<'map>,
     index: usize,
 }
 
@@ -159,66 +180,44 @@ impl<'map> Iterator for StringVectorIterator<'map> {
     }
 }
 
-impl<'map> IntoIterator for &'map StringVector<'map> {
+impl<'a, 'map> IntoIterator for &'a StringVector<'map> {
     type Item = &'map str;
     type IntoIter = StringVectorIterator<'map>;
 
     fn into_iter(self) -> Self::IntoIter {
         StringVectorIterator {
-            vec: self,
+            vec: *self,
             index: 0,
         }
     }
 }
 
-pub struct PatternIterator<'map, 'a, P>
+pub struct MatchIterator<'map, I>
 where
-    P: Pattern<'a> + Copy,
-    <P as Pattern<'a>>::Searcher: ReverseSearcher<'a>,
+    I: Iterator<Item = usize>
 {
-    strvec: &'a StringVector<'map>,
-    index: usize,
-    pattern: P,
-    fun: fn(&'a str, P) -> bool,
+    strvec: StringVector<'map>,
+    inner: I,
 }
 
-impl<'map: 'a, 'a, P> PatternIterator<'map, 'a, P>
+impl<'map, I> MatchIterator<'map, I>
 where
-    P: Pattern<'a> + Copy,
-    <P as Pattern<'a>>::Searcher: ReverseSearcher<'a>,
+    I: Iterator<Item = usize>
 {
-    pub fn as_strs(self) -> impl Iterator<Item = &'a str> {
-        let strvec = self.strvec;
-        self.map(|i| &strvec[i])
-    }
-
-    pub fn collect_strs<B>(self) -> B 
-    where
-        B: FromIterator<&'a str>,
-    {
-        self.as_strs().collect()
+    pub fn as_strs(self) -> impl Iterator<Item = &'map str> {
+        let MatchIterator{strvec, inner} = self;
+        inner.map(move |i| strvec.get_unchecked(i))
     }
 }
 
-impl<'map: 'a, 'a, P> Iterator for PatternIterator<'map, 'a, P>
+impl<'map, I> Iterator for MatchIterator<'map, I>
 where
-    P: Pattern<'a> + Copy,
-    <P as Pattern<'a>>::Searcher: ReverseSearcher<'a>,
+    I: Iterator<Item = usize>
 {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while self.index < self.strvec.len() {
-            let current = &self.strvec[self.index];
-            self.index += 1;
-
-            if !(self.fun)(current, self.pattern) {
-                continue;
-            }
-
-            return Some(self.index - 1);
-        }
-        None
+        self.inner.next()
     }
 }
 
@@ -422,5 +421,12 @@ impl LexiconBuilder {
     pub fn write_inverted_index(&self, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) {
         let cvec = CachedVector::<1>::new(self.get_id_stream()).unwrap();
         InvertedIndex::encode_to_container_file(self.types(), cvec.column_iter(0), self.tokens(), file, bom_entry, start_offset);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    fn startswith() {
+        
     }
 }
