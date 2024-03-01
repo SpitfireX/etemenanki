@@ -208,6 +208,19 @@ impl<'map> CachedInvertedIndex<'map> {
         }
     }
 
+    /// Returs the combined postings lists of multiple types
+    pub fn get_combined_postings(&self, type_ids: &[usize]) -> Vec<usize> {
+        let mut positions = Vec::new();
+        for t in type_ids {
+            if let Some(postings) = self.get_postings(*t) {
+                positions.extend_from_slice(postings.get_all())
+            }
+        }
+        positions.sort_unstable();
+
+        positions
+    }
+
     /// Iterator over the positions of a type
     pub fn positions(&self, type_id: usize) -> Option<CachedPostingsIterator> {
         self.frequency(type_id)

@@ -9,10 +9,15 @@ edition = "2021"
 etemenanki = { path = "../etemenanki" }
 libcl-rs = { path = "../libcl-rs" }
 rand = "0.8.5"
+regex = "1.10.3"
 
 [dev-dependencies]
 criterion = { version = "0.4", features = ["html_reports"] }
 
 [[bench]]
 name = "comparison"
+harness = false
+
+[[bench]]
+name = "rust"
 harness = false
