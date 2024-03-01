@@ -197,7 +197,7 @@ for i, (name, type) in enumerate(p_attrs):
             if type == "indexed":
                 variable = RustyIndexedStringVariable(primary_layer, f, i, clen, compressed = not args.uncompressed, comment = c)
             elif type == "plain":
-                variable = PlainStringVariable(primary_layer, fileiter, compressed = not args.uncompressed, comment = c)
+                variable = RustyPlainStringVariable(primary_layer, f, i, clen, compressed = not args.uncompressed, comment = c)
             elif type == "int":
                 variable = RustyIntegerVariable(primary_layer, f, i, clen, compressed = not args.uncompressed, comment = c, default=args.int_default)
             elif type == "delta":
@@ -244,9 +244,7 @@ for attr, annos in s_annos.items():
                 if type == "indexed":
                     variable = RustyIndexedStringVariable(base_layer, f, (attr, anno), base_layer.n, compressed = not args.uncompressed, comment = c)
                 elif type == "plain":
-                    fileiter = SFileIter(f, attr, fix=args.invalid_xml)
-                    data = [a[anno] for _, a in fileiter]
-                    variable = PlainStringVariable(base_layer, data, compressed = not args.uncompressed, comment = c)
+                    variable = RustyPlainStringVariable(base_layer, f, (attr, anno), base_layer.n, compressed = not args.uncompressed, comment = c)
                 elif type == "int":
                     variable = RustyIntegerVariable(base_layer, f, (attr, anno), base_layer.n, compressed = not args.uncompressed, comment = c, default=args.int_default)
                 elif type == "delta":

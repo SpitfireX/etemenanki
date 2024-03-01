@@ -1,12 +1,13 @@
 use std::collections::HashSet;
 use std::fs::File;
+use std::io::{BufWriter, Seek, SeekFrom, Write};
 use std::rc::Rc;
 
 use enum_as_inner::EnumAsInner;
 use memmap2::Mmap;
 use uuid::Uuid;
 
-use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector, ColumnIterator, Index, LexiconBuilder, Vector};
+use crate::components::{self, CachedIndex, CachedInvertedIndex, CachedVector, ColumnIterator, FnvHash, Index, LexiconBuilder, Vector};
 use crate::container::{self, Container, ContainerBuilder};
 use crate::macros::{check_and_return_component, get_container_base};
 
@@ -266,6 +267,78 @@ pub struct PlainStringVariable<'map> {
 }
 
 impl<'map> PlainStringVariable<'map> {
+    pub fn encode_to_file<I>(file: File, strings: I, n: usize, name: String, base: Uuid, compressed: bool, comment: &str) -> Self where I: Iterator<Item=String> {
+        let vectype = if compressed { components::Type::VectorDelta } else { components::Type::Vector };
+        let idxtype = if compressed { components::Type::IndexComp } else { components::Type::Index };
+
+        let mut offsets = Vec::with_capacity(n + 1);
+        offsets.push(0);
+
+        let mut hashes = Vec::with_capacity(n);
+
+        let builder = ContainerBuilder::new_into_file(name, file, 3)
+            .edit_header(| h | {
+                h.comment(comment)
+                    .ziggurat_type(container::Type::PlainStringVariable)
+                    .dim1(n)
+                    .dim2(0)
+                    .base1(Some(base));
+            })
+            .add_component("StringData", components::Type::StringList, | bom_entry, file | {
+                let start_offset = bom_entry.offset as u64;
+                file.seek(SeekFrom::Start(start_offset)).unwrap();
+
+                let mut writer = BufWriter::new(file);
+
+                // write all string data to component and
+                // - record lengths/offsets
+                // - record hash and index
+                for (i, s) in strings.take(n).enumerate() {
+                    let bytes = s.as_bytes();
+
+                    writer.write_all(bytes).unwrap();
+                    writer.write_all(&[0]).unwrap();
+
+                    // offset
+                    if let Some(offset) = offsets.last() {
+                        offsets.push(offset + (bytes.len() + 1) as i64);
+                    }
+
+                    // hash
+                    let hash = bytes.fnv_hash();
+                    hashes.push((hash, i as i64));
+                }
+
+                assert!(offsets.len() == n + 1, "found fewer tokens than layer size");
+
+                bom_entry.size = *offsets.last().unwrap();
+                bom_entry.param1 = n as i64;
+                bom_entry.param2 = 0;
+            })
+            .add_component("OffsetStream", vectype, | bom_entry, file | {
+                unsafe {
+                    if compressed {
+                        Vector::encode_delta_to_container_file(offsets.into_iter().map(|i| [i]), n + 1, file, bom_entry, bom_entry.offset as u64);
+                    } else {
+                        Vector::encode_uncompressed_to_container_file(offsets.into_iter(), n + 1, 1, file, bom_entry, bom_entry.offset as u64);
+                    }
+                }
+            })
+            .add_component("StringHash", idxtype, | bom_entry, file | {
+                hashes.sort_by_key(|(h, _)| *h);
+
+                unsafe {
+                    if compressed {
+                        Index::encode_compressed_to_container_file(hashes.into_iter(), n, file, bom_entry, bom_entry.offset as u64);
+                    } else {
+                        Index::encode_uncompressed_to_container_file(hashes.into_iter(), n, file, bom_entry, bom_entry.offset as u64);
+                    }
+                }
+            });
+
+        builder.build().try_into().expect("PlainStringVariable returned by its constructor is inconsistent")
+    }
+
     pub fn get(&self, index: usize) -> Option<&'map str> {
         if index + 1 < self.offset_stream.len() {
             Some(self.get_unchecked(index))
