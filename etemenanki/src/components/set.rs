@@ -1,7 +1,9 @@
 use core::panic;
-use std::collections::HashMap;
+use std::{collections::HashMap, fs::File, io::{Seek, SeekFrom, Write}, mem, slice};
 
-use crate::components::FnvHash;
+use crate::{components::FnvHash, container::BomEntry};
+
+use super::{Index, StringVector};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Set<'map> {
@@ -64,8 +66,8 @@ impl<'map> Set<'map> {
 pub struct SetBuilder {
     types: Vec<(String, usize)>,
     type_idx: HashMap<i64, usize>,
-    id_stream_data: Vec<u8>,
-    id_stream_sync: Vec<i64>,
+    set_stream_data: Vec<u8>,
+    set_stream_sync: Vec<i64>,
     length: usize,
 }
 
@@ -74,30 +76,41 @@ impl SetBuilder {
         Self {
             types: Vec::new(),
             type_idx: HashMap::new(),
-            id_stream_data: Vec::new(),
-            id_stream_sync: Vec::new(),
+            set_stream_data: Vec::new(),
+            set_stream_sync: Vec::new(),
             length: 0,
         }
     }
 
     fn encode_block(&mut self, block: &[Vec<i64>]) {
-        let mut buffer = Vec::new();
+        assert!(block.len() == 16);
+
+        let mut offsets = Vec::new();
         let mut len = 0;
 
-        todo!();
-        
+        // encode lengths
+        let lens: Vec<_> = block.iter().map(|v| v.len() as i64).collect();
+        let mut buffer = ziggurat_varint::encode_delta_block(&lens);
+        len += buffer.len();
+
+        // encode sets
         for set in block.iter() {
-            buffer.resize(set.len() * 9, 0);
-            let slen = ziggurat_varint::encode_block_into(set, &mut buffer);
-            self.id_stream_data.extend_from_slice(&buffer[..slen]);
-            len += slen;
+            offsets.push(len as i64); // start offset of set block
+            buffer.resize(buffer.len() + (set.len() * 9), 0);
+            len += ziggurat_varint::encode_block_into(set, &mut buffer);
         }
 
-        if let Some(offset) = self.id_stream_sync.last() {
-            self.id_stream_sync.push(offset + len as i64);
+        // write offsets and rest of set block
+        let encoded_offsets = ziggurat_varint::encode_delta_block(&offsets);
+        self.set_stream_data.extend_from_slice(&encoded_offsets);
+        self.set_stream_data.extend_from_slice(&buffer[..len]);
+        len += encoded_offsets.len();
+
+        if let Some(offset) = self.set_stream_sync.last() {
+            self.set_stream_sync.push(offset + len as i64);
         } else {
-            self.id_stream_sync.push(0);
-            self.id_stream_sync.push(len as i64);
+            self.set_stream_sync.push(0);
+            self.set_stream_sync.push(len as i64);
         }
     }
 
@@ -239,45 +252,39 @@ impl SetBuilder {
         &self.types[id].0
     }
 
-    // pub fn get_id_stream(&self) -> Vector<'_> {
-    //     Vector::Compressed { length: self.length, width: 1, sync: &self.id_stream_sync, data: &self.id_stream_data }
-    // }
+    pub fn get_set_stream(&self) -> Set<'_> {
+        Set { length: self.length, width: 1, sync: &self.set_stream_sync, data: &self.set_stream_data }
+    }
 
-    // pub unsafe fn write_lexicon(&self, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) {
-    //     let strings = self.types.iter().map(|(s, _)| s);
-    //     StringVector::encode_to_container_file(strings, self.types(), file, bom_entry, start_offset)
-    // }
+    pub unsafe fn write_lexicon(&self, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) {
+        let strings = self.types.iter().map(|(s, _)| s);
+        StringVector::encode_to_container_file(strings, self.types(), file, bom_entry, start_offset)
+    }
 
-    // pub unsafe fn write_index(&self, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) {
-    //     let mut pairs: Vec<_> = self.type_idx.iter().map(|(k, v)| (*k, *v as i64)).collect();
-    //     pairs.sort_unstable_by_key(|(k, _)| *k);
+    pub unsafe fn write_index(&self, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) {
+        let mut pairs: Vec<_> = self.type_idx.iter().map(|(k, v)| (*k, *v as i64)).collect();
+        pairs.sort_unstable_by_key(|(k, _)| *k);
         
-    //     Index::encode_uncompressed_to_container_file(pairs.iter().copied(), self.types(), file, bom_entry, start_offset);
-    // }
+        Index::encode_uncompressed_to_container_file(pairs.iter().copied(), self.types(), file, bom_entry, start_offset);
+    }
 
-    // pub unsafe fn write_id_stream(&self, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64, compressed: bool) {
-    //     if compressed {
-    //         file.seek(SeekFrom::Start(start_offset)).unwrap();
+    pub unsafe fn write_set_stream(&self, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) {
+        file.seek(SeekFrom::Start(start_offset)).unwrap();
 
-    //         let m = (self.length-1) / 16 + 1;
-    //         assert!(self.id_stream_sync.len() == m+1, "somehow encoded too many blocks?");
-    //         let sync = slice::from_raw_parts(self.id_stream_sync.as_ptr() as *const u8, mem::size_of::<i64>() * m);
-    //         file.write_all(sync).unwrap();
-    //         bom_entry.size = sync.len() as i64;
+        let m = (self.length-1) / 16 + 1;
+        assert!(self.set_stream_sync.len() == m+1, "somehow encoded too many blocks?");
+        let sync = slice::from_raw_parts(self.set_stream_sync.as_ptr() as *const u8, mem::size_of::<i64>() * m);
+        file.write_all(sync).unwrap();
+        bom_entry.size = sync.len() as i64;
 
-    //         file.write_all(&self.id_stream_data).unwrap();
-    //         bom_entry.size += self.id_stream_data.len() as i64;
+        file.write_all(&self.set_stream_data).unwrap();
+        bom_entry.size += self.set_stream_data.len() as i64;
 
-    //         file.flush().unwrap();
+        file.flush().unwrap();
 
-    //         bom_entry.param1 = self.tokens() as i64;
-    //         bom_entry.param2 = 1;
-    //     } else {
-    //         // this is fucking silly
-    //         let cvec = CachedVector::<1>::new(self.get_id_stream()).unwrap();
-    //         Vector::encode_uncompressed_to_container_file(cvec.column_iter(0), cvec.len(), cvec.width(), file, bom_entry, start_offset);
-    //     }
-    // }
+        bom_entry.param1 = self.tokens() as i64;
+        bom_entry.param2 = 1;
+    }
 
     // pub fn write_inverted_index(&self, file: &mut File, bom_entry: &mut BomEntry, start_offset: u64) {
     //     let cvec = CachedVector::<1>::new(self.get_id_stream()).unwrap();
