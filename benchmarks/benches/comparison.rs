@@ -109,7 +109,7 @@ fn z_rnd_decode(b: &mut Bencher) {
     let words = datastore["primary"]["word"]
         .as_indexed_string()
         .unwrap();
-    let positions = setup_rand(words.len(), words.len());
+    let positions = setup_rand(1_000_000, words.len());
 
     b.iter(|| {
         for cpos in positions.iter() {
@@ -121,7 +121,7 @@ fn z_rnd_decode(b: &mut Bencher) {
 fn c_rnd_decode(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
-    let positions = setup_rand(words.max_cpos().unwrap() as usize, words.max_cpos().unwrap() as usize);
+    let positions = setup_rand(1_000_000, words.max_cpos().unwrap() as usize);
 
     b.iter(|| {
         for cpos in positions.iter() {
@@ -279,8 +279,7 @@ fn z_rnd_seg_decode(b: &mut Bencher) {
     let s = datastore["s"]
         .as_segmentation()
         .unwrap();
-    let mut positions: Vec<_> = (0..s.len()).collect();
-    positions.shuffle(&mut rng());
+    let positions = setup_rand(1_000_000, s.len());
 
     b.iter(|| {
         for pos in positions.iter() {
@@ -292,12 +291,11 @@ fn z_rnd_seg_decode(b: &mut Bencher) {
 fn c_rnd_seg_decode(b: &mut Bencher) {
     let corpus = open_cwb();
     let s = corpus.get_s_attribute("s").unwrap();
-    let mut positions: Vec<_> = (0..s.max_struc().unwrap()).collect();
-    positions.shuffle(&mut rng());
+    let positions = setup_rand(1_000_000, s.max_struc().unwrap() as usize);
 
     b.iter(|| {
         for pos in positions.iter() {
-            black_box(s.cpos2struc2cpos(*pos).unwrap());
+            black_box(s.cpos2struc2cpos(*pos as i32).unwrap());
         }
     })
 }
@@ -343,8 +341,7 @@ fn z_rnd_seg_lookup(b: &mut Bencher) {
     let s = datastore["s"]
         .as_segmentation()
         .unwrap();
-    let mut positions: Vec<_> = (0..words.len()).collect();
-    positions.shuffle(&mut rng());
+    let positions = setup_rand(1_000_000, words.len());
 
 
     b.iter(|| {
@@ -358,12 +355,11 @@ fn c_rnd_seg_lookup(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
     let s = corpus.get_s_attribute("s").unwrap();
-    let mut positions: Vec<_> = (0..words.max_cpos().unwrap()).collect();
-    positions.shuffle(&mut rng());
+    let positions = setup_rand(1_000_000, words.max_cpos().unwrap() as usize);
 
     b.iter(|| {
         for cpos in positions.iter() {
-            black_box(s.cpos2struc(*cpos).ok());
+            black_box(s.cpos2struc(*cpos as i32).ok());
         }
     })
 }
