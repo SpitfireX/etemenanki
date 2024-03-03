@@ -198,6 +198,7 @@ impl<'map> Index<'map> {
             writer.write_all(&buffer[..blen]).unwrap();
 
             let encoded_positions = ziggurat_varint::encode_delta_block(&positions);
+            blen += encoded_positions.len();
             writer.write_all(&encoded_positions).unwrap();
 
             sync[bi] = (keys[0], boffset);
