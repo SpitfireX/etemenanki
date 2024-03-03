@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion};
-use rand::{Rng, distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng, seq::SliceRandom};
+use rand::{Rng, distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
 use etemenanki::Datastore;
 use libcl_rs::Corpus;
 
@@ -18,26 +18,21 @@ fn setup_rand(len: usize, max: usize) -> Vec<usize> {
     Vec::from_iter(dist.sample_iter(rng).take(len))
 }
 
-fn setup_windows(len: usize, wmin: usize, wmax: usize) -> Vec<(usize, usize)> {
+fn setup_windows(len: usize, max: usize, wmin: usize, wmax: usize) -> Vec<(usize, usize)> {
     let mut rng = rng();
-    let dist = Uniform::new(wmin, wmax);
+    let dist = Uniform::new(0, max);
+    let wdist = Uniform::new(wmin, wmax);
     let mut windows: Vec<(usize, usize)> = Vec::new();
-
-    let mut last_end = 0;
     
-    loop {
-        let start = last_end;
-        let end = start + dist.sample(&mut rng);
-        if end < len {
+    for _ in 0..len {
+        let start = dist.sample(&mut rng);
+        let end = start + wdist.sample(&mut rng);
+        if end < max {
             windows.push((start, end));
-            last_end = end;
         } else {
-            windows.push((start, len));
-            break;
+            windows.push((start, max));
         }
     }
-
-    windows.shuffle(&mut rng);
 
     windows
 }
@@ -61,12 +56,12 @@ fn setup_jumps(len: usize, maxjumps: usize, jumplen: isize) -> Vec<Vec<isize>> {
 
 fn open_ziggurat() -> Datastore<'static> {
     // open ziggurat datastore
-    Datastore::open("../etemenanki/testdata/simpledickens").unwrap()
+    Datastore::open("ziggurat").unwrap()
 }
 
 fn open_cwb() -> Corpus {
     // open CWB corpus
-    Corpus::new("testdata/registry", "simpledickens").expect("Could not open corpus")
+    Corpus::new("cwb/registry", "encow_cwb").expect("Could not open corpus")
 }
 
 //
@@ -109,7 +104,7 @@ fn z_rnd_decode(b: &mut Bencher) {
     let words = datastore["primary"]["word"]
         .as_indexed_string()
         .unwrap();
-    let positions = setup_rand(1_000_000, words.len());
+    let positions = setup_rand(10_000_000, words.len());
 
     b.iter(|| {
         for cpos in positions.iter() {
@@ -121,7 +116,7 @@ fn z_rnd_decode(b: &mut Bencher) {
 fn c_rnd_decode(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
-    let positions = setup_rand(1_000_000, words.max_cpos().unwrap() as usize);
+    let positions = setup_rand(10_000_000, words.max_cpos().unwrap() as usize);
 
     b.iter(|| {
         for cpos in positions.iter() {
@@ -130,14 +125,14 @@ fn c_rnd_decode(b: &mut Bencher) {
     })
 }
 
-// Windowed Sequential Layer Decode
+// Windowed Random Layer Decode
 
-fn z_window_decode(b: &mut Bencher) {
+fn z_rnd_window_decode(b: &mut Bencher) {
     let datastore = open_ziggurat();
     let words = datastore["primary"]["word"]
         .as_indexed_string()
         .unwrap();
-    let windows = setup_windows(words.len(), 20, 50);
+    let windows = setup_windows(1_000_000, words.len(), 20, 50);
 
 
     b.iter(|| {
@@ -149,10 +144,44 @@ fn z_window_decode(b: &mut Bencher) {
     })
 }
 
-fn c_window_decode(b: &mut Bencher) {
+fn c_rnd_window_decode(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
-    let windows = setup_windows(words.max_cpos().unwrap() as usize, 20, 50);
+    let windows = setup_windows(1_000_000, words.max_cpos().unwrap() as usize, 20, 50);
+
+    b.iter(|| {
+        for (start, end) in windows.iter() {
+            for cpos in *start..*end {
+                black_box(words.cpos2str(cpos as i32).unwrap());
+            }
+        }
+    })
+}
+
+// Windowed Sequential Layer Decode
+
+fn z_seq_window_decode(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+    let mut windows = setup_windows(1_000_000, words.len(), 20, 50);
+    windows.sort_by_key(|(s, _)| *s);
+
+    b.iter(|| {
+        for (start, end) in windows.iter() {
+            for s in words.get_range(*start, *end).unwrap() {
+                black_box(s);
+            }
+        }
+    })
+}
+
+fn c_seq_window_decode(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+    let mut windows = setup_windows(1_000_000, words.max_cpos().unwrap() as usize, 20, 50);
+    windows.sort_by_key(|(s, _)| *s);
 
     b.iter(|| {
         for (start, end) in windows.iter() {
@@ -170,7 +199,7 @@ fn z_alternating_decode(b: &mut Bencher) {
     let words = datastore["primary"]["word"]
         .as_indexed_string()
         .unwrap();
-    let windows = setup_windows(words.len(), 20, 50);
+    let windows = setup_windows(1_000_000, words.len(), 20, 50);
 
 
     b.iter(|| {
@@ -191,7 +220,7 @@ fn z_alternating_decode(b: &mut Bencher) {
 fn c_alternating_decode(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
-    let windows = setup_windows(words.max_cpos().unwrap() as usize, 20, 50);
+    let windows = setup_windows(1_000_000, words.max_cpos().unwrap() as usize, 20, 50);
 
     b.iter(|| {
         for (start, end) in windows.iter() {
@@ -267,7 +296,7 @@ fn c_seq_seg_decode(b: &mut Bencher) {
 
     b.iter(|| {
         for struc in 0..s.max_struc().unwrap() {
-            black_box(s.cpos2struc2cpos(struc).unwrap());
+            black_box(s.struc2cpos(struc).unwrap());
         }
     })
 }
@@ -295,7 +324,7 @@ fn c_rnd_seg_decode(b: &mut Bencher) {
 
     b.iter(|| {
         for pos in positions.iter() {
-            black_box(s.cpos2struc2cpos(*pos as i32).unwrap());
+            black_box(s.struc2cpos(*pos as i32).unwrap());
         }
     })
 }
@@ -325,7 +354,7 @@ fn c_seq_seg_lookup(b: &mut Bencher) {
 
     b.iter(|| {
         for cpos in 0..words.max_cpos().unwrap() {
-            black_box(s.cpos2struc(cpos).ok());
+            let _ = black_box(s.cpos2struc(cpos));
         }
     })
 }
@@ -359,7 +388,7 @@ fn c_rnd_seg_lookup(b: &mut Bencher) {
 
     b.iter(|| {
         for cpos in positions.iter() {
-            black_box(s.cpos2struc(*cpos as i32).ok());
+            let _ = black_box(s.cpos2struc(*cpos as i32));
         }
     })
 }
@@ -374,7 +403,7 @@ fn z_window_seg_lookup(b: &mut Bencher) {
     let s = datastore["s"]
         .as_segmentation()
         .unwrap();
-    let windows = setup_windows(words.len(), 20, 50);
+    let windows = setup_windows(1_000_000, words.len(), 20, 50);
 
     b.iter(|| {
         for (start, end) in windows.iter() {
@@ -389,12 +418,12 @@ fn c_window_seg_lookup(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
     let s = corpus.get_s_attribute("s").unwrap();
-    let windows = setup_windows(words.max_cpos().unwrap() as usize, 20, 50);
+    let windows = setup_windows(1_000_000, words.max_cpos().unwrap() as usize, 20, 50);
 
     b.iter(|| {
         for (start, end) in windows.iter() {
             for cpos in *start..*end {
-                black_box(s.cpos2struc(cpos as i32).ok());
+                let _ = black_box(s.cpos2struc(cpos as i32));
             }
         }
     })
@@ -495,8 +524,12 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.bench_function("libcl random layer decode", c_rnd_decode);
 
     // Windowed Sequential Layer Decode
-    group.bench_function("ziggurat windowed sequential layer decode", z_window_decode);
-    group.bench_function("libcl windowed sequential layer decode", c_window_decode);
+    group.bench_function("ziggurat sequential windowed layer decode", z_seq_window_decode);
+    group.bench_function("libcl sequential windowed layer decode", c_seq_window_decode);
+
+    // Random Sequential Layer Decode
+    group.bench_function("ziggurat random windowed layer decode", z_rnd_window_decode);
+    group.bench_function("libcl random windowed layer decode", c_rnd_window_decode);
 
     // Narrowing Alternating Window Decode
     group.bench_function("ziggurat narrowing alternating window layer decode", z_alternating_decode);
