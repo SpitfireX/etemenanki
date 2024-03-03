@@ -217,7 +217,7 @@ impl<'map> Vector<'map> {
         let mut writer = BufWriter::new(file);
 
         let mut buffer = vec![0u8; 16 * D * 9];
-        let mut block = vec![0i64; 16 * D];
+        let mut columns = vec![[0i64; 16]; D];
         let mut boffset = 0;
         let mut values = values.take(n);
 
@@ -229,17 +229,20 @@ impl<'map> Vector<'map> {
             for ri in 0..16 {
                 if let Some(row) = values.next() {
                     for ci in 0..D {
-                        block[ci*16 + ri] = row[ci];
+                        columns[ci][ri] = row[ci];
                     }
                 } else {
                     for ci in 0..D {
-                        block[ci*16 + ri] = -1;
+                        columns[ci][ri] = -1;
                     }
                 }
             }
 
             // encode and write block
-            let len = encode_varint(&block, &mut buffer);
+            let mut len = 0;
+            for column in columns.iter() {
+                len += encode_varint(column, &mut buffer[len..]);
+            }
             writer.write_all(&buffer[..len]).unwrap();
             boffset += len;
         }
