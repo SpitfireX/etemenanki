@@ -48,7 +48,7 @@ fn setup_jumps(len: usize, maxjumps: usize, jumplen: isize) -> Vec<usize> {
         jumps.push(cpos);
         if rng.gen_bool(0.5) {
             for _ in 0..ndist.sample(&mut rng) {
-                jumps.push((cpos as isize + lendist.sample(&mut rng)).min(max) as usize);
+                jumps.push((cpos as isize + lendist.sample(&mut rng)).clamp(0, max) as usize);
             }
         }
     }
