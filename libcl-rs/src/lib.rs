@@ -285,9 +285,10 @@ impl Error for DataAccessError {
 
 macro_rules! cl_error_or {
     ($ok:expr) => {{
+        let result = $ok;
         let error = DataAccessError::try_from(cl_errno).expect("invalid cl_errno value");
         match error {
-            DataAccessError::OK => Ok($ok),
+            DataAccessError::OK => Ok(result),
             _ => Err(error),
         }
     }};
