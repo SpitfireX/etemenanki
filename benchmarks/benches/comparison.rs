@@ -132,7 +132,7 @@ fn z_rnd_window_decode(b: &mut Bencher) {
     let words = datastore["primary"]["word"]
         .as_indexed_string()
         .unwrap();
-    let windows = setup_windows(1_000_000, words.len(), 20, 50);
+    let windows = setup_windows(10_000_000, words.len(), 20, 50);
 
 
     b.iter(|| {
@@ -147,7 +147,7 @@ fn z_rnd_window_decode(b: &mut Bencher) {
 fn c_rnd_window_decode(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
-    let windows = setup_windows(1_000_000, words.max_cpos().unwrap() as usize, 20, 50);
+    let windows = setup_windows(10_000_000, words.max_cpos().unwrap() as usize, 20, 50);
 
     b.iter(|| {
         for (start, end) in windows.iter() {
@@ -165,7 +165,7 @@ fn z_seq_window_decode(b: &mut Bencher) {
     let words = datastore["primary"]["word"]
         .as_indexed_string()
         .unwrap();
-    let mut windows = setup_windows(1_000_000, words.len(), 20, 50);
+    let mut windows = setup_windows(10_000_000, words.len(), 20, 50);
     windows.sort_by_key(|(s, _)| *s);
 
     b.iter(|| {
@@ -180,7 +180,7 @@ fn z_seq_window_decode(b: &mut Bencher) {
 fn c_seq_window_decode(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
-    let mut windows = setup_windows(1_000_000, words.max_cpos().unwrap() as usize, 20, 50);
+    let mut windows = setup_windows(10_000_000, words.max_cpos().unwrap() as usize, 20, 50);
     windows.sort_by_key(|(s, _)| *s);
 
     b.iter(|| {
@@ -199,7 +199,7 @@ fn z_alternating_decode(b: &mut Bencher) {
     let words = datastore["primary"]["word"]
         .as_indexed_string()
         .unwrap();
-    let windows = setup_windows(1_000_000, words.len(), 20, 50);
+    let windows = setup_windows(10_000_000, words.len(), 20, 50);
 
 
     b.iter(|| {
@@ -220,7 +220,7 @@ fn z_alternating_decode(b: &mut Bencher) {
 fn c_alternating_decode(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
-    let windows = setup_windows(1_000_000, words.max_cpos().unwrap() as usize, 20, 50);
+    let windows = setup_windows(10_000_000, words.max_cpos().unwrap() as usize, 20, 50);
 
     b.iter(|| {
         for (start, end) in windows.iter() {
@@ -308,7 +308,7 @@ fn z_rnd_seg_decode(b: &mut Bencher) {
     let s = datastore["s"]
         .as_segmentation()
         .unwrap();
-    let positions = setup_rand(1_000_000, s.len());
+    let positions = setup_rand(10_000_000, s.len());
 
     b.iter(|| {
         for pos in positions.iter() {
@@ -320,7 +320,7 @@ fn z_rnd_seg_decode(b: &mut Bencher) {
 fn c_rnd_seg_decode(b: &mut Bencher) {
     let corpus = open_cwb();
     let s = corpus.get_s_attribute("s").unwrap();
-    let positions = setup_rand(1_000_000, s.max_struc().unwrap() as usize);
+    let positions = setup_rand(10_000_000, s.max_struc().unwrap() as usize);
 
     b.iter(|| {
         for pos in positions.iter() {
@@ -370,7 +370,7 @@ fn z_rnd_seg_lookup(b: &mut Bencher) {
     let s = datastore["s"]
         .as_segmentation()
         .unwrap();
-    let positions = setup_rand(1_000_000, words.len());
+    let positions = setup_rand(10_000_000, words.len());
 
 
     b.iter(|| {
@@ -384,7 +384,7 @@ fn c_rnd_seg_lookup(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
     let s = corpus.get_s_attribute("s").unwrap();
-    let positions = setup_rand(1_000_000, words.max_cpos().unwrap() as usize);
+    let positions = setup_rand(10_000_000, words.max_cpos().unwrap() as usize);
 
     b.iter(|| {
         for cpos in positions.iter() {
@@ -403,7 +403,7 @@ fn z_window_seg_lookup(b: &mut Bencher) {
     let s = datastore["s"]
         .as_segmentation()
         .unwrap();
-    let windows = setup_windows(1_000_000, words.len(), 20, 50);
+    let windows = setup_windows(10_000_000, words.len(), 20, 50);
 
     b.iter(|| {
         for (start, end) in windows.iter() {
@@ -418,7 +418,7 @@ fn c_window_seg_lookup(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
     let s = corpus.get_s_attribute("s").unwrap();
-    let windows = setup_windows(1_000_000, words.max_cpos().unwrap() as usize, 20, 50);
+    let windows = setup_windows(10_000_000, words.max_cpos().unwrap() as usize, 20, 50);
 
     b.iter(|| {
         for (start, end) in windows.iter() {
@@ -472,7 +472,7 @@ fn z_join(b: &mut Bencher) {
     let s = datastore["s"]
         .as_segmentation()
         .unwrap();
-    let positions = setup_rand(1_000_000, words.len());
+    let positions = setup_rand(10_000_000, words.len());
 
     b.iter(|| {
         for cpos in positions.iter() {
@@ -490,7 +490,7 @@ fn c_join(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
     let s = corpus.get_s_attribute("s").unwrap();
-    let positions = setup_rand(1_000_000, words.max_cpos().unwrap() as usize);
+    let positions = setup_rand(10_000_000, words.max_cpos().unwrap() as usize);
 
     b.iter(|| {
         for cpos in positions.iter() {

@@ -375,7 +375,7 @@ impl<'map> Iterator for SegmentationLayerIterator<'map> {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.ranges.next()
-            .map(| row | (row[0] as usize, row[1] as usize))
+            .map(| [start, end] | (start as usize, end as usize))
     }
 }
 
