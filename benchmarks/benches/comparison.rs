@@ -37,16 +37,18 @@ fn setup_windows(len: usize, max: usize, wmin: usize, wmax: usize) -> Vec<(usize
     windows
 }
 
-fn setup_jumps(len: usize, maxjumps: usize, jumplen: isize) -> Vec<Vec<isize>> {
+fn setup_jumps(len: usize, maxjumps: usize, jumplen: isize) -> Vec<usize> {
+    let max = len as isize - 1;
     let mut rng = rng();
     let ndist = Uniform::new(0, maxjumps);
     let lendist = Uniform::new(-jumplen, jumplen);
-    let mut jumps: Vec<Vec<isize>> = vec![Vec::new(); len];
+    let mut jumps = Vec::new();
 
-    for vec in jumps.iter_mut() {
+    for cpos in 0..len {
+        jumps.push(cpos);
         if rng.gen_bool(0.5) {
             for _ in 0..ndist.sample(&mut rng) {
-                vec.push(lendist.sample(&mut rng));
+                jumps.push((cpos as isize + lendist.sample(&mut rng)).min(max) as usize);
             }
         }
     }
@@ -247,13 +249,8 @@ fn z_headlocal_decode(b: &mut Bencher) {
     let jumps = setup_jumps(words.len(), 5, 10);
 
     b.iter(|| {
-        for ((cpos, s), jumps) in words.iter().enumerate().zip(jumps.iter()) {
-            black_box(s);
-            for offset in jumps {
-                if let Some(s) = words.get((cpos as isize + offset) as usize) {
-                    black_box(s);
-                }
-            }
+        for cpos in jumps.iter() {
+            black_box(words.get(*cpos));
         }
     })
 }
@@ -264,13 +261,8 @@ fn c_headlocal_decode(b: &mut Bencher) {
     let jumps = setup_jumps(words.max_cpos().unwrap() as usize, 5, 10);
 
     b.iter(|| {
-        for (cpos, jumps) in (0..words.max_cpos().unwrap()).zip(jumps.iter()) {
-            black_box(words.cpos2str(cpos).unwrap());
-            for offset in jumps {
-                if let Ok(s) = words.cpos2str(cpos as i32 + *offset as i32) {
-                    black_box(s);
-                }
-            }
+        for cpos in jumps.iter() {
+            black_box(words.cpos2str(*cpos as i32).unwrap());
         }
     })
 }
