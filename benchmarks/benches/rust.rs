@@ -9,7 +9,7 @@ criterion_main!(benches);
 
 fn open_ziggurat() -> Datastore<'static> {
     // open ziggurat datastore
-    Datastore::open("../etemenanki/testdata/simpledickens").unwrap()
+    Datastore::open("ziggurat").unwrap()
 }
 
 //
