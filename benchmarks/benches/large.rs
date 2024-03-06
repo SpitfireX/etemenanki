@@ -3,7 +3,6 @@ use std::time::Duration;
 use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion};
 use rand::{Rng, distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
 use etemenanki::Datastore;
-use libcl_rs::Corpus;
 
 criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);
@@ -338,7 +337,7 @@ fn l_lexicon_scan(b: &mut Bencher) {
 //
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let mut group = c.benchmark_group("comparison tests");
+    let mut group = c.benchmark_group("large tests");
     group.sample_size(10);
     group.measurement_time(Duration::new(60, 0));
     // group.measurement_time(Duration::new(600, 0));
