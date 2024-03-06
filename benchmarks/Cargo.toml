@@ -21,3 +21,7 @@ harness = false
 [[bench]]
 name = "rust"
 harness = false
+
+[[bench]]
+name = "large"
+harness = false
