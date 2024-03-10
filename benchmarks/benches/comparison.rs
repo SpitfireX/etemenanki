@@ -3,7 +3,7 @@ use std::{ffi::CString, time::Duration};
 use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion};
 use rand::{Rng, distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
 use etemenanki::Datastore;
-use libcl_rs::Corpus;
+use libcl_rs::{ClRegex, Corpus};
 use regex::Regex;
 
 criterion_group!(benches, criterion_benchmark);
@@ -533,6 +533,22 @@ fn c_regex_layer_scan_rust_regex(b: &mut Bencher) {
     })
 }
 
+fn c_regex_layer_scan_libcl_regex(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+
+    b.iter(|| {
+        Regex::new("^be").unwrap();
+        let regex = ClRegex::new(&CString::new("be.+").unwrap(), 0, corpus.charset()).unwrap();
+        for cpos in 0..words.max_cpos().unwrap() {
+            let s = words.cpos2str(cpos).unwrap();
+            if regex.is_match(s) {
+                black_box(s);
+            }
+        }
+    })
+}
+
 // RegEx Lexicon Scan:
 // Scanning the variable's lexicon for all matching strings as lexicon IDs and then collecting a position list
 
@@ -631,6 +647,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     // RegEx Layer Scan
     group.bench_function("ziggurat regex layer scan", z_regex_layer_scan);
     group.bench_function("libcl regex layer scan (rust regex)", c_regex_layer_scan_rust_regex);
+    group.bench_function("libcl regex layer scan (libcl regex)", c_regex_layer_scan_libcl_regex);
 
     // RegEx Lexicon Scan
     group.bench_function("ziggurat regex lexicon scan", z_regex_lexicon_scan);
