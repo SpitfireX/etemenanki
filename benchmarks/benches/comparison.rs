@@ -495,6 +495,74 @@ fn c_join(b: &mut Bencher) {
     })
 }
 
+
+// RegEx Search
+//
+
+// RegEx Layer Scan:
+// Sequentially scanning the whole variable while regex-matching each token 
+fn z_regex_layer_scan(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    b.iter(|| {
+        let regex = Regex::new("^be").unwrap();
+        for s in words {
+            if regex.is_match(s) {
+                black_box(s);
+            }
+        }
+    })
+}
+
+fn c_regex_layer_scan_rust_regex(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+
+    b.iter(|| {
+        let regex = Regex::new("^be").unwrap();
+        for cpos in 0..words.max_cpos().unwrap() {
+            let s = words.cpos2str(cpos).unwrap();
+            if regex.is_match(s) {
+                black_box(s);
+            }
+        }
+    })
+}
+
+// RegEx Lexicon Scan:
+// Scanning the variable's lexicon for all matching strings as lexicon IDs and then collecting a position list
+
+fn z_regex_lexicon_scan(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    b.iter(|| {
+        let types: Vec<_> = words.lexicon().all_matching_regex("^be").unwrap().collect();
+        let positions = words.inverted_index().get_combined_postings(&types);
+        for cpos in positions {
+            black_box(words.get(cpos));
+        }
+    })
+}
+
+fn c_regex_lexicon_scan(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+
+    b.iter(|| {
+        let ids = words.regex2id("be.+", 0).unwrap();
+        let positions = words.idlist2cpos(&ids, true).unwrap();
+        for cpos in positions {
+            black_box(words.cpos2str(cpos));
+        }
+    })
+}
+
 //
 // Criterion Main
 //
@@ -558,4 +626,12 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Join Performance
     group.bench_function("ziggurat join performance", z_join);
     group.bench_function("libcl join performance", c_join);
+
+    // RegEx Layer Scan
+    group.bench_function("ziggurat regex layer scan", z_regex_layer_scan);
+    group.bench_function("libcl regex layer scan (rust regex)", c_regex_layer_scan_rust_regex);
+
+    // RegEx Lexicon Scan
+    group.bench_function("ziggurat regex lexicon scan", z_regex_lexicon_scan);
+    group.bench_function("libcl regex lexicon scan", c_regex_lexicon_scan);
 }

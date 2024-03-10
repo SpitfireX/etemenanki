@@ -68,41 +68,6 @@ fn regex_contains(b: &mut Bencher) {
     })
 }
 
-// Lookup Strategy 1:
-// Sequentially scanning the whole variable while regex-matching each token 
-fn layer_scan(b: &mut Bencher) {
-    let datastore = open_ziggurat();
-    let words = datastore["primary"]["word"]
-        .as_indexed_string()
-        .unwrap();
-
-    b.iter(|| {
-        let regex = Regex::new("^be").unwrap();
-        for s in words {
-            if regex.is_match(s) {
-                black_box(s);
-            }
-        }
-    })
-}
-
-// Lookup Strategy 2:
-// Scanning the variable's lexicon for all matching strings and then using the variable's ReverseIndex component for actual result lookup
-fn lexicon_scan(b: &mut Bencher) {
-    let datastore = open_ziggurat();
-    let words = datastore["primary"]["word"]
-        .as_indexed_string()
-        .unwrap();
-
-    b.iter(|| {
-        let types: Vec<_> = words.lexicon().all_matching_regex("^be").unwrap().collect();
-        let positions = words.inverted_index().get_combined_postings(&types);
-        for cpos in positions {
-            black_box(words.get(cpos));
-        }
-    })
-}
-
 //
 // Criterion Main
 //
@@ -121,8 +86,4 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Containment Search
     group.bench_function("rust pattern containment", pattern_contains);
     group.bench_function("regex containment", regex_contains);
-
-    // Lookup Strategy
-    group.bench_function("regex lookup 1", layer_scan);
-    group.bench_function("regex lookup 2", lexicon_scan);
 }
