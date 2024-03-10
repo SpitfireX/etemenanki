@@ -586,7 +586,7 @@ fn c_regex_lexicon_scan(b: &mut Bencher) {
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("comparison tests");
-    group.sample_size(10);
+    group.sample_size(50);
     group.measurement_time(Duration::new(60, 0));
     // group.measurement_time(Duration::new(600, 0));
     group.sampling_mode(criterion::SamplingMode::Flat);

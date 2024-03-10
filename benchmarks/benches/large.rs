@@ -36,23 +36,21 @@ fn setup_windows(len: usize, max: usize, wmin: usize, wmax: usize) -> Vec<(usize
     windows
 }
 
-fn setup_jumps(len: usize, maxjumps: usize, jumplen: isize) -> Vec<usize> {
+fn jumps(len: usize, maxjumps: usize, jumplen: isize) -> impl Iterator<Item = usize> {
     let max = len as isize - 1;
     let mut rng = rng();
     let ndist = Uniform::new(0, maxjumps);
     let lendist = Uniform::new(-jumplen, jumplen);
-    let mut jumps = Vec::new();
 
-    for cpos in 0..len {
-        jumps.push(cpos);
-        if rng.gen_bool(0.5) {
+    (0..len)
+        .map(move |cpos| {
+            let mut jumps = vec![cpos];
             for _ in 0..ndist.sample(&mut rng) {
                 jumps.push((cpos as isize + lendist.sample(&mut rng)).clamp(0, max) as usize);
             }
-        }
-    }
-
-    jumps
+            jumps
+        })
+        .flatten()
 }
 
 fn open_large() -> Datastore<'static> {
@@ -168,11 +166,11 @@ fn l_headlocal_decode(b: &mut Bencher) {
     let words = datastore["primary"]["word"]
         .as_indexed_string()
         .unwrap();
-    let jumps = setup_jumps(words.len(), 5, 10);
 
     b.iter(|| {
-        for cpos in jumps.iter() {
-            black_box(words.get(*cpos));
+        let jumps = jumps(words.len(), 5, 10);
+        for cpos in jumps {
+            black_box(words.get(cpos));
         }
     })
 }
@@ -338,7 +336,7 @@ fn l_lexicon_scan(b: &mut Bencher) {
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("large tests");
-    group.sample_size(10);
+    group.sample_size(25);
     group.measurement_time(Duration::new(60, 0));
     // group.measurement_time(Duration::new(600, 0));
     group.sampling_mode(criterion::SamplingMode::Flat);
