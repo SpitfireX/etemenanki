@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion};
 use etemenanki::Datastore;
-use regex::Regex;
 
 criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);

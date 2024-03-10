@@ -1,9 +1,10 @@
-use std::time::Duration;
+use std::{ffi::CString, time::Duration};
 
 use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion};
 use rand::{Rng, distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
 use etemenanki::Datastore;
 use libcl_rs::Corpus;
+use regex::Regex;
 
 criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);
@@ -525,7 +526,7 @@ fn c_regex_layer_scan_rust_regex(b: &mut Bencher) {
         let regex = Regex::new("^be").unwrap();
         for cpos in 0..words.max_cpos().unwrap() {
             let s = words.cpos2str(cpos).unwrap();
-            if regex.is_match(s) {
+            if regex.is_match(s.to_str().unwrap()) {
                 black_box(s);
             }
         }
@@ -555,10 +556,10 @@ fn c_regex_lexicon_scan(b: &mut Bencher) {
     let words = corpus.get_p_attribute("word").unwrap();
 
     b.iter(|| {
-        let ids = words.regex2id("be.+", 0).unwrap();
+        let ids = words.regex2id(&CString::new("be.+").unwrap(), 0).unwrap();
         let positions = words.idlist2cpos(&ids, true).unwrap();
-        for cpos in positions {
-            black_box(words.cpos2str(cpos));
+        for cpos in positions.iter() {
+            let _ = black_box(words.cpos2str(*cpos));
         }
     })
 }
