@@ -133,6 +133,8 @@ pub struct Corpus {
     ptr: *mut bindings::Corpus,
 }
 
+type CorpusCharset = bindings::ECorpusCharset;
+
 impl Corpus {
     pub fn new<P: AsRef<Path>>(registry_dir: P, registry_name: &str) -> Option<Corpus> {
         let dir = CString::new(
@@ -153,6 +155,12 @@ impl Corpus {
             } else {
                 Some(Corpus { ptr: c })
             }
+        }
+    }
+
+    pub fn charset(&self) -> CorpusCharset {
+        unsafe {
+            bindings::cl_corpus_charset(self.ptr)
         }
     }
 
@@ -519,6 +527,51 @@ impl<'c> StructuralAttribute<'c> {
     }
 }
 
+pub const CL_REGEX_IGNORE_CASE: i32 = 0;
+pub const CL_REGEX_IGNORE_DIAC: i32 = 2;
+pub const CL_REGEX_IGNORE_REGEX: i32 = 4;
+pub const CL_REGEX_REQUIRE_NFC: i32 = 8; 
+
+pub struct ClRegex {
+    ptr: *mut bindings::_cl_regex,
+}
+
+impl Drop for ClRegex {
+    fn drop(&mut self) {
+        unsafe {
+            bindings::cl_delete_regex(self.ptr);
+        }
+    }
+}
+
+impl ClRegex {
+    pub fn new(pattern: &CStr, flags: i32, charset: CorpusCharset) -> Result<Self, &'static str> {
+        unsafe {
+            let r = bindings::cl_new_regex(pattern.as_ptr() as *mut i8, flags, charset);
+            if r.is_null() {
+                let cstr = CStr::from_ptr(cl_regex_error.as_ptr());
+                Err(cstr.to_str().unwrap())
+            } else {
+                Ok(Self { ptr: r })
+            }
+        }
+    }
+
+    pub fn optimised(&self) -> u32 {
+        unsafe {
+            bindings::cl_regex_optimised(self.ptr) as u32
+        }
+    }
+
+    pub fn is_match(&self, str: &CStr) -> bool {
+        unsafe {
+            // TODO: normalize_utf8 is hard-coded to 0 because we get segfaults when its set to true.
+            // idk what the LibCL is doing. Something's wonky.
+            bindings::cl_regex_match(self.ptr, str.as_ptr() as *mut i8, 0) != 0
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     extern crate test;
@@ -726,5 +779,24 @@ mod tests {
         });
 
         println!("total chars: {}", len);
+    }
+
+    #[test]
+    fn valid_regex() {
+        let regex = ClRegex::new(&CString::new("test.+").unwrap(), 0, CorpusCharset::utf8);
+        assert!(regex.is_ok());
+    }
+
+    #[test]
+    fn invalid_regex() {
+        let regex = ClRegex::new(&CString::new("test[abc").unwrap(), 0, CorpusCharset::utf8);
+        assert!(regex.is_err());
+        println!("{:?}", regex.err());
+    }
+
+    #[test]
+    fn match_regex() {
+        let regex = ClRegex::new(&CString::new("test.+").unwrap(), 0, CorpusCharset::utf8).unwrap();
+        assert!(regex.is_match(&CString::new("testcase").unwrap()));
     }
 }

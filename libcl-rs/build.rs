@@ -26,7 +26,9 @@ fn main() {
         // custom whitelist
         .allowlist_function("cl_.+")
         .allowlist_var("cl_errno")
+        .allowlist_var("cl_regex_error")
         .allowlist_var("(ATT|CDA|CL|STRUC)_.+")
+        .rustified_enum("ECorpusCharset")
         // Tell cargo to invalidate the built crate whenever any of the
         // included header files changed.
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
