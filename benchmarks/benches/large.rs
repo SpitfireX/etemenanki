@@ -330,6 +330,55 @@ fn l_lexicon_scan(b: &mut Bencher) {
     })
 }
 
+// Postings Lookup:
+// Identify a list of types and decode their whole postings lists individually
+
+const TYPES: [&'static str; 11] = ["the", "end", "is", "near", "Cthulhu", "will", "rise", "and", "destroy", "every", "ziggurat"];
+
+fn l_postings_decode(b: &mut Bencher) {
+    let datastore = open_large();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    let tids: Option<Vec<usize>> = TYPES.iter()
+        .map(|s| words.lexicon().iter().position(|t| t == *s))
+        .collect();
+    let tids = tids.unwrap();
+
+    b.iter(|| {
+        for tid in tids.iter() {
+            // get the decoded postings list from the cache
+            // always a cache miss, this will implicitly decode the whole postings lists
+            black_box(words.inverted_index().get_postings(*tid).unwrap());
+        }
+    })
+}
+
+// Combined Postings:
+// Get a combined, sorted postings list for a set of types
+
+fn l_postings_combined(b: &mut Bencher) {
+    let datastore = open_large();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    let tids: Option<Vec<usize>> = TYPES.iter()
+        .map(|s| words.lexicon().iter().position(|t| t == *s))
+        .collect();
+    let tids = tids.unwrap();
+
+    b.iter(|| {
+        // get a combined and sorted postings list
+        // this gets the the decoded postings list for each type id from the cache
+        // and copies them into a new vec. this will double allocate and always copy
+        // always a cache miss, this will implicitly decode the whole postings lists
+        black_box(words.inverted_index().get_combined_postings(&tids));
+    })
+}
+
+
 //
 // Criterion Main
 //
@@ -383,4 +432,10 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     // Lexicon Lookup Performance
     group.bench_function("large regex lookup 2", l_lexicon_scan);
+
+    // Postings Lookup (raw concordance decoding)
+    group.bench_function("large postings list decode", l_postings_decode);
+
+    // Combined Postings (combined sorted concordance list creation)
+    group.bench_function("large combined postings list", l_postings_combined);
 }

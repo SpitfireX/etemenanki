@@ -580,6 +580,86 @@ fn c_regex_lexicon_scan(b: &mut Bencher) {
     })
 }
 
+// Postings Lookup:
+// Identify a list of types and decode their whole postings lists individually
+
+const TYPES: [&'static str; 11] = ["the", "end", "is", "near", "Cthulhu", "will", "rise", "and", "destroy", "every", "ziggurat"];
+
+fn z_postings_decode(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    let tids: Option<Vec<usize>> = TYPES.iter()
+        .map(|s| words.lexicon().iter().position(|t| t == *s))
+        .collect();
+    let tids = tids.unwrap();
+
+    b.iter(|| {
+        for tid in tids.iter() {
+            // get the decoded postings list from the cache
+            // always a cache miss, this will implicitly decode the whole postings lists
+            black_box(words.inverted_index().get_postings(*tid).unwrap());
+        }
+    })
+}
+
+fn c_postings_decode(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+
+    let tids: Result<Vec<i32>, _> = TYPES.iter()
+        .map(|s| words.str2id(&CString::new(*s).unwrap()))
+        .collect();
+    let tids = tids.unwrap();
+
+    b.iter(|| {
+        for tid in tids.iter() {
+            // decodes the specified postings list
+            black_box(words.id2cpos(*tid).unwrap());
+        }
+    })
+}
+
+// Combined Postings:
+// Get a combined, sorted postings list for a set of types
+
+fn z_postings_combined(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    let tids: Option<Vec<usize>> = TYPES.iter()
+        .map(|s| words.lexicon().iter().position(|t| t == *s))
+        .collect();
+    let tids = tids.unwrap();
+
+    b.iter(|| {
+        // get a combined and sorted postings list
+        // this gets the the decoded postings list for each type id from the cache
+        // and copies them into a new vec. this will double allocate and always copy
+        // always a cache miss, this will implicitly decode the whole postings lists
+        black_box(words.inverted_index().get_combined_postings(&tids));
+    })
+}
+
+fn c_postings_combined(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+
+    let tids: Result<Vec<i32>, _> = TYPES.iter()
+        .map(|s| words.str2id(&CString::new(*s).unwrap()))
+        .collect();
+    let tids = tids.unwrap();
+
+    b.iter(|| {
+        // gets the combined postings list for all types
+        black_box(words.idlist2cpos(&tids, true).unwrap());
+    })
+}
+
 //
 // Criterion Main
 //
@@ -592,7 +672,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.sampling_mode(criterion::SamplingMode::Flat);
 
 
-    // Sequential Layer Decode
+    // Sequential Layer Decode (raw token stream decoding)
     group.bench_function("ziggurat sequential layer decode", z_seq_decode);
     group.bench_function("libcl sequential layer decode", c_seq_decode);
 
@@ -652,4 +732,12 @@ fn criterion_benchmark(c: &mut Criterion) {
     // RegEx Lexicon Scan
     group.bench_function("ziggurat regex lexicon scan", z_regex_lexicon_scan);
     group.bench_function("libcl regex lexicon scan", c_regex_lexicon_scan);
+
+    // Postings Lookup (raw concordance decoding)
+    group.bench_function("ziggurat postings list decode", z_postings_decode);
+    group.bench_function("libcl postings list decode", c_postings_decode);
+
+    // Combined Postings (combined sorted concordance list creation)
+    group.bench_function("ziggurat combined postings list", z_postings_combined);
+    group.bench_function("libcl combined postings list", c_postings_combined);
 }
