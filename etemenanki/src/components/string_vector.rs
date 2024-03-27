@@ -31,6 +31,18 @@ impl<'map> StringVector<'map> {
             })
     }
 
+    pub fn all_matching<'a>(&'a self, string: &'a str) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
+    {
+        let iter = self.iter().enumerate()
+            .filter(move |(_, s)| *s == string)
+            .map(|(i, _)| i);
+
+        MatchIterator {
+            strvec: *self,
+            inner: iter,
+        }
+    }
+
     pub fn all_containing<'a, P>(&'a self, pattern: P) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
     where
         P: Pattern<'a> + Copy + 'a,
