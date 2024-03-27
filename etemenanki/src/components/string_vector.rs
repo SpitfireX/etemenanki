@@ -31,6 +31,21 @@ impl<'map> StringVector<'map> {
             })
     }
 
+    pub fn get_all_matching_regex(&self, regex: &str) -> Vec<usize> {
+        let mut output = Vec::new();
+
+        if let Ok(regex) = Regex::new(regex) {
+            for i in 0..self.length {
+                let s = self.get_unchecked(i);
+                if regex.is_match(s) {
+                    output.push(i);
+                }
+            }
+        }
+
+        output
+    }
+
     pub fn all_matching<'a>(&'a self, string: &'a str) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
     {
         let iter = self.iter().enumerate()
@@ -41,6 +56,21 @@ impl<'map> StringVector<'map> {
             strvec: *self,
             inner: iter,
         }
+    }
+
+    pub fn find_match(&self, string: &str) -> Option<usize> {
+        for i in 0..self.length {
+            let current = self.get_unchecked(i);
+            if current == string {
+                return Some(i); 
+            }
+        }
+        None
+    }
+
+    pub fn find_regex(&self, regex: &str) -> Option<usize> {
+        self.all_matching_regex(regex)
+            .and_then(| mut iter | iter.next())
     }
 
     pub fn all_containing<'a, P>(&'a self, pattern: P) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>

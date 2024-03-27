@@ -510,38 +510,7 @@ fn z_baseline_lexicon_lookup(b: &mut Bencher) {
         .unwrap();
 
     b.iter(|| {
-        let tid = words.lexicon().all_matching("ziggurat").next().unwrap();
-        black_box(tid);
-    })
-}
-
-fn z_baseline_lexicon_lookup2(b: &mut Bencher) {
-    let datastore = open_ziggurat();
-    let words = datastore["primary"]["word"]
-        .as_indexed_string()
-        .unwrap();
-
-    b.iter(|| {
-        let tid = words.lexicon().iter().position(|s| s == "ziggurat").unwrap();
-        black_box(tid);
-    })
-}
-
-fn z_baseline_lexicon_lookup3(b: &mut Bencher) {
-    let datastore = open_ziggurat();
-    let words = datastore["primary"]["word"]
-        .as_indexed_string()
-        .unwrap();
-
-    b.iter(|| {
-        let mut tid = 0;
-        for (i, s) in words.lexicon().iter().enumerate() {
-            if s == "ziggurat" {
-                tid = i;
-                break
-            }
-        }
-        black_box(tid);
+        black_box(words.lexicon().find_match("ziggurat"));
     })
 }
 
@@ -557,9 +526,6 @@ fn z_baseline_lexicon_index_lookup(b: &mut Bencher) {
         black_box(tid);
     })
 }
-
-// TODO comparison index lookup and lexicon scan
-// TODO investigate how exactly the lexicon scan in all_matching_regex works
 
 fn c_baseline_lexicon_lookup(b: &mut Bencher) {
     let corpus = open_cwb();
@@ -587,9 +553,7 @@ fn z_regex_lexicon_lookup(b: &mut Bencher, regex: &str) {
     r.push('$');
 
     b.iter(|| {
-        for tid in words.lexicon().all_matching_regex(&r).unwrap() {
-            black_box(tid);
-        }
+        black_box(words.lexicon().get_all_matching_regex(&r));
     })
 }
 
@@ -600,10 +564,7 @@ fn c_regex_lexicon_lookup(b: &mut Bencher, regex: &str) {
     let cstr = &CString::new(regex).unwrap();
 
     b.iter(|| {
-        let ids = words.regex2id(&cstr, 0).unwrap();
-        for tid in ids.iter() {
-            black_box(*tid);
-        }
+        black_box(words.regex2id(&cstr, 0).unwrap());
     });
 }
 
@@ -668,7 +629,7 @@ fn z_regex_lexicon_scan(b: &mut Bencher) {
         .unwrap();
 
     b.iter(|| {
-        let types: Vec<_> = words.lexicon().all_matching_regex("^be").unwrap().collect();
+        let types: Vec<_> = words.lexicon().get_all_matching_regex("^be");
         let positions = words.inverted_index().get_combined_postings(&types);
         for cpos in positions {
             black_box(words.get(cpos));
@@ -801,7 +762,7 @@ static REGEX_TESTS: [&'static str; 20] = [
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("comparison tests");
     group.sample_size(50);
-    group.measurement_time(Duration::new(10, 0));
+    group.measurement_time(Duration::new(60, 0));
     // group.measurement_time(Duration::new(600, 0));
     group.sampling_mode(criterion::SamplingMode::Flat);
 
@@ -860,15 +821,13 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     // Lexicon Lookup Baseline
     group.bench_function("ziggurat baseline lexicon lookup", z_baseline_lexicon_lookup);
-    group.bench_function("ziggurat baseline lexicon lookup 2", z_baseline_lexicon_lookup2);
-    group.bench_function("ziggurat baseline lexicon lookup 3", z_baseline_lexicon_lookup3);
     group.bench_function("ziggurat baseline lexicon lookup index", z_baseline_lexicon_index_lookup);
     group.bench_function("libcl baseline lexicon lookup", c_baseline_lexicon_lookup);
 
     // RegEx Lexicon Lookup
     for regex in REGEX_TESTS {
-        group.bench_function(format!("ziggurat regex lexicon lookup {}", regex), |b| z_regex_lexicon_lookup(b, regex));
-        group.bench_function(format!("libcl regex lexicon lookup {}", regex), |b| c_regex_lexicon_lookup(b, regex));
+        group.bench_function(format!("ziggurat regex lexicon lookup \"{}\"", regex), |b| z_regex_lexicon_lookup(b, regex));
+        group.bench_function(format!("libcl regex lexicon lookup \"{}\"", regex), |b| c_regex_lexicon_lookup(b, regex));
     }
 
     // RegEx Layer Scan
