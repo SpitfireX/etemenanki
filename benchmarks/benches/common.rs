@@ -1,10 +1,10 @@
 #[allow(dead_code)]
 mod common {
-    use std::{cmp::min, thread::yield_now};
+    use std::cmp::min;
 
     use etemenanki::Datastore;
     use libcl_rs::Corpus;
-    use rand::{Rng, distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
+    use rand::{distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
 
     pub fn rng() -> StdRng {
         StdRng::seed_from_u64(42)
@@ -58,9 +58,11 @@ mod common {
         series.into_iter().flatten().collect()
     }
 
+    pub static mut DATASTORE_NAME: &'static str = "ziggurat";
+
     pub fn open_ziggurat() -> Datastore<'static> {
         // open ziggurat datastore
-        Datastore::open("ziggurat").unwrap()
+        Datastore::open(unsafe { DATASTORE_NAME }).unwrap()
     }
 
     pub fn open_cwb() -> Corpus {

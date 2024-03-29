@@ -776,10 +776,14 @@ fn c_regex_postings_gather(b: &mut Bencher, regex: &str) {
 //
 
 fn criterion_benchmark(c: &mut Criterion) {
+    comparison(c);
+    large(c);
+}
+
+fn comparison(c: &mut Criterion) {
     let mut group = c.benchmark_group("comparison tests");
     group.sample_size(100);
     group.measurement_time(Duration::new(600, 0));
-    // group.measurement_time(Duration::new(600, 0));
     group.sampling_mode(criterion::SamplingMode::Flat);
 
     // Datastore/Corpus instantiation
@@ -926,5 +930,73 @@ fn criterion_benchmark(c: &mut Criterion) {
     for regex in REGEX_TESTS {
         group.bench_function(format!("ziggurat regex postings gather \"{}\"", regex), |b| z_regex_postings_gather(b, regex));
         group.bench_function(format!("libcl regex postings gather \"{}\"", regex), |b| c_regex_postings_gather(b, regex));
+    }
+}
+
+fn large(c: &mut Criterion) {
+    //
+    // Large Tests (do the same stuff again!)
+    //
+
+    unsafe { DATASTORE_NAME = "ziggurat_large" };
+
+    let mut large_group = c.benchmark_group("large tests");
+    large_group.sample_size(50);
+    large_group.measurement_time(Duration::new(600, 0));
+    large_group.sampling_mode(criterion::SamplingMode::Flat);
+
+    large_group.bench_function("large sequential layer decode", z_seq_decode);
+
+    large_group.bench_function("large random layer decode", z_rnd_decode);
+
+    large_group.bench_function("large sequential windowed layer decode", z_seq_window_decode);
+
+    large_group.bench_function("large random windowed layer decode", z_rnd_window_decode);
+
+    large_group.bench_function("large narrowing alternating window layer decode", z_alternating_decode);
+
+    large_group.bench_function("large head locally random layer decode 10", |b| z_headlocal_decode(b, 10));
+    large_group.bench_function("large head locally random layer decode 50", |b| z_headlocal_decode(b, 50));
+    large_group.bench_function("large head locally random layer decode 100", |b| z_headlocal_decode(b, 100));
+
+    large_group.bench_function("large sequential segmentation decode", z_seq_seg_decode);
+
+    large_group.bench_function("large random segmentation decode", z_rnd_seg_decode);
+
+    large_group.bench_function("large sequential segmentation lookup", z_seq_seg_lookup);
+
+    large_group.bench_function("large random segmentation lookup", z_rnd_seg_lookup);
+
+    large_group.bench_function("large windowed segmentation lookup", z_window_seg_lookup);
+
+    large_group.bench_function("large segmentation start check", z_seg_start);
+
+    large_group.bench_function("large join performance", z_join);
+
+    large_group.bench_function("large baseline lexicon lookup", z_baseline_lexicon_lookup);
+    large_group.bench_function("large baseline lexicon lookup index", z_baseline_lexicon_index_lookup);
+
+    for regex in REGEX_TESTS {
+        large_group.bench_function(format!("large regex lexicon lookup \"{}\"", regex), |b| z_regex_lexicon_lookup(b, regex));
+    }
+
+    large_group.bench_function("large mixed postings decode", |b| z_typelist_postings_decode(b, &MIXED_TYPES));
+    large_group.bench_function("large top postings decode", |b| z_typelist_postings_decode(b, &TOP_TYPES));
+    large_group.bench_function("large med postings decode", |b| z_typelist_postings_decode(b, &MEDFREQ_TYPES));
+    large_group.bench_function("large low postings decode", |b| z_typelist_postings_decode(b, &LOWFREQ_TYPES));
+    large_group.bench_function("large hapax postings decode", |b| z_typelist_postings_decode(b, &HAPAX_TYPES));
+
+    for regex in REGEX_TESTS {
+        large_group.bench_function(format!("large regex postings decode \"{}\"", regex), |b| z_regex_postings_decode(b, regex));
+    }
+
+    large_group.bench_function("large mixed postings gather", |b| z_typelist_postings_gather(b, &MIXED_TYPES));
+    large_group.bench_function("large top postings gather", |b| z_typelist_postings_gather(b, &TOP_TYPES));
+    large_group.bench_function("large med postings gather", |b| z_typelist_postings_gather(b, &MEDFREQ_TYPES));
+    large_group.bench_function("large low postings gather", |b| z_typelist_postings_gather(b, &LOWFREQ_TYPES));
+    large_group.bench_function("large hapax postings gather", |b| z_typelist_postings_gather(b, &HAPAX_TYPES));
+
+    for regex in REGEX_TESTS {
+        large_group.bench_function(format!("large regex postings gather \"{}\"", regex), |b| z_regex_postings_gather(b, regex));
     }
 }
