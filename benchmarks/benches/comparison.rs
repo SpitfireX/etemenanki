@@ -1,75 +1,37 @@
+#![feature(c_str_literals)]
+
 use std::{ffi::CString, time::Duration};
 
 use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion};
-use rand::{Rng, distributions::{Distribution, Uniform}, rngs::StdRng, SeedableRng};
-use etemenanki::{components::FnvHash, Datastore};
-use libcl_rs::{ClRegex, Corpus};
+use etemenanki::{components::FnvHash, variables::IndexedStringVariable};
+use libcl_rs::{ClRegex, PositionalAttribute};
 use regex::Regex;
+
+include!("common.rs");
+use common::*;
 
 criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);
 
-fn rng() -> StdRng {
-    StdRng::seed_from_u64(42)
-}
-
-fn setup_rand(len: usize, max: usize) -> Vec<usize> {
-    let rng = rng();
-    let dist = Uniform::new(0, max);
-    Vec::from_iter(dist.sample_iter(rng).take(len))
-}
-
-fn setup_windows(len: usize, max: usize, wmin: usize, wmax: usize) -> Vec<(usize, usize)> {
-    let mut rng = rng();
-    let dist = Uniform::new(0, max);
-    let wdist = Uniform::new(wmin, wmax);
-    let mut windows: Vec<(usize, usize)> = Vec::new();
-    
-    for _ in 0..len {
-        let start = dist.sample(&mut rng);
-        let end = start + wdist.sample(&mut rng);
-        if end < max {
-            windows.push((start, end));
-        } else {
-            windows.push((start, max));
-        }
-    }
-
-    windows
-}
-
-fn setup_jumps(len: usize, maxjumps: usize, jumplen: isize) -> Vec<usize> {
-    let max = len as isize - 1;
-    let mut rng = rng();
-    let ndist = Uniform::new(0, maxjumps);
-    let lendist = Uniform::new(-jumplen, jumplen);
-    let mut jumps = Vec::new();
-
-    for cpos in 0..len {
-        jumps.push(cpos);
-        if rng.gen_bool(0.5) {
-            for _ in 0..ndist.sample(&mut rng) {
-                jumps.push((cpos as isize + lendist.sample(&mut rng)).clamp(0, max) as usize);
-            }
-        }
-    }
-
-    jumps
-}
-
-fn open_ziggurat() -> Datastore<'static> {
-    // open ziggurat datastore
-    Datastore::open("ziggurat").unwrap()
-}
-
-fn open_cwb() -> Corpus {
-    // open CWB corpus
-    Corpus::new("cwb/registry", "encow_cwb").expect("Could not open corpus")
-}
+const RANDOM: usize = 30_000_000;
 
 //
 // Benchmarks
 //
+
+// Instantiation
+
+fn z_instantiation(b: &mut Bencher) {
+    b.iter(|| {
+        black_box(open_ziggurat());
+    })
+}
+
+fn c_instantiation(b: &mut Bencher) {
+    b.iter(|| {
+        black_box(open_cwb());
+    })
+}
 
 // Raw Access
 //
@@ -107,7 +69,7 @@ fn z_rnd_decode(b: &mut Bencher) {
     let words = datastore["primary"]["word"]
         .as_indexed_string()
         .unwrap();
-    let positions = setup_rand(10_000_000, words.len());
+    let positions = setup_rand(RANDOM, words.len());
 
     b.iter(|| {
         for cpos in positions.iter() {
@@ -119,7 +81,7 @@ fn z_rnd_decode(b: &mut Bencher) {
 fn c_rnd_decode(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
-    let positions = setup_rand(10_000_000, words.max_cpos().unwrap() as usize);
+    let positions = setup_rand(RANDOM, words.max_cpos().unwrap() as usize);
 
     b.iter(|| {
         for cpos in positions.iter() {
@@ -135,7 +97,7 @@ fn z_rnd_window_decode(b: &mut Bencher) {
     let words = datastore["primary"]["word"]
         .as_indexed_string()
         .unwrap();
-    let windows = setup_windows(10_000_000, words.len(), 20, 50);
+    let windows = setup_windows(RANDOM, words.len(), 20, 50);
 
 
     b.iter(|| {
@@ -150,7 +112,7 @@ fn z_rnd_window_decode(b: &mut Bencher) {
 fn c_rnd_window_decode(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
-    let windows = setup_windows(10_000_000, words.max_cpos().unwrap() as usize, 20, 50);
+    let windows = setup_windows(RANDOM, words.max_cpos().unwrap() as usize, 20, 50);
 
     b.iter(|| {
         for (start, end) in windows.iter() {
@@ -162,13 +124,14 @@ fn c_rnd_window_decode(b: &mut Bencher) {
 }
 
 // Windowed Sequential Layer Decode
+// this should have the same performance sequential layer decode
 
 fn z_seq_window_decode(b: &mut Bencher) {
     let datastore = open_ziggurat();
     let words = datastore["primary"]["word"]
         .as_indexed_string()
         .unwrap();
-    let mut windows = setup_windows(10_000_000, words.len(), 20, 50);
+    let mut windows = setup_windows(RANDOM, words.len(), 20, 50);
     windows.sort_by_key(|(s, _)| *s);
 
     b.iter(|| {
@@ -183,7 +146,7 @@ fn z_seq_window_decode(b: &mut Bencher) {
 fn c_seq_window_decode(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
-    let mut windows = setup_windows(10_000_000, words.max_cpos().unwrap() as usize, 20, 50);
+    let mut windows = setup_windows(RANDOM, words.max_cpos().unwrap() as usize, 20, 50);
     windows.sort_by_key(|(s, _)| *s);
 
     b.iter(|| {
@@ -202,7 +165,7 @@ fn z_alternating_decode(b: &mut Bencher) {
     let words = datastore["primary"]["word"]
         .as_indexed_string()
         .unwrap();
-    let windows = setup_windows(10_000_000, words.len(), 20, 50);
+    let windows = setup_windows(RANDOM, words.len(), 20, 50);
 
 
     b.iter(|| {
@@ -223,7 +186,7 @@ fn z_alternating_decode(b: &mut Bencher) {
 fn c_alternating_decode(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
-    let windows = setup_windows(10_000_000, words.max_cpos().unwrap() as usize, 20, 50);
+    let windows = setup_windows(RANDOM, words.max_cpos().unwrap() as usize, 20, 50);
 
     b.iter(|| {
         for (start, end) in windows.iter() {
@@ -242,12 +205,12 @@ fn c_alternating_decode(b: &mut Bencher) {
 
 // Sequential, Head Locally Random Decode
 
-fn z_headlocal_decode(b: &mut Bencher) {
+fn z_headlocal_decode(b: &mut Bencher, jumplen: isize) {
     let datastore = open_ziggurat();
     let words = datastore["primary"]["word"]
         .as_indexed_string()
         .unwrap();
-    let jumps = setup_jumps(words.len(), 5, 10);
+    let jumps = setup_jumps(RANDOM, words.len(), 10, jumplen);
 
     b.iter(|| {
         for cpos in jumps.iter() {
@@ -256,10 +219,10 @@ fn z_headlocal_decode(b: &mut Bencher) {
     })
 }
 
-fn c_headlocal_decode(b: &mut Bencher) {
+fn c_headlocal_decode(b: &mut Bencher, jumplen: isize) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
-    let jumps = setup_jumps(words.max_cpos().unwrap() as usize, 5, 10);
+    let jumps = setup_jumps(RANDOM, words.max_cpos().unwrap() as usize, 10, jumplen);
 
     b.iter(|| {
         for cpos in jumps.iter() {
@@ -301,7 +264,7 @@ fn z_rnd_seg_decode(b: &mut Bencher) {
     let s = datastore["s"]
         .as_segmentation()
         .unwrap();
-    let positions = setup_rand(10_000_000, s.len());
+    let positions = setup_rand(RANDOM, s.len());
 
     b.iter(|| {
         for pos in positions.iter() {
@@ -313,7 +276,7 @@ fn z_rnd_seg_decode(b: &mut Bencher) {
 fn c_rnd_seg_decode(b: &mut Bencher) {
     let corpus = open_cwb();
     let s = corpus.get_s_attribute("s").unwrap();
-    let positions = setup_rand(10_000_000, s.max_struc().unwrap() as usize);
+    let positions = setup_rand(RANDOM, s.max_struc().unwrap() as usize);
 
     b.iter(|| {
         for pos in positions.iter() {
@@ -363,7 +326,7 @@ fn z_rnd_seg_lookup(b: &mut Bencher) {
     let s = datastore["s"]
         .as_segmentation()
         .unwrap();
-    let positions = setup_rand(10_000_000, words.len());
+    let positions = setup_rand(RANDOM, words.len());
 
 
     b.iter(|| {
@@ -377,7 +340,7 @@ fn c_rnd_seg_lookup(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
     let s = corpus.get_s_attribute("s").unwrap();
-    let positions = setup_rand(10_000_000, words.max_cpos().unwrap() as usize);
+    let positions = setup_rand(RANDOM, words.max_cpos().unwrap() as usize);
 
     b.iter(|| {
         for cpos in positions.iter() {
@@ -396,7 +359,7 @@ fn z_window_seg_lookup(b: &mut Bencher) {
     let s = datastore["s"]
         .as_segmentation()
         .unwrap();
-    let windows = setup_windows(10_000_000, words.len(), 20, 50);
+    let windows = setup_windows(RANDOM, words.len(), 20, 50);
 
     b.iter(|| {
         for (start, end) in windows.iter() {
@@ -411,7 +374,7 @@ fn c_window_seg_lookup(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
     let s = corpus.get_s_attribute("s").unwrap();
-    let windows = setup_windows(10_000_000, words.max_cpos().unwrap() as usize, 20, 50);
+    let windows = setup_windows(RANDOM, words.max_cpos().unwrap() as usize, 20, 50);
 
     b.iter(|| {
         for (start, end) in windows.iter() {
@@ -465,7 +428,7 @@ fn z_join(b: &mut Bencher) {
     let s = datastore["s"]
         .as_segmentation()
         .unwrap();
-    let positions = setup_rand(10_000_000, words.len());
+    let positions = setup_rand(RANDOM, words.len());
 
     b.iter(|| {
         for cpos in positions.iter() {
@@ -483,7 +446,7 @@ fn c_join(b: &mut Bencher) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
     let s = corpus.get_s_attribute("s").unwrap();
-    let positions = setup_rand(10_000_000, words.max_cpos().unwrap() as usize);
+    let positions = setup_rand(RANDOM, words.max_cpos().unwrap() as usize);
 
     b.iter(|| {
         for cpos in positions.iter() {
@@ -539,6 +502,35 @@ fn c_baseline_lexicon_lookup(b: &mut Bencher) {
     })
 }
 
+// Layer Scan Baseline:
+// Find matching positions in the value stream
+
+fn z_baseline_layer_scan(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    b.iter(|| {
+        for s in words {
+            black_box(s == "ziggurat");
+        }
+    })
+}
+
+fn c_baseline_layer_scan(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+
+    b.iter(|| {
+        for cpos in 0..words.max_cpos().unwrap() {
+            let s = words.cpos2str(cpos).unwrap();
+            black_box(s == c"ziggurat");
+        }
+    })
+}
+
+
 // RegEx Lexicon Lookup:
 // Generate a type id list from scanning the lexicon
 
@@ -548,9 +540,7 @@ fn z_regex_lexicon_lookup(b: &mut Bencher, regex: &str) {
         .as_indexed_string()
         .unwrap();
 
-    let mut r = "^".to_string();
-    r.push_str(regex);
-    r.push('$');
+    let r = "^".to_string() + regex + "$";
 
     b.iter(|| {
         black_box(words.lexicon().get_all_matching_regex(&r));
@@ -570,165 +560,214 @@ fn c_regex_lexicon_lookup(b: &mut Bencher, regex: &str) {
 
 // RegEx Layer Scan:
 // Sequentially scanning the whole variable while regex-matching each token 
-fn z_regex_layer_scan(b: &mut Bencher) {
+
+fn z_regex_layer_scan(b: &mut Bencher, regex: &str) {
     let datastore = open_ziggurat();
     let words = datastore["primary"]["word"]
         .as_indexed_string()
         .unwrap();
 
+    let r = "^".to_string() + regex + "$";
+
     b.iter(|| {
-        let regex = Regex::new("^be").unwrap();
+        let regex = Regex::new(&r).unwrap();
         for s in words {
-            if regex.is_match(s) {
-                black_box(s);
-            }
+            black_box(regex.is_match(s));
         }
     })
 }
 
-fn c_regex_layer_scan_rust_regex(b: &mut Bencher) {
+fn c_regex_layer_scan(b: &mut Bencher, regex: &str) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
 
-    b.iter(|| {
-        let regex = Regex::new("^be").unwrap();
-        for cpos in 0..words.max_cpos().unwrap() {
-            let s = words.cpos2str(cpos).unwrap();
-            if regex.is_match(s.to_str().unwrap()) {
-                black_box(s);
-            }
-        }
-    })
-}
-
-fn c_regex_layer_scan_libcl_regex(b: &mut Bencher) {
-    let corpus = open_cwb();
-    let words = corpus.get_p_attribute("word").unwrap();
-
-    let cstr = CString::new("be.+").unwrap();
+    let cstr = &CString::new(regex).unwrap();
 
     b.iter(|| {
-        Regex::new("^be").unwrap();
         let regex = ClRegex::new(&cstr, 0, corpus.charset()).unwrap();
         for cpos in 0..words.max_cpos().unwrap() {
             let s = words.cpos2str(cpos).unwrap();
-            if regex.is_match(s) {
-                black_box(s);
-            }
+            black_box(regex.is_match(s));
         }
     })
 }
 
-// RegEx Lexicon Scan:
-// Scanning the variable's lexicon for all matching strings as lexicon IDs and then collecting a position list
 
-fn z_regex_lexicon_scan(b: &mut Bencher) {
-    let datastore = open_ziggurat();
-    let words = datastore["primary"]["word"]
-        .as_indexed_string()
-        .unwrap();
-
-    b.iter(|| {
-        let types: Vec<_> = words.lexicon().get_all_matching_regex("^be");
-        let positions = words.inverted_index().get_combined_postings(&types);
-        for cpos in positions {
-            black_box(words.get(cpos));
-        }
-    })
-}
-
-fn c_regex_lexicon_scan(b: &mut Bencher) {
-    let corpus = open_cwb();
-    let words = corpus.get_p_attribute("word").unwrap();
-
-    let cstr = CString::new("be.+").unwrap();
-
-    b.iter(|| {
-        let ids = words.regex2id(&cstr, 0).unwrap();
-        let positions = words.idlist2cpos(&ids, true).unwrap();
-        for cpos in positions.iter() {
-            let _ = black_box(words.cpos2str(*cpos));
-        }
-    })
-}
-
-// Postings Lookup:
+// Postings Decode:
 // Identify a list of types and decode their whole postings lists individually
 
-const TYPES: [&'static str; 11] = ["the", "end", "is", "near", "Cthulhu", "will", "rise", "and", "destroy", "every", "ziggurat"];
+#[inline(always)]
+fn z_postings_decode(words: &IndexedStringVariable, tids: &[usize]) {
+    for tid in tids {
+        // explicitly decode the postings list, instead of getting it from the cache
+        black_box(words.inverted_index().decode_postings(*tid).unwrap());
+    }
+}
 
-fn z_postings_decode(b: &mut Bencher) {
+#[inline(always)]
+fn c_postings_decode(words: &PositionalAttribute, tids: &[i32]) {
+    for tid in tids {
+        // decodes the specified postings list
+        black_box(words.id2cpos(*tid).unwrap());
+    }
+}
+
+fn z_typelist_postings_decode(b: &mut Bencher, types: &[&str]) {
     let datastore = open_ziggurat();
     let words = datastore["primary"]["word"]
         .as_indexed_string()
         .unwrap();
 
-    let tids: Option<Vec<usize>> = TYPES.iter()
+    let tids: Option<Vec<usize>> = types.iter()
         .map(|s| words.lexicon().iter().position(|t| t == *s))
         .collect();
     let tids = tids.unwrap();
 
     b.iter(|| {
-        for tid in tids.iter() {
-            // get the decoded postings list from the cache
-            // always a cache miss, this will implicitly decode the whole postings lists
-            black_box(words.inverted_index().get_postings(*tid).unwrap());
-        }
+        z_postings_decode(words, &tids);
     })
 }
 
-fn c_postings_decode(b: &mut Bencher) {
+fn c_typelist_postings_decode(b: &mut Bencher, types: &[&str]) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
 
-    let tids: Result<Vec<i32>, _> = TYPES.iter()
+    let tids: Result<Vec<i32>, _> = types.iter()
         .map(|s| words.str2id(&CString::new(*s).unwrap()))
         .collect();
     let tids = tids.unwrap();
 
     b.iter(|| {
-        for tid in tids.iter() {
-            // decodes the specified postings list
-            black_box(words.id2cpos(*tid).unwrap());
-        }
+        c_postings_decode(&words, &tids);
     })
 }
 
-// Combined Postings:
+// RegEx Postings Decode
+
+fn z_regex_postings_decode(b: &mut Bencher, regex: &str) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    let r = "^".to_string() + regex + "$";
+    let tids = words.lexicon().get_all_matching_regex(&r);
+    assert!(tids.len() > 0);
+
+    b.iter(|| {
+        z_postings_decode(words, &tids);
+    })
+}
+
+fn c_regex_postings_decode(b: &mut Bencher, regex: &str) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+
+    let cstr = &CString::new(regex).unwrap();
+    let tids = words.regex2id(&cstr, 0).unwrap();
+
+    b.iter(|| {
+        c_postings_decode(&words, &tids);
+    })
+}
+
+// All Postings Decode
+
+fn z_all_postings_decode(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    let tids: Vec<usize> = (0..words.lexicon().len()).collect();
+
+    b.iter(|| {
+        z_postings_decode(words, &tids);
+    })
+}
+
+fn c_all_postings_decode(b: &mut Bencher) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+
+    let tids: Vec<i32> = (0..words.max_id().unwrap()).collect();
+
+    b.iter(|| {
+        c_postings_decode(&words, &tids);
+    })
+}
+
+// Gather Postings:
 // Get a combined, sorted postings list for a set of types
 
-fn z_postings_combined(b: &mut Bencher) {
+#[inline(always)]
+fn z_postings_gather(words: &IndexedStringVariable, tids: &[usize]) {
+    // explicitly decode the postings list, instead of getting it from the cache
+    black_box(words.inverted_index().decode_combined_postings(tids));
+}
+
+#[inline(always)]
+fn c_postings_gather(words: &PositionalAttribute, tids: &[i32]) {
+    // decodes the specified postings list
+    black_box(words.idlist2cpos(tids, true).unwrap());
+}
+
+fn z_typelist_postings_gather(b: &mut Bencher, types: &[&str]) {
     let datastore = open_ziggurat();
     let words = datastore["primary"]["word"]
         .as_indexed_string()
         .unwrap();
 
-    let tids: Option<Vec<usize>> = TYPES.iter()
+    let tids: Option<Vec<usize>> = types.iter()
         .map(|s| words.lexicon().iter().position(|t| t == *s))
         .collect();
     let tids = tids.unwrap();
 
     b.iter(|| {
-        // get a combined and sorted postings list
-        // this gets the the decoded postings list for each type id from the cache
-        // and copies them into a new vec. this will double allocate and always copy
-        // always a cache miss, this will implicitly decode the whole postings lists
-        black_box(words.inverted_index().get_combined_postings(&tids));
+        z_postings_gather(words, &tids);
     })
 }
 
-fn c_postings_combined(b: &mut Bencher) {
+fn c_typelist_postings_gather(b: &mut Bencher, types: &[&str]) {
     let corpus = open_cwb();
     let words = corpus.get_p_attribute("word").unwrap();
 
-    let tids: Result<Vec<i32>, _> = TYPES.iter()
+    let tids: Result<Vec<i32>, _> = types.iter()
         .map(|s| words.str2id(&CString::new(*s).unwrap()))
         .collect();
     let tids = tids.unwrap();
 
     b.iter(|| {
-        // gets the combined postings list for all types
-        black_box(words.idlist2cpos(&tids, true).unwrap());
+        c_postings_gather(&words, &tids);
+    })
+}
+
+// RegEx Postings Gather
+
+fn z_regex_postings_gather(b: &mut Bencher, regex: &str) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    let r = "^".to_string() + regex + "$";
+    let tids = words.lexicon().get_all_matching_regex(&r);
+    assert!(tids.len() > 0);
+
+    b.iter(|| {
+        z_postings_gather(words, &tids);
+    })
+}
+
+fn c_regex_postings_gather(b: &mut Bencher, regex: &str) {
+    let corpus = open_cwb();
+    let words = corpus.get_p_attribute("word").unwrap();
+
+    let cstr = &CString::new(regex).unwrap();
+    let tids = words.regex2id(&cstr, 0).unwrap();
+
+    b.iter(|| {
+        c_postings_gather(&words, &tids);
     })
 }
 
@@ -736,35 +775,16 @@ fn c_postings_combined(b: &mut Bencher) {
 // Criterion Main
 //
 
-static REGEX_TESTS: [&'static str; 20] = [
-    r"ziggurat",
-    r"be.+",
-    r"imp.ss.ble",
-    r"colou?r",
-    r"...+able",
-    r"(work|works|worked|working)",
-    r"super.+listic.+ous",
-    r"show(s|ed|n|ing)?",
-    r"(.*lier|.*liest)",
-    r".*(lier|liest)",
-    r".*li(er|est)",
-    r".*lie(r|st)",
-    r".*(rr.+rr|ss.+ss|tt.+tt).*y",
-    r"(un)?easy",
-    r".{3,}(ness(es)?|it(y|ies)|(tion|ment)s?)",
-    r".+tio.+",
-    r".*a{3,}.*",
-    r"[^!-~]+",
-    r"[aeiou][bcdfghjklmnpqrstvwxyz]{2}){4,}",
-    r"[aeiou][b-df-hj-np-tv-z]{2}){4,}",
-];
-
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("comparison tests");
-    group.sample_size(50);
-    group.measurement_time(Duration::new(60, 0));
+    group.sample_size(100);
+    group.measurement_time(Duration::new(600, 0));
     // group.measurement_time(Duration::new(600, 0));
     group.sampling_mode(criterion::SamplingMode::Flat);
+
+    // Datastore/Corpus instantiation
+    group.bench_function("ziggurat instantiation", z_instantiation);
+    group.bench_function("libcl instantiation", c_instantiation);
 
 
     // Sequential Layer Decode (raw token stream decoding)
@@ -788,8 +808,13 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.bench_function("libcl narrowing alternating window layer decode", c_alternating_decode);
 
     // Sequential, Head Locally Random Decode
-    group.bench_function("ziggurat head locally random layer decode", z_headlocal_decode);
-    group.bench_function("libcl head locally random layer decode", c_headlocal_decode);
+    group.bench_function("ziggurat head locally random layer decode 10", |b| z_headlocal_decode(b, 10));
+    group.bench_function("ziggurat head locally random layer decode 50", |b| z_headlocal_decode(b, 50));
+    group.bench_function("ziggurat head locally random layer decode 100", |b| z_headlocal_decode(b, 100));
+    group.bench_function("libcl head locally random layer decode 10", |b| c_headlocal_decode(b, 10));
+    group.bench_function("libcl head locally random layer decode 50", |b| c_headlocal_decode(b, 50));
+    group.bench_function("libcl head locally random layer decode 100", |b| c_headlocal_decode(b, 100));
+
 
     // Sequential Segmentation Decode
     group.bench_function("ziggurat sequential segmentation decode", z_seq_seg_decode);
@@ -819,31 +844,87 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.bench_function("ziggurat join performance", z_join);
     group.bench_function("libcl join performance", c_join);
 
-    // Lexicon Lookup Baseline
+
+    //
+    // Concordance lookup:
+    //
+
+    //
+    // Step 1
+    // gather a list of type IDs
+
+    // Lexicon Lookup Baseline (single type)
     group.bench_function("ziggurat baseline lexicon lookup", z_baseline_lexicon_lookup);
-    group.bench_function("ziggurat baseline lexicon lookup index", z_baseline_lexicon_index_lookup);
+    group.bench_function("ziggurat baseline lexicon lookup index", z_baseline_lexicon_index_lookup); // measures actual lexicon index performance
     group.bench_function("libcl baseline lexicon lookup", c_baseline_lexicon_lookup);
 
-    // RegEx Lexicon Lookup
+    // Lexicon Lookup using RegEx
     for regex in REGEX_TESTS {
         group.bench_function(format!("ziggurat regex lexicon lookup \"{}\"", regex), |b| z_regex_lexicon_lookup(b, regex));
         group.bench_function(format!("libcl regex lexicon lookup \"{}\"", regex), |b| c_regex_lexicon_lookup(b, regex));
     }
 
-    // RegEx Layer Scan
-    group.bench_function("ziggurat regex layer scan", z_regex_layer_scan);
-    group.bench_function("libcl regex layer scan (rust regex)", c_regex_layer_scan_rust_regex);
-    group.bench_function("libcl regex layer scan (libcl regex)", c_regex_layer_scan_libcl_regex);
+    // Layer Scan Baseline (single type)
+    group.bench_function("ziggurat regex layer scan", z_baseline_layer_scan);
+    group.bench_function("libcl regex layer scan", c_baseline_layer_scan);
 
-    // RegEx Lexicon Scan
-    group.bench_function("ziggurat regex lexicon scan", z_regex_lexicon_scan);
-    group.bench_function("libcl regex lexicon scan", c_regex_lexicon_scan);
+    // Layer Scan using RegEx
+    for regex in REGEX_TESTS {
+        group.bench_function(format!("ziggurat regex layer scan \"{}\"", regex), |b| z_regex_layer_scan(b, regex));
+        group.bench_function(format!("libcl regex layer scan \"{}\"", regex), |b| c_regex_layer_scan(b, regex));
+    }
 
-    // Postings Lookup (raw concordance decoding)
-    group.bench_function("ziggurat postings list decode", z_postings_decode);
-    group.bench_function("libcl postings list decode", c_postings_decode);
 
-    // Combined Postings (combined sorted concordance list creation)
-    group.bench_function("ziggurat combined postings list", z_postings_combined);
-    group.bench_function("libcl combined postings list", c_postings_combined);
+    //
+    // Step 2
+    // decode postings lists
+
+    // decoding only withouth compiling a complete list/sorting
+    //
+
+    // Decoding of example type lists
+    group.bench_function("ziggurat mixed postings decode", |b| z_typelist_postings_decode(b, &MIXED_TYPES));
+    group.bench_function("ziggurat top postings decode", |b| z_typelist_postings_decode(b, &TOP_TYPES));
+    group.bench_function("ziggurat med postings decode", |b| z_typelist_postings_decode(b, &MEDFREQ_TYPES));
+    group.bench_function("ziggurat low postings decode", |b| z_typelist_postings_decode(b, &LOWFREQ_TYPES));
+    group.bench_function("ziggurat hapax postings decode", |b| z_typelist_postings_decode(b, &HAPAX_TYPES));
+
+    group.bench_function("libcl mixed postings decode", |b| c_typelist_postings_decode(b, &MIXED_TYPES));
+    group.bench_function("libcl top postings decode", |b| c_typelist_postings_decode(b, &TOP_TYPES));
+    group.bench_function("libcl med postings decode", |b| c_typelist_postings_decode(b, &MEDFREQ_TYPES));
+    group.bench_function("libcl low postings decode", |b| c_typelist_postings_decode(b, &LOWFREQ_TYPES));
+    group.bench_function("libcl hapax postings decode", |b| c_typelist_postings_decode(b, &HAPAX_TYPES));
+
+    // Decode the postings lists produced by the RegEx examples
+    for regex in REGEX_TESTS {
+        group.bench_function(format!("ziggurat regex postings decode \"{}\"", regex), |b| z_regex_postings_decode(b, regex));
+        group.bench_function(format!("libcl regex postings decode \"{}\"", regex), |b| c_regex_postings_decode(b, regex));
+    }
+
+    // Decode ALL postings lists
+    group.bench_function("ziggurat all postings decode", z_all_postings_decode);
+    group.bench_function("libcl all postings decode", c_all_postings_decode);
+
+    
+    // decoding plus gathering
+    //
+
+    // gathering of example type lists
+    group.bench_function("ziggurat mixed postings gather", |b| z_typelist_postings_gather(b, &MIXED_TYPES));
+    group.bench_function("ziggurat top postings gather", |b| z_typelist_postings_gather(b, &TOP_TYPES));
+    group.bench_function("ziggurat med postings gather", |b| z_typelist_postings_gather(b, &MEDFREQ_TYPES));
+    group.bench_function("ziggurat low postings gather", |b| z_typelist_postings_gather(b, &LOWFREQ_TYPES));
+    group.bench_function("ziggurat hapax postings gather", |b| z_typelist_postings_gather(b, &HAPAX_TYPES));
+
+    group.bench_function("libcl mixed postings gather", |b| c_typelist_postings_gather(b, &MIXED_TYPES));
+    group.bench_function("libcl top postings gather", |b| c_typelist_postings_gather(b, &TOP_TYPES));
+    group.bench_function("libcl med postings gather", |b| c_typelist_postings_gather(b, &MEDFREQ_TYPES));
+    group.bench_function("libcl low postings gather", |b| c_typelist_postings_gather(b, &LOWFREQ_TYPES));
+    group.bench_function("libcl hapax postings gather", |b| c_typelist_postings_gather(b, &HAPAX_TYPES));
+
+    // gather the postings lists produced by the RegEx examples
+    for regex in REGEX_TESTS {
+        group.bench_function(format!("ziggurat regex postings gather \"{}\"", regex), |b| z_regex_postings_gather(b, regex));
+        group.bench_function(format!("libcl regex postings gather \"{}\"", regex), |b| c_regex_postings_gather(b, regex));
+    }
 }
