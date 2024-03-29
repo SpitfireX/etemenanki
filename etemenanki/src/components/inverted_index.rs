@@ -192,20 +192,26 @@ impl<'map> CachedInvertedIndex<'map> {
 
     /// Returns the postings list of a type
     pub fn get_postings(&self, type_id: usize) -> Option<Rc<Postings>> {
-        if type_id < self.typeinfo.len() {
-            let mut cache = self.cache.borrow_mut();
-            if !cache.contains(&type_id) {
-                let (freq, offset) = self.typeinfo[type_id];
-                let postings = Rc::new(Postings::new(freq as usize, &self.data[offset as usize..]));
-                cache.put(type_id, postings);
-            }
+        let mut cache = self.cache.borrow_mut();
 
-            cache
-                .get(&type_id)
-                .map(|rc| rc.clone())
-        } else {
-            None
+        if !cache.contains(&type_id) {
+            let postings = Rc::new(self.decode_postings(type_id)?);
+            cache.put(type_id, postings.clone());
+            return Some(postings);
         }
+
+        None
+    }
+
+    /// Decodes the postings list for a type
+    pub fn decode_postings(&self, type_id: usize) -> Option<Postings> {
+        if type_id < self.typeinfo.len() {
+            let (freq, offset) = self.typeinfo[type_id];
+            let postings = Postings::new(freq as usize, &self.data[offset as usize..]);
+            return Some(postings);
+        }
+
+        None
     }
 
     /// Returs the combined postings lists of multiple types
@@ -220,6 +226,19 @@ impl<'map> CachedInvertedIndex<'map> {
 
         positions
     }
+
+        /// Explicity decodes the combined postings lists of multiple types
+        pub fn decode_combined_postings(&self, type_ids: &[usize]) -> Vec<usize> {            
+            let mut positions = Vec::new();
+            for t in type_ids {
+                if let Some(postings) = self.decode_postings(*t) {
+                    positions.extend_from_slice(postings.get_all())
+                }
+            }
+            positions.sort_unstable();
+    
+            positions
+        }
 
     /// Iterator over the positions of a type
     pub fn positions(&self, type_id: usize) -> Option<CachedPostingsIterator> {
