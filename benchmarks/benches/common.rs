@@ -95,6 +95,7 @@ mod common {
         r"\p{Arabic}+طة",
     ];
 
+    // total: 143640813
     pub const MIXED_TYPES: [&'static str; 11] = ["the", "end", "is", "near", "Cthulhu", "will", "rise", "and", "destroy", "every", "ziggurat"];
 
     // total: 456835502
