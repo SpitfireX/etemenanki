@@ -213,27 +213,26 @@ impl<'map> SegmentationLayer<'map> {
                     Err(i) => i-1,
                 };
 
-                block.get_position(vi).expect("vi must be in block")
+                (bi * 16) + vi
             }
             
             components::CachedIndex::Uncompressed { length: _, pairs } => {
-                let i = match pairs.binary_search_by_key(&(position as i64), |(s, _)| *s) {
+                match pairs.binary_search_by_key(&(position as i64), |(s, _)| *s) {
                     Ok(i) => i,
                     Err(0) => 0,
                     Err(i) => i-1,
-                };
-
-                pairs[i].1
+                }
             }
         };
 
-        if (i as usize) < self.len() {
+        if i < self.len() {
             let (start, end) = self.get_unchecked(i as usize);
 
             if position >= start && end > position {
-                return Some(i as usize)
+                return Some(i)
             }
         }
+
         None
     }
 
