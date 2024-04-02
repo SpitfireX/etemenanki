@@ -1,15 +1,13 @@
-use std::time::Duration;
+use std::{hash::{DefaultHasher, Hash, Hasher}, time::Duration};
 
 use criterion::{black_box, criterion_group, criterion_main, Bencher, Criterion};
-use etemenanki::Datastore;
+use etemenanki::{components::FnvHash, Datastore};
 
 criterion_group!(benches, criterion_benchmark);
 criterion_main!(benches);
 
-fn open_ziggurat() -> Datastore<'static> {
-    // open ziggurat datastore
-    Datastore::open("ziggurat").unwrap()
-}
+include!("common.rs");
+use common::*;
 
 //
 // Rust Tests
@@ -67,6 +65,34 @@ fn regex_contains(b: &mut Bencher) {
     })
 }
 
+fn lexhash_fnv(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    b.iter(|| {
+        for t in words.lexicon() {
+            black_box(t.fnv_hash());
+        }
+    })
+}
+
+fn lexhash_rust(b: &mut Bencher) {
+    let datastore = open_ziggurat();
+    let words = datastore["primary"]["word"]
+        .as_indexed_string()
+        .unwrap();
+
+    b.iter(|| {
+        for t in words.lexicon() {
+            let mut hasher = DefaultHasher::new();
+            t.hash(&mut hasher);
+            black_box(hasher.finish());
+        }
+    })
+}
+
 //
 // Criterion Main
 //
@@ -85,4 +111,8 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Containment Search
     group.bench_function("rust pattern containment", pattern_contains);
     group.bench_function("regex containment", regex_contains);
+
+    // Hash Performance
+    group.bench_function("lexicon hash fnv", lexhash_fnv);
+    group.bench_function("lexicon hash rust", lexhash_rust);
 }
