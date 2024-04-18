@@ -1,6 +1,9 @@
 /target
 /Cargo.lock
 *.zig*
+/benchmarks/cwb
+/benchmarks/ziggurat
+/benchmarks/ziggurat_large
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,rust,visualstudiocode
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,rust,visualstudiocode
