@@ -16,19 +16,39 @@ fn main() -> Result<()> {
         .as_indexed_string()
         .unwrap();
 
-    for (i, w) in words.iter().enumerate() {
-        println!("{}: {}", i, w);
-    }
+    let docs = datastore["doc"]
+        .as_segmentation()
+        .unwrap();
 
-    let expected = "the";
-    let the_id = words.lexicon().iter().position(|s| s == expected).unwrap();
-    dbg!(the_id);
-    dbg!(words.inverted_index().frequency(the_id).unwrap());
-    let the: Vec<_> = words.inverted_index().positions(the_id).unwrap().collect();
-    for tpos in the {
-        let token = words.get_unchecked(tpos);
-        assert!(token == expected, "token not expected");
-    }
+    let id = words.lexicon().find_match("Lukacs-Bloch-Benjamin-Kracauer-Horkheimer-Adorno-Lefebvre-Harvey-Postone").unwrap();
+
+    let cpos = words.inverted_index().get_postings(id).unwrap().get(0).unwrap();
+
+    let docid = docs.find_containing(cpos).unwrap();
+    dbg!(docid);
+
+    let urls = datastore["doc"]["url"]
+        .as_plain_string()
+        .unwrap();
+
+    println!("{:?}", urls.get(docid));
+
+    let (docstart, docend) = docs.get_unchecked(docid);
+
+    let doc: Vec<&str> = words.get_range(docstart, docend).unwrap()
+        .collect();
+
+    println!("{}", doc.join(" "));
+
+    // let expected = "the";
+    // let the_id = words.lexicon().iter().position(|s| s == expected).unwrap();
+    // dbg!(the_id);
+    // dbg!(words.inverted_index().frequency(the_id).unwrap());
+    // let the: Vec<_> = words.inverted_index().positions(the_id).unwrap().collect();
+    // for tpos in the {
+    //     let token = words.get_unchecked(tpos);
+    //     assert!(token == expected, "token not expected");
+    // }
 
 
     // // let words = datastore["primary"]["word"]
