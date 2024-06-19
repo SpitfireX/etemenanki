@@ -55,8 +55,8 @@ impl<'map> Datastore<'map> {
         }
     }
 
-    pub fn layer_by_uuid(&self, uuid: &Uuid) -> Option<&layers::Layer<'map>> {
-        self.layers_by_uuid.get(uuid)
+    pub fn layer_by_uuid(&self, uuid: Uuid) -> Option<&layers::Layer<'map>> {
+        self.layers_by_uuid.get(&uuid)
     }
 
     pub fn layer_names(&self) -> hash_map::Keys<String, Uuid> {
@@ -162,11 +162,11 @@ impl<'map> Datastore<'map> {
     }
 }
 
-impl<'map> ops::Index<&Uuid> for Datastore<'map> {
+impl<'map> ops::Index<Uuid> for Datastore<'map> {
     type Output = layers::Layer<'map>;
 
-    fn index(&self, index: &Uuid) -> &Self::Output {
-        &self.layers_by_uuid[index]
+    fn index(&self, index: Uuid) -> &Self::Output {
+        &self.layers_by_uuid[&index]
     }
 }
 
