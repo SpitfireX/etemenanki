@@ -294,7 +294,10 @@ impl<'map> SegmentationLayer<'map> {
 
         builder = builder.add_component("StartSort", idxtype, | bom_entry, file | {
             unsafe {
-                let values = range_stream.iter().map(|[s, e]| (s, e));
+                let values = range_stream.iter()
+                    .enumerate()
+                    .map(|(i, [start, _])| (start, i as i64));
+
                 if compressed {
                     Index::encode_compressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
                 } else {
@@ -305,7 +308,10 @@ impl<'map> SegmentationLayer<'map> {
 
         builder = builder.add_component("EndSort", idxtype, | bom_entry, file | {
             unsafe {
-                let values = range_stream.iter().map(|[s, e]| (e, s));
+                let values = range_stream.iter()
+                    .enumerate()
+                    .map(|(i, [_, end])| (end, i as i64));
+
                 if compressed {
                     Index::encode_compressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
                 } else {
