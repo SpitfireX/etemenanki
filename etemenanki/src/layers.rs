@@ -6,7 +6,7 @@ use std::collections::{hash_map, HashMap};
 use std::fs::File;
 use std::ops;
 
-use crate::components::{CachedIndex, CachedVector, Component, Index, Vector};
+use crate::components::{CachedVector, Component, Index, Vector};
 use crate::container::{self, Container, ContainerBuilder};
 use crate::macros::{check_and_return_component, get_container_base};
 use crate::variables::Variable;
@@ -175,8 +175,8 @@ pub struct SegmentationLayer<'map> {
     pub name: String,
     pub header: &'map container::Header,
     range_stream: components::CachedVector<'map, 2>,
-    start_sort: components::CachedIndex<'map>,
-    end_sort: components::CachedIndex<'map>,
+    start_sort: components::Index<'map>,
+    end_sort: components::Index<'map>,
 }
 
 impl<'map> SegmentationLayer<'map> {
@@ -258,8 +258,9 @@ impl<'map> SegmentationLayer<'map> {
     }
 
     pub fn encode_to_file<I>(file: File, values: I, n: usize, name: String, base: Uuid, compressed: bool, comment: &str) -> Self where I: Iterator<Item=(usize, usize)> {
-        let vectype = if compressed { components::Type::VectorDelta } else { components::Type::Vector };
-        let idxtype = if compressed { components::Type::IndexComp } else { components::Type::Index };
+        if !compressed {
+            eprintln!("Warning: Uncompressed SegmentationLayers are impossible, layer will be compressed");
+        }
         
         let mut builder = ContainerBuilder::new_into_file(name, file, 3)
             .edit_header(| h | {
@@ -269,15 +270,10 @@ impl<'map> SegmentationLayer<'map> {
                     .dim2(0)
                     .base1(Some(base));
             })
-            .add_component("RangeStream", vectype, | bom_entry, file | {
+            .add_component("RangeStream", components::Type::VectorDelta, | bom_entry, file | {
                 unsafe {
-                    if compressed {
-                        let values = values.map(|(s, e)| [s as i64, e as i64]);
-                        Vector::encode_delta_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
-                    } else {
-                        let values = values.map(|(s, e)| [s as i64, e as i64]).flatten();
-                        Vector::encode_uncompressed_to_container_file(values, n, 1, file, bom_entry, bom_entry.offset as u64);
-                    }
+                    let values = values.map(|(s, e)| [s as i64, e as i64]);
+                    Vector::encode_delta_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
                 }
             });
 
@@ -292,31 +288,34 @@ impl<'map> SegmentationLayer<'map> {
         let range_stream = Component::from_raw_parts(&vecbom, vecmmap.as_ptr()).unwrap().into_vector().unwrap();
         let range_stream = CachedVector::<2>::new(range_stream).unwrap();
 
-        builder = builder.add_component("StartSort", idxtype, | bom_entry, file | {
-            unsafe {
-                let values = range_stream.iter()
-                    .enumerate()
-                    .map(|(i, [start, _])| (start, i as i64));
+        let block_cache = range_stream.get_block_cache().unwrap();
+        let mut bcref = block_cache.borrow_mut();
 
-                if compressed {
-                    Index::encode_compressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
-                } else {
-                    Index::encode_uncompressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
-                }
+        let n_blocks = bcref.n_blocks();
+
+        builder = builder.add_component("StartSort", components::Type::Index, | bom_entry, file | {
+            unsafe {
+                let values = (0..n_blocks)
+                    .map(| bi | {
+                        let b = bcref.get_block(bi).unwrap();
+                        // tuple of start boundary of first segment in block and the block index
+                        (b.first()[0], bi as i64)
+                    });
+
+                Index::encode_uncompressed_to_container_file(values, n_blocks, file, bom_entry, bom_entry.offset as u64);
             }
         });
 
-        builder = builder.add_component("EndSort", idxtype, | bom_entry, file | {
+        builder = builder.add_component("EndSort", components::Type::Index, | bom_entry, file | {
             unsafe {
-                let values = range_stream.iter()
-                    .enumerate()
-                    .map(|(i, [_, end])| (end, i as i64));
+                let values = (0..n_blocks)
+                    .map(| bi | {
+                        let block = bcref.get_block(bi).unwrap();
+                        // tuple of end boundary of last segment in block and the block index
+                        (block.last()[1], bi as i64)
+                    });
 
-                if compressed {
-                    Index::encode_compressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
-                } else {
-                    Index::encode_uncompressed_to_container_file(values, n, file, bom_entry, bom_entry.offset as u64);
-                }
+                Index::encode_uncompressed_to_container_file(values, n_blocks, file, bom_entry, bom_entry.offset as u64);
             }
         });
 
@@ -341,17 +340,17 @@ impl<'map> TryFrom<Container<'map>> for SegmentationLayer<'map> {
                 let range_stream = CachedVector::<2>::new(range_stream)
                     .expect("width already checked, should be 2");
 
+                let n_blocks = range_stream.get_block_cache().unwrap().borrow().n_blocks();
+
                 let start_sort = check_and_return_component!(container, "StartSort", Index)?;
-                if start_sort.len() != header.dim1() {
+                if start_sort.len() != n_blocks {
                     return Err(Self::Error::WrongComponentDimensions("StartSort"));
                 }
-                let start_sort = CachedIndex::new(start_sort);
 
                 let end_sort = check_and_return_component!(container, "EndSort", Index)?;
-                if end_sort.len() != header.dim1() {
+                if end_sort.len() != n_blocks {
                     return Err(Self::Error::WrongComponentDimensions("EndSort"));
                 }
-                let end_sort = CachedIndex::new(end_sort);
 
                 let (name, mmap, header, _) = container.into_raw_parts();
 

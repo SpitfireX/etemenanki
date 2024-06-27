@@ -363,6 +363,14 @@ impl<const D: usize> VectorBlock<D> {
         }
     }
 
+    pub const fn first(&self) -> [i64; D] {
+        self.rows[0]
+    }
+
+    pub const fn last(&self) -> [i64; D] {
+        self.rows[self.length-1]
+    }
+
     pub fn get_row(&self, index: usize) -> Option<[i64; D]> {
         if index < self.length {
             Some(self.get_row_unchecked(index))
@@ -441,6 +449,10 @@ impl<'map, const D: usize> VectorBlockCache<'map, D> {
 
     pub fn len(&self) -> usize {
         self.length
+    }
+
+    pub fn n_blocks(&self) -> usize {
+        self.sync.len()
     }
 }
 
@@ -548,6 +560,17 @@ impl<'map, const D: usize> CachedVector<'map, D> {
 
     pub const fn width(&self) -> usize {
         D
+    }
+
+    /// Returns a copy of the underlying BlockCache,
+    /// or None if the underlying Vector is uncompressed
+    pub fn get_block_cache(&self) -> Option<Rc<RefCell<VectorBlockCache<'map, D>>>> {
+        match self {
+            CachedVector::Uncompressed { .. } => None,
+            CachedVector::Compressed { blocks } => {
+                Some(blocks.clone())
+            }
+        }
     }
 }
 

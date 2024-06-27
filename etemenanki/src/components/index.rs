@@ -41,10 +41,7 @@ pub enum Index<'map> {
 impl<'map> Index<'map> {
     #[inline]
     pub fn contains_key(&self, key: i64) -> bool {
-        match self.get_first(key) {
-            Some(_) => true,
-            None => false,
-        }
+        self.get_first(key).is_some()
     }
 
     pub fn compressed_from_parts(
