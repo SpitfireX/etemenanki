@@ -1,10 +1,8 @@
 #![feature(iter_intersperse)]
 
-use std::collections::HashSet;
 use std::env;
 use std::io::Result;
 
-use etemenanki::components::FnvHash;
 use etemenanki::Datastore;
 
 fn main() -> Result<()> {
@@ -16,29 +14,29 @@ fn main() -> Result<()> {
         .as_indexed_string()
         .unwrap();
 
-    let docs = datastore["doc"]
+    let s = datastore["s"]
         .as_segmentation()
         .unwrap();
 
-    let id = words.lexicon().find_match("Lukacs-Bloch-Benjamin-Kracauer-Horkheimer-Adorno-Lefebvre-Harvey-Postone").unwrap();
+    for (i, seg) in s.iter().enumerate() {
+        println!("{i}: {seg:?}");
+    }
 
-    let cpos = words.inverted_index().get_postings(id).unwrap().get(0).unwrap();
+    assert!(s.contains_start(104));
+    assert!(s.contains_start(132));
+    assert!(s.contains_start(10746));
 
-    let docid = docs.find_containing(cpos).unwrap();
-    dbg!(docid);
-
-    let urls = datastore["doc"]["url"]
-        .as_plain_string()
-        .unwrap();
-
-    println!("{:?}", urls.get(docid));
-
-    let (docstart, docend) = docs.get_unchecked(docid);
-
-    let doc: Vec<&str> = words.get_range(docstart, docend).unwrap()
-        .collect();
-
-    println!("{}", doc.join(" "));
+    assert!(s.contains_end(132));
+    assert!(s.contains_end(162));
+    assert!(s.contains_end(10750));
+    
+    assert!(s.find_containing(104) == Some(0));
+    assert!(s.find_containing(120) == Some(0));
+    assert!(s.find_containing(131) == Some(0));
+    assert!(s.find_containing(132) == Some(1));
+    assert!(s.find_containing(10746) == Some(187));
+    assert!(s.find_containing(10749) == Some(187));
+    assert!(s.find_containing(10750) == None);
 
     // let expected = "the";
     // let the_id = words.lexicon().iter().position(|s| s == expected).unwrap();

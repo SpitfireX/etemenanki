@@ -181,59 +181,126 @@ pub struct SegmentationLayer<'map> {
 
 impl<'map> SegmentationLayer<'map> {
     pub fn contains(&self, range: (usize, usize)) -> bool {
-        let (start, end) = range;
+        let start = range.0 as i64;
+        let end = range.1 as i64;
 
-        match self.start_sort.get_first(start as i64) {
-            None => false,
-            Some(i) => end == self.get_unchecked(i as usize).1,
+        match self.start_sort {
+            Index::Compressed { .. } => panic!("StartSort should not be compressed"),
+
+            Index::Uncompressed { length: _, pairs } => {
+                // get block
+                let bi = match pairs.binary_search_by_key(&start, |(s, _)| *s) {
+                    Ok(bi) => bi,
+                    Err(0) => return false,
+                    Err(bi) => bi - 1,
+                };
+
+                // if a plausible block exists, decode it and do another binary search
+                let bcache = self.range_stream.get_block_cache().unwrap();
+                let mut bcref = bcache.borrow_mut();
+
+                let block = bcref.get_block(bi).unwrap();
+
+                match block.rows().binary_search_by_key(&start, |[s, _]| *s) {
+                    Ok(i) => block.get_row_unchecked(i)[1] == end,
+                    Err(_) => false,
+                }
+            }
         }
     }
 
     pub fn contains_end(&self, end: usize) -> bool {
-        self.end_sort.contains_key(end as i64)
+        let end = end as i64;
+
+        match self.end_sort {
+            Index::Compressed { .. } => panic!("EndSort should not be compressed"),
+
+            Index::Uncompressed { length: _, pairs } => {
+                // check the index for a direct hit
+                let bi = match pairs.binary_search_by_key(&end, |(e, _)| *e) {
+                    Ok(_) => return true,
+                    Err(0) => 0,
+                    Err(bi) => bi - 1,
+                };
+
+                // if a plausible block exists, decode it and do another binary search
+                let bcache = self.range_stream.get_block_cache().unwrap();
+                let mut bcref = bcache.borrow_mut();
+
+                let block = bcref.get_block(bi).unwrap();
+
+                match block.rows().binary_search_by_key(&end, |[_, e]| *e) {
+                    Ok(_) => true,
+                    Err(_) => false,
+                }
+            }
+        }
     }
 
     pub fn contains_start(&self, start: usize) -> bool {
-        self.start_sort.contains_key(start as i64)
+        let start = start as i64;
+
+        match self.start_sort {
+            Index::Compressed { .. } => panic!("StartSort should not be compressed"),
+
+            Index::Uncompressed { length: _, pairs } => {
+                // check the index for a direct hit
+                let bi = match pairs.binary_search_by_key(&start, |(s, _)| *s) {
+                    Ok(_) => return true,
+                    Err(0) => return false,
+                    Err(bi) => bi - 1,
+                };
+
+                // if a plausible block exists, decode it and do another binary search
+                let bcache = self.range_stream.get_block_cache().unwrap();
+                let mut bcref = bcache.borrow_mut();
+
+                let block = bcref.get_block(bi).unwrap();
+
+                match block.rows().binary_search_by_key(&start, |[s, _]| *s) {
+                    Ok(_) => true,
+                    Err(_) => false,
+                }
+            }
+        }
     }
 
     /// Finds the index of the range containing baselayer position `position`
     pub fn find_containing(&self, position: usize) -> Option<usize> {
-        let i = match &self.start_sort {
+        let position = position as i64;
 
-            components::CachedIndex::Compressed { length: _, cache } => {
-                let mut cache = cache.borrow_mut();
+        match self.start_sort {
+            Index::Compressed { .. } => panic!("StartSort should not be compressed"),
 
-                let bi = cache.sync_block_position(position as i64);
-                let block = cache.get_block(bi).unwrap();
-
-                let vi = match block.keys().binary_search(&(position as i64)) {
-                    Ok(i) => i,
-                    Err(0) => 0,
-                    Err(i) => i-1,
+            Index::Uncompressed { length: _, pairs } => {
+                // check the index for a direct hit
+                let bi = match pairs.binary_search_by_key(&position, |(s, _)| *s) {
+                    Ok(bi) => return Some(bi * 16),
+                    Err(0) => return None,
+                    Err(bi) => bi - 1,
                 };
 
-                (bi * 16) + vi
-            }
-            
-            components::CachedIndex::Uncompressed { length: _, pairs } => {
-                match pairs.binary_search_by_key(&(position as i64), |(s, _)| *s) {
-                    Ok(i) => i,
-                    Err(0) => 0,
-                    Err(i) => i-1,
+                // if a plausible block exists, decode it and do another binary search
+                let bcache = self.range_stream.get_block_cache().unwrap();
+                let mut bcref = bcache.borrow_mut();
+
+                let block = bcref.get_block(bi).unwrap();
+
+                match block.rows().binary_search_by_key(&position, |[s, _]| *s) {
+                    Ok(i) => Some((bi * 16) + i),
+                    Err(0) => None,
+                    Err(i) => {
+                        let i = i-1;
+                        let [start, end] = block.get_row_unchecked(i);
+                        if position >= start && position < end {
+                            Some((bi * 16) + i)
+                        } else {
+                            None
+                        }
+                    }
                 }
             }
-        };
-
-        if i < self.len() {
-            let (start, end) = self.get_unchecked(i as usize);
-
-            if position >= start && end > position {
-                return Some(i)
-            }
         }
-
-        None
     }
 
     pub fn get(&self, index: usize) -> Option<(usize, usize)> {
