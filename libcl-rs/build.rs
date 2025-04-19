@@ -2,10 +2,7 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    // Tell cargo to look for shared libraries in the specified directory
-    println!("cargo:rustc-link-search=/path/to/lib");
-
-    // Tell cargo to tell rustc to link the system bzip2
+    // Tell cargo to tell rustc to link the system libcl
     // shared library.
     println!("cargo:rustc-link-lib=cl");
 
@@ -42,6 +39,4 @@ fn main() {
     bindings
         .write_to_file(out_path.join("bindings.rs"))
         .expect("Couldn't write bindings!");
-
-    // bindings.write_to_file("src/bindings.rs").unwrap();
 }
