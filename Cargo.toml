@@ -4,6 +4,8 @@ resolver = "2"
 members = [ "benchmarks",
     "benchmarks",
     "etemenanki",
+    "libcl-hook",
+    "libcl-hook-macros",
     "libcl-rs",
     "ziggurat-varint",
     "ziggypy",
