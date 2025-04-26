@@ -3,7 +3,7 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, ItemFn};
 
-/// Macro that hooks a C function via its identifier.
+/// Macro that hooks a C function via its identifier and exports an `extern "C"` function of the same name.
 /// The decorated function needs to have the exact identifier and signature of the function to hook.
 /// The original (shadowed) function can be accessed via an automatically generated global function
 /// pointer called `hooked_<identifier>`.
@@ -24,7 +24,7 @@ pub fn hook(_attr: TokenStream, item: TokenStream) -> TokenStream {
         // static function pointer to the original function
         // resolved via the linker at runtime using dlsym
         lazy_static::lazy_static! {
-            static ref #hooked_name: extern "C" fn(#fn_args) #fn_output = unsafe {
+            static ref #hooked_name: unsafe extern "C" fn(#fn_args) #fn_output = unsafe {
                 let ptr = libc::dlsym(libc::RTLD_NEXT, #fn_name_lit.as_ptr() as *const _);
                 std::mem::transmute(ptr)
             };
