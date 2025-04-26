@@ -51,6 +51,15 @@ fn get_format_expression(binding: Box<dyn quote::ToTokens>, ty: &syn::Type) -> i
 
             match quote!(#ty).to_string().as_str() {
                 "c_char" => quote!(CStr::from_ptr(#binding as *const i8)), // print strings instead of their address
+                "Attribute" | "Corpus" => quote!(
+                    {
+                        if #binding.is_null() {
+                            "NULL".to_string()
+                        } else {
+                            format!("{} @ 0x{}", *#binding, #binding.addr())
+                        }
+                    }
+                ),
                 _ => quote!(#binding),
             }
         }
@@ -61,8 +70,18 @@ fn get_format_expression(binding: Box<dyn quote::ToTokens>, ty: &syn::Type) -> i
 
 /// Returns the correct formatting placeholders for expressions produced by
 /// `get_format_expression`
-fn get_format_placeholder(_ty: &syn::Type) -> String {
-    "{:?}".to_owned()
+fn get_format_placeholder(ty: &syn::Type) -> String {
+    match ty {
+        syn::Type::Ptr(tp) => {
+            let ty = &tp.elem;
+
+            match quote!(#ty).to_string().as_str() {
+                "Attribute" | "Corpus" => "{}".to_owned(),
+                _ => "{:?}".to_owned()
+            }
+        }
+        _ => "{:?}".to_owned()
+    }
 }
 
 
