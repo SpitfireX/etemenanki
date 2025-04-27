@@ -1,7 +1,7 @@
-use std::ffi::CString;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{parse_macro_input, FnArg, ItemFn};
+use std::ffi::CString;
 
 /// Macro that hooks a C function via its identifier and exports an `extern "C"` function of the same name.
 /// The decorated function needs to have the exact identifier and signature of the function to hook.
@@ -19,8 +19,7 @@ pub fn hook(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let hooked_name = format_ident!("hooked_{}", fn_name.to_string());
     let fn_name_lit = proc_macro2::Literal::c_string(&CString::new(fn_name.to_string()).unwrap());
 
-    let expanded = quote! {
-
+    quote! {
         // static function pointer to the original function
         // resolved via the linker at runtime using dlsym
         lazy_static::lazy_static! {
@@ -36,9 +35,7 @@ pub fn hook(_attr: TokenStream, item: TokenStream) -> TokenStream {
         pub extern "C" fn #fn_name(#fn_args) #fn_output {
             #fn_block
         }
-    };
-
-    TokenStream::from(expanded)
+    }.into()
 }
 
 
@@ -50,7 +47,7 @@ fn get_format_expression(binding: Box<dyn quote::ToTokens>, ty: &syn::Type) -> i
             let ty = &tp.elem;
 
             match quote!(#ty).to_string().as_str() {
-                "c_char" => quote!(CStr::from_ptr(#binding as *const i8)), // print strings instead of their address
+                "c_char" => quote!(std::ffi::CStr::from_ptr(#binding as *const i8)), // print strings instead of their address
                 "Attribute" | "Corpus" => quote!(
                     {
                         if #binding.is_null() {
@@ -157,7 +154,7 @@ pub fn logged_hook(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     // defer impl of actual hook to hook macro
-    let implementation = quote! {
+    quote! {
         #[hook]
         fn #fn_name(#fn_args) #fn_output {
             let hooked_retval = #logging_block;
@@ -166,7 +163,5 @@ pub fn logged_hook(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
             hooked_retval
         }
-    };
-
-    TokenStream::from(implementation)
+    }.into()
 }
