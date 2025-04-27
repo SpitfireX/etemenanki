@@ -92,6 +92,9 @@ fn get_format_placeholder(ty: &syn::Type) -> String {
 /// The original function's return value can be accessed in the function body via an automatically
 /// generated binding called `hooked_retval`. The hooked retval is automatically returned after the
 /// function body.
+/// 
+/// Should the C function use output parameters (pointer inputs that are expected to be set by the function),
+/// their output values can be printed using the `Out<T>` wrapper type.
 #[proc_macro_attribute]
 pub fn logged_hook(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as ItemFn);
@@ -135,8 +138,42 @@ pub fn logged_hook(_attr: TokenStream, item: TokenStream) -> TokenStream {
         // get correct argument expression for our hooked returval
         let retval = get_format_expression(Box::new(format_ident!("_hooked_retval")), ty);
 
-        // assemble print statement with arrow and final _hooked_retval_ argument
-        quote!{ println!(#format_str, stringify!(#fn_name), #(#arg_exprs),*, #retval); }
+        // check for any specified output parameters
+        let out_params: Vec<_> = fn_args.iter()
+            .filter_map(| arg | {
+                if let FnArg::Typed(pat) = arg {
+                    let ty = &pat.ty;
+                    if quote!(#ty).to_string().contains("Out <") {
+                        return Some(pat)
+                    }
+                }
+                None
+            }).collect();
+
+        if out_params.len() == 0 {
+            // assemble print statement with arrow and final _hooked_retval_ argument
+            quote!{ println!(#format_str, stringify!(#fn_name), #(#arg_exprs),*, #retval); }
+        } else {
+            // assemble print statement with arrow, final _hooked_retval_ and additional output paramters
+
+            // extend format string
+            format_str.push_str(" (");
+            let out_placeholders: Vec<String> = out_params.iter()
+                .map(| p | get_format_placeholder(&p.ty))
+                .collect();
+            format_str.push_str(&out_placeholders.join(", "));
+            format_str.push(')');
+
+            // expression for (doubly) dereferencing the parameter
+            let out_exprs: Vec<_> = out_params.iter()
+                .map(| p | {
+                    let pat = &p.pat;
+                    quote!(**#pat)
+                })
+                .collect();
+
+            quote!{ println!(#format_str, stringify!(#fn_name), #(#arg_exprs),*, #retval, #(#out_exprs),*); }
+        }
     } else {
         // assemble print statemint without return type
         quote!{ println!(#format_str, stringify!(#fn_name), #(#arg_exprs),*); }
