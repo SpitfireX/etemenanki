@@ -1,0 +1,33 @@
+/*
+* Builtins
+*/
+WHITESPACE = _{ " " }
+
+/*
+* Characer Rules
+*/
+quote      = _{ "\"" }
+regex_ctrl = _{ "." | "+" | "*" | "?" | "^" | "$" | "(" | ")" | "[" | "]" | "{" | "}" | "|" | "\\" }
+char       = _{ !(regex_ctrl | quote) ~ (LETTER | NUMBER | PUNCTUATION | SYMBOL) }
+idchar     = _{ 'A'..'Z' | 'a'..'z' | '0'..'9' | "-" | "_" | "." }
+boolop     =  { "|" | "&" }
+neg        =  { "!" }
+
+/*
+* String Rules
+*/
+regex = @{ quote ~ (regex_ctrl | char)+ ~ quote }
+str   = @{ quote ~ char+ ~ quote }
+ident =  { idchar+ }
+
+searchstr = _{ str | regex }
+
+atom       = { (neg? ~ (ident ~ "=")? ~ searchstr) | "(" ~ constraint ~ ")" }
+constraint = { atom ~ (boolop ~ atom)* }
+
+quantifier = { "?" | "+" | "*" | "{" ~ ASCII_DIGIT? ~ ("," ~ ASCII_DIGIT?)? ~ "}" }
+token = { (atom | "[" ~ constraint? ~ "]") ~ quantifier? | "(" ~ expression ~ ")" }
+
+expression = { token ~ (boolop? ~ token)* }
+
+query = { SOI ~ expression ~ EOI }
