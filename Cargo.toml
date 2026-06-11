@@ -7,6 +7,7 @@ members = [ "benchmarks",
     "libcl-hook",
     "libcl-hook-macros",
     "libcl-rs",
+    "toyqp",
     "ziggurat-varint",
     "ziggypy",
 ]
