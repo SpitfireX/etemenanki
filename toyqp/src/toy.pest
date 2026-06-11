@@ -9,6 +9,7 @@ regex_ctrl = _{ "." | "+" | "*" | "?" | "^" | "$" | "(" | ")" | "[" | "]" | "{" 
 char       = _{ !(regex_ctrl | quote) ~ (LETTER | NUMBER | PUNCTUATION | SYMBOL) }
 idchar     = _{ 'A'..'Z' | 'a'..'z' | '0'..'9' | "-" | "_" | "." }
 boolop     =  { "|" | "&" }
+disjunc    =  { "|" }
 neg        =  { "!" }
 
 /* String Rules */
@@ -23,7 +24,7 @@ searchstr = _{ str | regex }
 /* Matching Constraints */
 
 /// Contraint atom, i.e. a single matching operation on a variable, either as a single atom or a nested (parenthesized) constraint
-atom = { (neg? ~ (ident ~ "=")? ~ searchstr) | "(" ~ constraint ~ ")" }
+atom = { (neg? ~ (ident ~ "=")? ~ searchstr) | neg? ~ "(" ~ constraint ~ ")" }
 
 /// Top-level contraint, consisting of a sequence of atoms joined by boolean operations
 constraint = { atom ~ (boolop ~ atom)* }
@@ -36,8 +37,9 @@ quantifier = { "?" | "+" | "*" | "{" ~ ASCII_DIGIT? ~ ("," ~ ASCII_DIGIT?)? ~ "}
 /// Raw token or nested (parenthesized) expression
 token = { (atom | "[" ~ constraint? ~ "]") ~ quantifier? | "(" ~ expression ~ ")" }
 
-/// Token Expression, i.e. a sequence of tokens in the corpus
-expression = { token ~ (boolop? ~ token)* }
+/// Token Expression, i.e. a sequence of tokens in the corpus.
+/// A series of tokens is connected either implicitly via concatenation or explicitly via disjunction
+expression = { token ~ (disjunc? ~ token)* }
 
 /* Parent Rule */
 
