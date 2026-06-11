@@ -1,11 +1,9 @@
-/*
-* Builtins
-*/
+//! A parser for an experimental query language protopyte (ToyQL)
+
+/* Builtins */
 WHITESPACE = _{ " " }
 
-/*
-* Characer Rules
-*/
+/* Characer Rules */
 quote      = _{ "\"" }
 regex_ctrl = _{ "." | "+" | "*" | "?" | "^" | "$" | "(" | ")" | "[" | "]" | "{" | "}" | "|" | "\\" }
 char       = _{ !(regex_ctrl | quote) ~ (LETTER | NUMBER | PUNCTUATION | SYMBOL) }
@@ -13,21 +11,35 @@ idchar     = _{ 'A'..'Z' | 'a'..'z' | '0'..'9' | "-" | "_" | "." }
 boolop     =  { "|" | "&" }
 neg        =  { "!" }
 
-/*
-* String Rules
-*/
+/* String Rules */
 regex = @{ quote ~ (regex_ctrl | char)+ ~ quote }
 str   = @{ quote ~ char+ ~ quote }
-ident =  { idchar+ }
+ident = @{ idchar+ }
 
+/// Common search string type representing simple strings or regular expressions.
+/// This can be handled in the parser to allow for optimized matching later.
 searchstr = _{ str | regex }
 
-atom       = { (neg? ~ (ident ~ "=")? ~ searchstr) | "(" ~ constraint ~ ")" }
+/* Matching Constraints */
+
+/// Contraint atom, i.e. a single matching operation on a variable, either as a single atom or a nested (parenthesized) constraint
+atom = { (neg? ~ (ident ~ "=")? ~ searchstr) | "(" ~ constraint ~ ")" }
+
+/// Top-level contraint, consisting of a sequence of atoms joined by boolean operations
 constraint = { atom ~ (boolop ~ atom)* }
 
+/* Token-Level Expressions */
+
+/// Token-level quantifiers, i.e. bounded repetition (count), unbounded repetition, optionality
 quantifier = { "?" | "+" | "*" | "{" ~ ASCII_DIGIT? ~ ("," ~ ASCII_DIGIT?)? ~ "}" }
+
+/// Raw token or nested (parenthesized) expression
 token = { (atom | "[" ~ constraint? ~ "]") ~ quantifier? | "(" ~ expression ~ ")" }
 
+/// Token Expression, i.e. a sequence of tokens in the corpus
 expression = { token ~ (boolop? ~ token)* }
 
+/* Parent Rule */
+
+/// The top-level input line
 query = { SOI ~ expression ~ EOI }
