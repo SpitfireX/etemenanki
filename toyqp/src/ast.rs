@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Query {
     expression: TokenExpression,
@@ -6,8 +8,8 @@ pub struct Query {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TokenExpression {
     Token(Token),
-    Seq(Vec<TokenExpression>),
-    Dis(Vec<TokenExpression>),
+    Sequence(Vec<TokenExpression>),
+    Alternation(Vec<TokenExpression>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -17,22 +19,23 @@ pub enum Token {
         constraint: TokenConstraint,
         min: usize,
         max: usize,
+        magnitude: Option<usize>,
     },
     None,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TokenConstraint {
-    Atom {
+    Pattern {
         negated: bool,
-        matchop: Match,
+        matches: Rc<Pattern>,
     },
-    Con {
+    And {
         negated: bool,
         left: Box<TokenConstraint>,
         right: Box<TokenConstraint>,
     },
-    Dis {
+    Or {
         negated: bool,
         left: Box<TokenConstraint>,
         right: Box<TokenConstraint>,
@@ -40,7 +43,7 @@ pub enum TokenConstraint {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Match {
+pub struct Pattern {
     identifier: Option<String>,
     searchstr: String,
     regex: bool,
