@@ -23,10 +23,10 @@ searchstr = _{ str | regex }
 
 /* Matching Constraints */
 
-/// Contraint atom, i.e. a single matching operation on a variable, either as a single atom or a nested (parenthesized) constraint
+/// Constraint atom, i.e. a single matching operation on a variable, either as a single atom or a nested (parenthesized) constraint
 atom = { (neg? ~ (ident ~ "=")? ~ searchstr) | neg? ~ "(" ~ constraint ~ ")" }
 
-/// Top-level contraint, consisting of a sequence of atoms joined by boolean operations
+/// Top-level constraint, consisting of a sequence of atoms joined by boolean operations
 constraint = { atom ~ (boolop ~ atom)* }
 
 /* Token-Level Expressions */
