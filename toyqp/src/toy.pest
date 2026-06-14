@@ -24,10 +24,10 @@ searchstr = _{ str | regex }
 /* Matching Constraints */
 
 /// Constraint atom, i.e. a single matching operation on a variable, either as a single atom or a nested (parenthesized) constraint
-atom = { (neg? ~ (ident ~ "=")? ~ searchstr) | neg? ~ "(" ~ constraint ~ ")" }
+atom = { neg? ~ (ident ~ "=")? ~ searchstr }
 
 /// Top-level constraint, consisting of a sequence of atoms joined by boolean operations
-constraint = { atom ~ (boolop ~ atom)* }
+constraint = { (atom | neg? ~ "(" ~ constraint ~ ")") ~ (boolop ~ (atom | neg? ~ "(" ~ constraint ~ ")"))* }
 
 /* Token-Level Expressions */
 
@@ -35,11 +35,11 @@ constraint = { atom ~ (boolop ~ atom)* }
 quantifier = { "?" | "+" | "*" | "{" ~ ASCII_DIGIT? ~ ("," ~ ASCII_DIGIT?)? ~ "}" }
 
 /// Raw token or nested (parenthesized) expression
-token = { (atom | "[" ~ constraint? ~ "]") ~ quantifier? | "(" ~ expression ~ ")" }
+token = { (atom | "[" ~ constraint? ~ "]") ~ quantifier? }
 
 /// Token Expression, i.e. a sequence of tokens in the corpus.
 /// A series of tokens is connected either implicitly via concatenation or explicitly via disjunction
-expression = { token ~ (disjunc? ~ token)* }
+expression = { (token | "(" ~ expression ~ ")") ~ (disjunc? ~ (token | "(" ~ expression ~ ")"))* }
 
 /* Parent Rule */
 
