@@ -154,10 +154,11 @@ impl Query {
             }
         }
 
+        let searchstr = searchstr.unwrap();
         let pattern = ast::Pattern {
             varname,
             is_regex,
-            searchstr: searchstr.unwrap(),
+            searchstr: searchstr[1..searchstr.len()-1].to_owned(),
             magnitude: None,
         };
         // intern the pattern in the global pattern hashset
