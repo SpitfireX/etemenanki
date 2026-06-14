@@ -27,7 +27,7 @@ pub enum Token {
 pub enum TokenConstraint {
     Pattern {
         negated: bool,
-        matches: Rc<Pattern>,
+        pattern: Rc<Pattern>,
     },
     And {
         negated: bool,
@@ -43,7 +43,8 @@ pub enum TokenConstraint {
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Pattern {
-    pub identifier: Option<String>,
+    pub varname: Option<String>,
     pub searchstr: String,
     pub is_regex: bool,
+    pub magnitude: Option<usize>,
 }

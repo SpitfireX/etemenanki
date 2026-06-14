@@ -138,7 +138,7 @@ impl Query {
 
         let mut negated = false;
         let mut is_regex = false;
-        let mut identifier = None;
+        let mut varname = None;
         let mut searchstr = None;
 
         for pair in atom.into_inner() {
@@ -149,22 +149,23 @@ impl Query {
                     is_regex = true;
                 }
                 Rule::str => searchstr = Some(pair.as_str().to_owned()),
-                Rule::ident => identifier = Some(pair.as_str().to_owned()),
+                Rule::ident => varname = Some(pair.as_str().to_owned()),
                 _ => unreachable!("Atom got impossible inner rule: {:?}", pair.as_rule()),
             }
         }
 
         let pattern = ast::Pattern {
-            identifier,
-            searchstr: searchstr.unwrap(),
+            varname,
             is_regex,
+            searchstr: searchstr.unwrap(),
+            magnitude: None,
         };
         // intern the pattern in the global pattern hashset
         let rc = self.patterns.get_or_insert(Rc::new(pattern));
 
         Ok(ast::TokenConstraint::Pattern {
             negated,
-            matches: rc.clone(),
+            pattern: rc.clone(),
         })
     }
 
