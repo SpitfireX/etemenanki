@@ -109,7 +109,7 @@ impl Query {
         for pair in token.into_inner() {
             match pair.as_rule() {
                 Rule::atom => constraint = Some(self.parse_atom(pair)?),
-                Rule::constraint => constraint = Some(self.parse_constraint(pair)?),
+                Rule::constraint => constraint = Some(self.parse_constraint(pair, false)?),
                 Rule::quantifier => repetition = self.parse_quantifier(pair)?,
                 _ => unreachable!("Token got impossible inner rule: {:?}", pair.as_rule()),
             }
@@ -208,7 +208,7 @@ impl Query {
         }
     }
 
-    fn parse_constraint(&mut self, constraint: Pair<Rule>) -> Result<ast::TokenConstraint> {
+    fn parse_constraint(&mut self, constraint: Pair<Rule>, negated: bool) -> Result<ast::TokenConstraint> {
         if constraint.as_rule() != Rule::constraint {
             return Err(anyhow!(
                 "Expected constraint, got: {:?}",
@@ -216,16 +216,19 @@ impl Query {
             ));
         }
 
-        let mut negated = false;
+        let mut negate_subcnstr = false;
         let mut subcnstrs = Vec::new();
         let mut ops = Vec::new();
 
         for pair in constraint.into_inner() {
             match pair.as_rule() {
                 Rule::boolop => ops.push((subcnstrs.len(), pair.as_str().chars().nth(0))),
-                Rule::neg => negated = true,
                 Rule::atom => subcnstrs.push(self.parse_atom(pair)?),
-                Rule::constraint => subcnstrs.push(self.parse_constraint(pair)?),
+                Rule::neg => negate_subcnstr = true,
+                Rule::constraint => {
+                    subcnstrs.push(self.parse_constraint(pair, negate_subcnstr)?);
+                    negate_subcnstr = false; // reset negation, since only constraints can be negated in this top level rule
+                }
                 _ => unreachable!("Constraint got impossible inner rule: {:?}", pair.as_rule()),
             }
         }
@@ -237,7 +240,20 @@ impl Query {
         if subcnstrs.len() == 1 {
             Ok(subcnstrs.remove(0))
         } else {
-            todo!("complex constraints");
+            assert!(ops.len() == subcnstrs.len()-1, "Wrong number of bool ops in constraint list");
+
+            let mut right = Box::new(subcnstrs.pop().unwrap());
+
+            for (_, op) in ops.iter().rev() {
+                let left = Box::new(subcnstrs.pop().unwrap());
+                right = match op.unwrap() {
+                    '&' => Box::new(ast::TokenConstraint::And { negated, left, right }),
+                    '|' => Box::new(ast::TokenConstraint::Or { negated, left, right }),
+                    _ => unreachable!("Constraint got impossible boolop: {:?}", op),
+                }
+            }
+
+            Ok(*right)
         }
     }
 }
@@ -245,5 +261,9 @@ impl Query {
 fn main() {
     let q1 = r#""hello" "world" | "hi" [pos="NN"]{,2} | "yo" ("world" | "planet")"#;
     let r = Query::parse(&q1).unwrap();
+    println!("ast:\n{:#?}", r);
+
+    let q2 = r#"( [pos = "DT"]? [pos = "JJ.*"]* [pos = "NNS?"] | [pos = "NPS?"]+ | [pos = "PP"] ) [!lemma = "say" & !( pos = "V.*" | bla = "arst") & fr = "frfr"]"#;
+    let r = Query::parse(q2).unwrap();
     println!("ast:\n{:#?}", r);
 }
