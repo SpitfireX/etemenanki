@@ -1,24 +1,23 @@
 use std::rc::Rc;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Query {
-    expression: TokenExpression,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum TokenExpression {
+pub enum QueryNode {
     Token(Token),
-    Sequence(Vec<TokenExpression>),
-    Alternation(Vec<TokenExpression>),
+    Sequence(Vec<QueryNode>),
+    Alternation(Vec<QueryNode>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Token {
-    Any,
+    Any {
+        min: usize,
+        max: Option<usize>,
+        magnitude: Option<usize>,
+    },
     Constrained {
         constraint: TokenConstraint,
         min: usize,
-        max: usize,
+        max: Option<usize>,
         magnitude: Option<usize>,
     },
     None,
@@ -42,9 +41,9 @@ pub enum TokenConstraint {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Pattern {
-    identifier: Option<String>,
-    searchstr: String,
-    regex: bool,
+    pub identifier: Option<String>,
+    pub searchstr: String,
+    pub is_regex: bool,
 }
