@@ -217,13 +217,13 @@ impl Query {
             ));
         }
 
-        let mut negate_subcnstr = false;
-        let mut subcnstrs = Vec::new();
-        let mut ops = Vec::new();
+        let mut negate_subcnstr = false;    // flag for negating the following (sub)constraint, as parsing is handled here
+        let mut subcnstrs = Vec::new();     // flat list of subconstraints
+        let mut ops = Vec::new();           // list of boolean ops between subconstraints
 
         for pair in constraint.into_inner() {
             match pair.as_rule() {
-                Rule::boolop => ops.push((subcnstrs.len(), pair.as_str().chars().nth(0))),
+                Rule::boolop => ops.push(pair.as_str().chars().nth(0)),
                 Rule::atom => subcnstrs.push(self.parse_atom(pair)?),
                 Rule::neg => negate_subcnstr = true,
                 Rule::constraint => {
@@ -234,24 +234,33 @@ impl Query {
             }
         }
 
-        // println!("negated {}", negated);
-        // println!("subcnstrs {:?}", &subcnstrs);
-        // println!("ops {:?}", &ops);
-
         if subcnstrs.len() == 1 {
+            // if there is only one subconstraint we don't need to build a constraint tree
             Ok(subcnstrs.remove(0))
         } else {
+            // there must be an operator between every two contsraints (no implicit or dangling ops in grammar)
             assert!(ops.len() == subcnstrs.len()-1, "Wrong number of bool ops in constraint list");
 
+            // we build the constraint tree from bottom up, last parsed subconstraint is right child of first node
             let mut right = Box::new(subcnstrs.pop().unwrap());
 
-            for (_, op) in ops.iter().rev() {
+            // there will be one node per operator in the input
+            for op in ops.iter().rev() {
                 let left = Box::new(subcnstrs.pop().unwrap());
-                right = match op.unwrap() {
-                    '&' => Box::new(ast::TokenConstraint::And { negated, left, right }),
-                    '|' => Box::new(ast::TokenConstraint::Or { negated, left, right }),
+                let mut node = match op.unwrap() {
+                    '&' => ast::TokenConstraint::And { negated, left, right },
+                    '|' => ast::TokenConstraint::Or { negated, left, right },
                     _ => unreachable!("Constraint got impossible boolop: {:?}", op),
+                };
+
+                // ad-hoc normalize the logical form so that only leaf nodes (patterns) are negated,
+                // since eventually token sets are easier to invert and reason about.
+                // this uses the basic De Morgan's laws.
+                if node.negated() {
+                    node = node.normalize();
                 }
+
+                right = Box::new(node);
             }
 
             Ok(*right)
@@ -266,5 +275,9 @@ fn main() {
 
     let q2 = r#"( [pos = "DT"]? [pos = "JJ.*"]* [pos = "NNS?"] | [pos = "NPS?"]+ | [pos = "PP"] ) [!lemma = "say" & !( pos = "V.*" | bla = "arst") & fr = "frfr"]"#;
     let r = Query::parse(q2).unwrap();
+    println!("ast:\n{:#?}", r);
+
+    let q3 = r#"[pos="test" & !(lemma="blabla" | !bla="blaaa" | !(foo="bar" & bar="baz"))]"#;
+    let r = Query::parse(q3).unwrap();
     println!("ast:\n{:#?}", r);
 }
