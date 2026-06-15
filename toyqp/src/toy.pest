@@ -26,8 +26,10 @@ searchstr = _{ str | regex }
 /// Constraint atom, i.e. a single matching operation on a variable, either as a single atom or a nested (parenthesized) constraint
 atom = { neg? ~ (ident ~ "=")? ~ searchstr }
 
+/// Convenience rule for all subconstraints
+subconstraint = _{ atom | neg? ~ "(" ~ constraint ~ ")" }
 /// Top-level constraint, consisting of a sequence of atoms joined by boolean operations
-constraint = { (atom | neg? ~ "(" ~ constraint ~ ")") ~ (boolop ~ (atom | neg? ~ "(" ~ constraint ~ ")"))* }
+constraint = { subconstraint ~ (boolop ~ subconstraint)* }
 
 /* Token-Level Expressions */
 
@@ -35,11 +37,13 @@ constraint = { (atom | neg? ~ "(" ~ constraint ~ ")") ~ (boolop ~ (atom | neg? ~
 quantifier = { "?" | "+" | "*" | "{" ~ ASCII_DIGIT? ~ ("," ~ ASCII_DIGIT?)? ~ "}" }
 
 /// Raw token or nested (parenthesized) expression
-token = { (atom | "[" ~ constraint? ~ "]") ~ quantifier? }
+token = { atom | "[" ~ constraint? ~ "]" }
 
+/// Convenience rule for all valid subexpressions
+subexpression = _{ (token | "(" ~ expression ~ ")") ~ quantifier? }
 /// Token Expression, i.e. a sequence of tokens in the corpus.
 /// A series of tokens is connected either implicitly via concatenation or explicitly via disjunction
-expression = { (token | "(" ~ expression ~ ")") ~ (disjunc? ~ (token | "(" ~ expression ~ ")"))* }
+expression = { subexpression ~ (disjunc? ~ subexpression)* }
 
 /* Parent Rule */
 

@@ -2,22 +2,42 @@ use std::rc::Rc;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QueryNode {
-    Token(Token),
-    Sequence(Vec<QueryNode>),
-    Alternation(Vec<QueryNode>),
+    Token(Token, Repetitions),
+    Sequence(Vec<QueryNode>, Repetitions),
+    Alternation(Vec<QueryNode>, Repetitions),
+}
+
+impl QueryNode {
+    pub fn repetitions(&self) -> Repetitions {
+        match self {
+            QueryNode::Token(.., repetitions) => *repetitions,
+            QueryNode::Sequence(.., repetitions) => *repetitions,
+            QueryNode::Alternation(.., repetitions) => *repetitions,
+        }
+    }
+
+    pub fn set_repetitions(&mut self, reps: Repetitions) {
+        match self {
+            QueryNode::Token(.., repetitions) => *repetitions = reps,
+            QueryNode::Sequence(.., repetitions) => *repetitions = reps,
+            QueryNode::Alternation(.., repetitions) => *repetitions = reps,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct Repetitions {
+    pub min: usize,
+    pub max: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Token {
     Any {
-        min: usize,
-        max: Option<usize>,
         magnitude: Option<usize>,
     },
     Constrained {
         constraint: TokenConstraint,
-        min: usize,
-        max: Option<usize>,
         magnitude: Option<usize>,
     },
     None,
@@ -90,6 +110,8 @@ impl TokenConstraint {
     }
 }
 
+/// A search pattern, i.e. a search string over a variable.
+/// E.g. "goose" or pos="NN"
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Pattern {
     pub varname: Option<String>,

@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use anyhow::{Ok, Result, anyhow};
 use pest::Parser;
-use pest::iterators::{Pair, Pairs};
+use pest::iterators::{Pair};
 use pest_ascii_tree::print_ascii_tree;
 
 pub mod ast;
@@ -52,6 +52,7 @@ impl Query {
             return Err(anyhow!("Expected expression, got: {:?}", expr.as_rule()));
         }
 
+        let default_reps = ast::Repetitions{min: 1, max: Some(1)};
         let mut nodes: Vec<ast::QueryNode> = Vec::new();
         let mut splits = Vec::new();
 
@@ -64,7 +65,12 @@ impl Query {
 
                 Rule::token => {
                     let inner = self.parse_token(pair)?;
-                    nodes.push(ast::QueryNode::Token(inner));
+                    nodes.push(ast::QueryNode::Token(inner, default_reps));
+                }
+
+                Rule::quantifier => {
+                    let reps = self.parse_quantifier(pair)?;
+                    nodes.last_mut().unwrap().set_repetitions(reps);
                 }
 
                 Rule::disjunc => splits.push(nodes.len()),
@@ -72,9 +78,6 @@ impl Query {
                 _ => unreachable!("Expression got impossible inner rule: {:?}", pair.as_rule()),
             }
         }
-
-        // println!("expr elements:\n{:#?}", nodes);
-        // println!("expr splits: {:?}", splits);
 
         if splits.len() > 0 {
             let mut subvecs = VecDeque::new();
@@ -88,13 +91,13 @@ impl Query {
                 if vec.len() == 1 {
                     vec.pop().unwrap()
                 } else {
-                    ast::QueryNode::Sequence(vec)
+                    ast::QueryNode::Sequence(vec, default_reps)
                 }
             }).collect();
 
-            Ok(ast::QueryNode::Alternation(seqs))
+            Ok(ast::QueryNode::Alternation(seqs, default_reps))
         } else {
-            Ok(ast::QueryNode::Sequence(nodes))
+            Ok(ast::QueryNode::Sequence(nodes, default_reps))
         }
     }
 
@@ -104,13 +107,11 @@ impl Query {
         }
 
         let mut constraint = None;
-        let mut repetition = (1, Some(1));
 
         for pair in token.into_inner() {
             match pair.as_rule() {
                 Rule::atom => constraint = Some(self.parse_atom(pair)?),
                 Rule::constraint => constraint = Some(self.parse_constraint(pair, false)?),
-                Rule::quantifier => repetition = self.parse_quantifier(pair)?,
                 _ => unreachable!("Token got impossible inner rule: {:?}", pair.as_rule()),
             }
         }
@@ -118,14 +119,10 @@ impl Query {
         if let Some(c) = constraint {
             Ok(ast::Token::Constrained {
                 constraint: c,
-                min: repetition.0,
-                max: repetition.1,
                 magnitude: None,
             })
         } else {
             Ok(ast::Token::Any {
-                min: repetition.0,
-                max: repetition.1,
                 magnitude: None,
             })
         }
@@ -170,7 +167,7 @@ impl Query {
         })
     }
 
-    fn parse_quantifier(&self, quantifier: Pair<Rule>) -> Result<(usize, Option<usize>)> {
+    fn parse_quantifier(&self, quantifier: Pair<Rule>) -> Result<ast::Repetitions> {
         if quantifier.as_rule() != Rule::quantifier {
             return Err(anyhow!(
                 "Expected constraint, got: {:?}",
@@ -182,9 +179,9 @@ impl Query {
 
         if q.chars().count() == 1 {
             match q.chars().nth(0).unwrap() {
-                '?' => Ok((0, Some(1))),
-                '+' => Ok((1, None)),
-                '*' => Ok((0, None)),
+                '?' => Ok(ast::Repetitions{ min: 0, max: Some(1)}),
+                '+' => Ok(ast::Repetitions{ min: 1, max: None}),
+                '*' => Ok(ast::Repetitions{ min: 0, max: None}),
                 _ => unreachable!("Invalid quantifier: {}", q),
             }
         } else {
@@ -205,7 +202,7 @@ impl Query {
                 }
             }
             
-            Ok((min, max))
+            Ok(ast::Repetitions{min, max})
         }
     }
 
@@ -271,13 +268,17 @@ impl Query {
 fn main() {
     let q1 = r#""hello" "world" | "hi" [pos="NN"]{,2} | "yo" ("world" | "planet")"#;
     let r = Query::parse(&q1).unwrap();
-    println!("ast:\n{:#?}", r);
+    println!("{:#?}", r);
 
     let q2 = r#"( [pos = "DT"]? [pos = "JJ.*"]* [pos = "NNS?"] | [pos = "NPS?"]+ | [pos = "PP"] ) [!lemma = "say" & !( pos = "V.*" | bla = "arst") & fr = "frfr"]"#;
     let r = Query::parse(q2).unwrap();
-    println!("ast:\n{:#?}", r);
+    println!("{:#?}", r);
 
     let q3 = r#"[pos="test" & !(lemma="blabla" | !bla="blaaa" | !(foo="bar" & bar="baz"))]"#;
     let r = Query::parse(q3).unwrap();
-    println!("ast:\n{:#?}", r);
+    println!("{:#?}", r);
+
+    let q4 = r#"[pos="DT"] ([] [])* [pos="N.+"]+"#;
+    let r = Query::parse(q4).unwrap();
+    println!("{:#?}", r);
 }
