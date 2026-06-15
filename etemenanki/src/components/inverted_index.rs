@@ -38,7 +38,7 @@ impl<'map> InvertedIndex<'map> {
     }
 
     /// Returns an iterator over the postings for type `i`
-    pub fn postings(&self, i: usize) -> PostingsIterator {
+    pub fn postings(&self, i: usize) -> PostingsIterator<'_> {
         let slice = if i < self.n_types() - 1 {
             &self.data[self.offset(i)..self.offset(i + 1)]
         } else {
@@ -188,6 +188,12 @@ impl<'map> CachedInvertedIndex<'map> {
         self.typeinfo
             .get(type_id)
             .map(|(freq, _)| *freq as usize)
+    }
+
+    pub fn combined_frequency(&self, type_ids: &[usize]) -> usize {
+        type_ids.iter()
+            .map(|i| self.frequency(*i).unwrap_or(0))
+            .sum()
     }
 
     /// Returns the postings list of a type

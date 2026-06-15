@@ -75,8 +75,8 @@ impl<'map> StringVector<'map> {
 
     pub fn all_containing<'a, P>(&'a self, pattern: P) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
     where
-        P: Pattern<'a> + Copy + 'a,
-        <P as Pattern<'a>>::Searcher: ReverseSearcher<'a>,
+        P: Pattern + Copy + 'a,
+        <P as Pattern>::Searcher<'a>: ReverseSearcher<'a>,
     {
         let iter = self.iter().enumerate()
             .filter(move |(_, s)| pattern.is_contained_in(*s))
@@ -90,8 +90,8 @@ impl<'map> StringVector<'map> {
 
     pub fn all_ending_with<'a: 'map, P>(&'a self, pattern: P) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
     where
-    P: Pattern<'a> + Copy + 'a,
-    <P as Pattern<'a>>::Searcher: ReverseSearcher<'a>,
+    P: Pattern + Copy + 'a,
+    <P as Pattern>::Searcher<'a>: ReverseSearcher<'a>,
     {
         let iter = self.iter().enumerate()
             .filter(move |(_, s)| pattern.is_suffix_of(*s))
@@ -105,8 +105,8 @@ impl<'map> StringVector<'map> {
 
     pub fn all_starting_with<'a: 'map, P>(&'a self, pattern: P) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
     where
-    P: Pattern<'a> + Copy + 'a,
-    <P as Pattern<'a>>::Searcher: ReverseSearcher<'a>,
+    P: Pattern + Copy + 'a,
+    <P as Pattern>::Searcher<'a>: ReverseSearcher<'a>,
     {
         let iter = self.iter().enumerate()
             .filter(move |(_, s)| pattern.is_prefix_of(*s))
@@ -148,7 +148,7 @@ impl<'map> StringVector<'map> {
         indices.into_iter().map(|x| &self[*x])
     }
 
-    pub fn iter(&self) -> StringVectorIterator {
+    pub fn iter(&self) -> StringVectorIterator<'_> {
         self.into_iter()
     }
 

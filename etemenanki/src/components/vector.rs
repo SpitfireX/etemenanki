@@ -123,7 +123,7 @@ impl<'map> Vector<'map> {
     ///
     /// This always triggers a full block decode on compressed Vectors,
     /// for efficient block cached access use `CachedVector`.
-    pub fn get_row(&self, index: usize) -> Option<VecSlice> {
+    pub fn get_row(&self, index: usize) -> Option<VecSlice<'_>> {
         if index < self.len() {
             Some(self.get_row_unchecked(index))
         } else {
@@ -136,7 +136,7 @@ impl<'map> Vector<'map> {
     ///
     /// This always triggers a full block decode on compressed Vectors,
     /// for efficient block cached access use `CachedVector`.
-    pub fn get_row_unchecked(&self, index: usize) -> VecSlice {
+    pub fn get_row_unchecked(&self, index: usize) -> VecSlice<'_> {
         match *self {
                 Self::Uncompressed { length: _, width, data } => {
                     let start = index * width;

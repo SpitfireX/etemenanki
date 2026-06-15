@@ -94,7 +94,7 @@ impl<'map> Layer<'map> {
         }
     }
 
-    pub fn variable_names(&self) -> hash_map::Keys<String, variables::Variable<'map>> {
+    pub fn variable_names(&self) -> hash_map::Keys<'_, String, variables::Variable<'map>> {
         match self {
             Layer::Primary(LayerData(_, vars)) => vars.variables.keys(),
             Layer::Segmentation(LayerData(_, vars)) => vars.variables.keys(),

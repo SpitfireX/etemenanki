@@ -11,6 +11,6 @@ crate-type = ["cdylib"]
 [dependencies]
 etemenanki = { path = "../etemenanki" }
 flate2 = "1.0.28"
-pyo3 = "0.20.2"
+pyo3 = "0.29.0"
 quick-xml = { version = "0.31.0", default-features = false, features = ["encoding"] }
 uuid = "1.7.0"

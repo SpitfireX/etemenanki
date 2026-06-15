@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-#![feature(hash_extract_if)]
 #![feature(pattern)]
 #![feature(test)]
 
@@ -59,11 +58,11 @@ impl<'map> Datastore<'map> {
         self.layers_by_uuid.get(&uuid)
     }
 
-    pub fn layer_names(&self) -> hash_map::Keys<String, Uuid> {
+    pub fn layer_names(&self) -> hash_map::Keys<'_, String, Uuid> {
         self.uuids_by_name.keys()
     }
 
-    pub fn layer_uuids(&self) -> hash_map::Keys<Uuid, layers::Layer<'map>> {
+    pub fn layer_uuids(&self) -> hash_map::Keys<'_, Uuid, layers::Layer<'map>> {
         self.layers_by_uuid.keys()
     }
 

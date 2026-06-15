@@ -2,21 +2,21 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 #[pyfunction]
-fn encode_varint(py: Python, x: i64) -> PyObject {
+fn encode_varint(py: Python, x: i64) -> Py<PyAny> {
     let mut buffer = [0u8; 9];
     let len = x.encode_varint_into(&mut buffer);
     PyBytes::new(py, &buffer[..len]).into()
 }
 
 #[pyfunction]
-fn encode_varint_unsigned(py: Python, x: u64) -> PyObject {
+fn encode_varint_unsigned(py: Python, x: u64) -> Py<PyAny> {
     let mut buffer = [0u8; 9];
     let len = (x as i64).encode_varint_into(&mut buffer);
     PyBytes::new(py, &buffer[..len]).into()
 }
 
 #[pyfunction]
-fn encode_varint_block(py: Python, ints: Vec<i64>) -> PyObject {
+fn encode_varint_block(py: Python, ints: Vec<i64>) -> Py<PyAny> {
     let mut buffer = vec![0u8; ints.len() * 9];
     let mut blen = 0;
 
@@ -28,7 +28,7 @@ fn encode_varint_block(py: Python, ints: Vec<i64>) -> PyObject {
 }
 
 #[pyfunction]
-fn encode_varint_block_unsigned(py: Python, ints: Vec<u64>) -> PyObject {
+fn encode_varint_block_unsigned(py: Python, ints: Vec<u64>) -> Py<PyAny> {
     let mut buffer = vec![0u8; ints.len() * 9];
     let mut blen = 0;
 
@@ -41,7 +41,7 @@ fn encode_varint_block_unsigned(py: Python, ints: Vec<u64>) -> PyObject {
 
 /// A Python module implemented in Rust.
 #[pymodule]
-fn ziggurat_varint(_py: Python, m: &PyModule) -> PyResult<()> {
+fn ziggurat_varint(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(encode_varint, m)?)?;
     m.add_function(wrap_pyfunction!(encode_varint_unsigned, m)?)?;
     m.add_function(wrap_pyfunction!(encode_varint_block, m)?)?;

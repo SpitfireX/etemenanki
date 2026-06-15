@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 #[pymodule]
 #[pyo3(name="_rustypy")]
-fn module(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn _rustypy(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(encode_indexed_from_a, m)?)?;
     m.add_function(wrap_pyfunction!(encode_indexed_from_p, m)?)?;
     m.add_function(wrap_pyfunction!(encode_plain_from_a, m)?)?;
@@ -268,7 +268,7 @@ impl<R: Read> VrtReader<R> {
         &self.last_line
     }
 
-    pub fn read_next(&mut self) -> Option<ReaderEvent> {
+    pub fn read_next(&mut self) -> Option<ReaderEvent<'_>> {
         self.last_line.clear();
         match self.reader.read_line(&mut self.last_line) {
             Ok(0) => None,

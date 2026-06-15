@@ -74,7 +74,7 @@ impl<'map> Index<'map> {
     }
 
     #[inline]
-    pub fn get_all(&self, key: i64) -> IndexIterator {
+    pub fn get_all(&self, key: i64) -> IndexIterator<'_> {
         IndexIterator::new(*self, key)
     }
 
