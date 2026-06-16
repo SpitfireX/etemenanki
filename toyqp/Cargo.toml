@@ -8,3 +8,4 @@ anyhow = "1.0.102"
 pest = "2.8.6"
 pest_ascii_tree = "0.1.0"
 pest_derive = "2.8.6"
+etemenanki = { path = "../etemenanki" }
