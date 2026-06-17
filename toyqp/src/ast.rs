@@ -1,4 +1,3 @@
-use std::rc::Rc;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QueryNode {
@@ -47,7 +46,7 @@ pub enum Token {
 pub enum TokenConstraint {
     Pattern {
         negated: bool,
-        pattern: Rc<Pattern>,
+        pattern: usize
     },
     And {
         negated: bool,
