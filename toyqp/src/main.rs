@@ -1,4 +1,3 @@
-pub mod ast;
 pub mod query;
 #[cfg(test)]
 mod tests;
