@@ -243,14 +243,15 @@ impl Query {
             assert!(ops.len() == subcnstrs.len()-1, "Wrong number of bool ops in constraint list");
 
             // we build the constraint tree from bottom up, last parsed subconstraint is right child of first node
-            let mut right = Box::new(subcnstrs.pop().unwrap());
+            let mut right = subcnstrs.pop().unwrap();
 
             // there will be one node per operator in the input
             for op in ops.iter().rev() {
                 let left = Box::new(subcnstrs.pop().unwrap());
+                let bright = Box::new(right);
                 let mut node = match op.unwrap() {
-                    '&' => ast::TokenConstraint::And { negated, left, right },
-                    '|' => ast::TokenConstraint::Or { negated, left, right },
+                    '&' => ast::TokenConstraint::And { negated, left, right: bright },
+                    '|' => ast::TokenConstraint::Or { negated, left, right: bright },
                     _ => unreachable!("Constraint got impossible boolop: {:?}", op),
                 };
 
@@ -261,10 +262,10 @@ impl Query {
                     node = node.normalize();
                 }
 
-                right = Box::new(node);
+                right = node;
             }
 
-            Ok(*right)
+            Ok(right)
         }
     }
 
@@ -277,6 +278,6 @@ impl Query {
 
 fn main() {
     let corpus = Datastore::open("../etemenanki/testdata/simpledickens").unwrap();
-    let mut query = Query::parse(r#""hello" "world!""#).unwrap();
+    let mut query = Query::parse(r#""hello" "world""#).unwrap();
     query.execute(&corpus);
 }
