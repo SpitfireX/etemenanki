@@ -160,6 +160,12 @@ impl<'map> IndexedStringVariable<'map> {
     pub fn n_types(&self) -> usize {
         self.header.dim2()
     }
+
+    /// Get the lexicon ID of a given string by lookup in the index component
+    pub fn lex_id(&self, string: &str) -> Option<usize> {
+        let hash  = string.fnv_hash();
+        self.index().get_first(hash).map(|i| i as usize)
+    }
 }
 
 impl<'map> TryFrom<Container<'map>> for IndexedStringVariable<'map> {
