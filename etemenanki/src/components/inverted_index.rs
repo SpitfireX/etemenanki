@@ -206,7 +206,7 @@ impl<'map> CachedInvertedIndex<'map> {
             return Some(postings);
         }
 
-        None
+        cache.get(&type_id).cloned()
     }
 
     /// Decodes the postings list for a type
