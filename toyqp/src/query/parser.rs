@@ -121,26 +121,38 @@ fn parse_atom(ps: &mut ParseState, atom: Pair<Rule>) -> Result<ast::TokenConstra
     let mut negated = false;
     let mut is_regex = false;
     let mut varname = None;
-    let mut searchstr = None;
+    let mut str_rule = None;
 
     for pair in atom.into_inner() {
         match pair.as_rule() {
             Rule::neg => negated = true,
             Rule::regex => {
-                searchstr = Some(pair.as_str().to_owned());
+                str_rule = Some(pair.as_str().to_owned());
                 is_regex = true;
             }
-            Rule::str => searchstr = Some(pair.as_str().to_owned()),
+            Rule::str => str_rule = Some(pair.as_str().to_owned()),
             Rule::ident => varname = Some(pair.as_str().to_owned()),
             _ => unreachable!("Atom got impossible inner rule: {:?}", pair.as_rule()),
         }
     }
 
-    let searchstr = searchstr.unwrap();
+    let searchstr = {
+        let str_rule = str_rule.unwrap();
+        let content = &str_rule[1..str_rule.len()-1];
+        let mut s = String::new();
+
+        // add anchors to regex if not present, otherwise we'd match subtokens
+        if is_regex && !content.starts_with('^') { s.push('^'); }
+        s.push_str(content);
+        if is_regex && !content.ends_with('$') { s.push('$'); }
+
+        s
+    };
+
     let pattern = ast::Pattern {
         varname,
         is_regex,
-        searchstr: searchstr[1..searchstr.len()-1].to_owned(),
+        searchstr,
         magnitude: None,
     };
     // intern the pattern in the global pattern set
