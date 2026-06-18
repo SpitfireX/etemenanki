@@ -20,7 +20,7 @@ fn main() -> Result<()> {
         .as_segmentation()
         .unwrap();
 
-    let id = words.lexicon().find_match("Lukacs-Bloch-Benjamin-Kracauer-Horkheimer-Adorno-Lefebvre-Harvey-Postone").unwrap();
+    let id = words.lexicon().scan("Lukacs-Bloch-Benjamin-Kracauer-Horkheimer-Adorno-Lefebvre-Harvey-Postone").unwrap();
 
     let cpos = words.inverted_index().get_postings(id).unwrap().get(0).unwrap();
 

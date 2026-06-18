@@ -9,6 +9,7 @@ use crate::container::BomEntry;
 
 use super::{CachedVector, FnvHash, Index, InvertedIndex, Vector};
 
+/// Ziggurat StringVector component (type `0x03`)
 #[derive(Debug, Clone, Copy)]
 pub struct StringVector<'map> {
     length: usize,
@@ -17,7 +18,9 @@ pub struct StringVector<'map> {
 }
 
 impl<'map> StringVector<'map> {
-    pub fn all_matching_regex(&self, regex: &str) -> Option<MatchIterator<'map, impl Iterator<Item = usize> + '_>> {
+    /// Returns an Iterator (`MatchIterator`) over all indices with values matching `regex`.
+    /// This scans linearly through the whole StringVector with worst case performance of O(`len()`).
+    pub fn scan_all_matching_regex(&self, regex: &str) -> Option<MatchIterator<'map, impl Iterator<Item = usize> + '_>> {
         Regex::new(regex).ok()
             .map(|regex| {
                 let iter = self.iter().enumerate()
@@ -31,6 +34,8 @@ impl<'map> StringVector<'map> {
             })
     }
 
+    /// Returns a Vec of all indices with values matching `regex`.
+    /// This scans linearly through the whole StringVector with worst case performance of O(`len()`).
     pub fn get_all_matching_regex(&self, regex: &str) -> Vec<usize> {
         let mut output = Vec::new();
 
@@ -46,7 +51,9 @@ impl<'map> StringVector<'map> {
         output
     }
 
-    pub fn all_matching<'a>(&'a self, string: &'a str) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
+    /// Returns an iterator (`MatchIterator`) over all indices with values equal to `string`.
+    /// This scans linearly through the whole StringVector with worst case performance of O(`len()`).
+    pub fn scan_all<'a>(&'a self, string: &'a str) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
     {
         let iter = self.iter().enumerate()
             .filter(move |(_, s)| *s == string)
@@ -58,7 +65,9 @@ impl<'map> StringVector<'map> {
         }
     }
 
-    pub fn find_match(&self, string: &str) -> Option<usize> {
+    /// Scans the string vector for the first index with value equal to `string`.
+    /// This scans linearly through the whole StringVector with worst case performance of O(`len()`).
+    pub fn scan(&self, string: &str) -> Option<usize> {
         for i in 0..self.length {
             let current = self.get_unchecked(i);
             if current == string {
@@ -68,12 +77,16 @@ impl<'map> StringVector<'map> {
         None
     }
 
-    pub fn find_regex(&self, regex: &str) -> Option<usize> {
-        self.all_matching_regex(regex)
+    /// Scans the string vector for the first index with value matching `regex`.
+    /// This scans linearly through the whole StringVector with worst case performance of O(`len()`).
+    pub fn scan_regex(&self, regex: &str) -> Option<usize> {
+        self.scan_all_matching_regex(regex)
             .and_then(| mut iter | iter.next())
     }
 
-    pub fn all_containing<'a, P>(&'a self, pattern: P) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
+    /// Returns an Iterator (`MatchIterator`) over all indices with string values containing `pattern`.
+    /// This scans linearly through the whole StringVector with worst case performance of O(`len()`).
+    pub fn scan_all_containing<'a, P>(&'a self, pattern: P) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
     where
         P: Pattern + Copy + 'a,
         <P as Pattern>::Searcher<'a>: ReverseSearcher<'a>,
@@ -88,7 +101,9 @@ impl<'map> StringVector<'map> {
         }
     }
 
-    pub fn all_ending_with<'a: 'map, P>(&'a self, pattern: P) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
+    /// Returns an Iterator (`MatchIterator`) over all indices with string values ending with `pattern`.
+    /// This scans linearly through the whole StringVector with worst case performance of O(`len()`).
+    pub fn scan_all_ending_with<'a: 'map, P>(&'a self, pattern: P) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
     where
     P: Pattern + Copy + 'a,
     <P as Pattern>::Searcher<'a>: ReverseSearcher<'a>,
@@ -103,7 +118,9 @@ impl<'map> StringVector<'map> {
         }
     }
 
-    pub fn all_starting_with<'a: 'map, P>(&'a self, pattern: P) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
+    /// Returns an Iterator (`MatchIterator`) over all indices with string values starting with `pattern`.
+    /// This scans linearly through the whole StringVector with worst case performance of O(`len()`).
+    pub fn scan_all_starting_with<'a: 'map, P>(&'a self, pattern: P) -> MatchIterator<'map, impl Iterator<Item = usize> + 'a>
     where
     P: Pattern + Copy + 'a,
     <P as Pattern>::Searcher<'a>: ReverseSearcher<'a>,
@@ -118,6 +135,7 @@ impl<'map> StringVector<'map> {
         }
     }
 
+    /// The primary constructor
     pub fn from_parts(n: usize, offsets: &'map [i64], data: &'map [u8]) -> Self {
         assert!(n + 1 == offsets.len());
         Self {
@@ -127,6 +145,8 @@ impl<'map> StringVector<'map> {
         }
     }
 
+    /// Gets the raw string value at `index`.
+    /// This uses `get_unchecked` internally with an additional bounds check.
     pub fn get(&self, index: usize) -> Option<&'map str> {
         if index < self.len() {
             Some(&self.get_unchecked(index))
@@ -135,12 +155,18 @@ impl<'map> StringVector<'map> {
         }
     }
 
+    /// Gets the raw string value at `index`
+    /// # Panics
+    /// This function panics when `index` is out of bounds (`index` >= `len()`).
     pub fn get_unchecked(&self, index: usize) -> &'map str {
         let start = self.offsets[index] as usize;
         let end = self.offsets[index + 1] as usize;
         unsafe { std::str::from_utf8_unchecked(&self.data[start..end - 1]) }
     }
 
+    /// Returns an iterator over all raw string values for the list of indices in `indices`.
+    /// # Panics
+    /// This function panics when a given index is out of bounds (`index` >= `len()`)
     pub fn get_all<'a: 'map, I>(&'a self, indices: I) -> impl Iterator<Item = &'map str>
     where
         I: IntoIterator<Item = &'a usize>,
@@ -148,10 +174,12 @@ impl<'map> StringVector<'map> {
         indices.into_iter().map(|x| &self[*x])
     }
 
+    /// Returns an iterator (`StringVectorIterator`) which returns all string values in the Vector in index order
     pub fn iter(&self) -> StringVectorIterator<'_> {
         self.into_iter()
     }
 
+    /// The number of string values in the vector.
     pub fn len(&self) -> usize {
         self.length
     }
@@ -203,6 +231,7 @@ impl<'map> ops::Index<usize> for StringVector<'map> {
     }
 }
 
+/// Iterator over all strings in the vector
 pub struct StringVectorIterator<'map> {
     vec: StringVector<'map>,
     index: usize,
@@ -234,6 +263,7 @@ impl<'a, 'map> IntoIterator for &'a StringVector<'map> {
     }
 }
 
+/// Generic match iterator returning index positions as `usize`.
 pub struct MatchIterator<'map, I>
 where
     I: Iterator<Item = usize>
@@ -246,6 +276,7 @@ impl<'map, I> MatchIterator<'map, I>
 where
     I: Iterator<Item = usize>
 {
+    /// Transforms the MatchIterator into an iterator yielding string references
     pub fn as_strs(self) -> impl Iterator<Item = &'map str> {
         let MatchIterator{strvec, inner} = self;
         inner.map(move |i| strvec.get_unchecked(i))

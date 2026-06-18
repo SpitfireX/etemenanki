@@ -451,7 +451,7 @@ fn string_vec_startswith() {
         .as_indexed_string()
         .unwrap();
 
-    for id in words.lexicon().all_starting_with("be") {
+    for id in words.lexicon().scan_all_starting_with("be") {
         println!("{}: {}", id, words.lexicon().get_unchecked(id));
     }
 }
@@ -463,7 +463,7 @@ fn string_vec_endswith() {
         .as_indexed_string()
         .unwrap();
 
-    for id in words.lexicon().all_ending_with("car") {
+    for id in words.lexicon().scan_all_ending_with("car") {
         println!("{}: {}", id, words.lexicon().get_unchecked(id));
     }
 }
@@ -475,7 +475,7 @@ fn string_vec_regex() {
         .as_indexed_string()
         .unwrap();
 
-    for id in words.lexicon().all_matching_regex("^be.*$").unwrap() {
+    for id in words.lexicon().scan_all_matching_regex("^be.*$").unwrap() {
         println!("{}: {}", id, words.lexicon().get_unchecked(id));
     }
 }
@@ -489,7 +489,7 @@ fn string_vec_startswith_raw(b: &mut Bencher) {
         .unwrap();
 
     b.iter(|| {
-        for id in words.lexicon().all_starting_with("be") {
+        for id in words.lexicon().scan_all_starting_with("be") {
             black_box(id);
         }
     })
@@ -503,7 +503,7 @@ fn string_vec_startswith_str(b: &mut Bencher) {
         .unwrap();
 
     b.iter(|| {
-        for id in words.lexicon().all_starting_with("be").as_strs() {
+        for id in words.lexicon().scan_all_starting_with("be").as_strs() {
             black_box(id);
         }
     })
