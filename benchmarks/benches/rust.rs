@@ -20,7 +20,7 @@ fn pattern_prefix(b: &mut Bencher) {
         .unwrap();
 
     b.iter(|| {
-        for i in words.lexicon().all_starting_with("be") {
+        for i in words.lexicon().scan_all_starting_with("be") {
             black_box(i);
         }
     })
@@ -33,7 +33,7 @@ fn regex_prefix(b: &mut Bencher) {
         .unwrap();
 
     b.iter(|| {
-        for i in words.lexicon().all_matching_regex("^be").unwrap() {
+        for i in words.lexicon().scan_all_matching_regex("^be").unwrap() {
             black_box(i);
         }
     })
@@ -46,7 +46,7 @@ fn pattern_contains(b: &mut Bencher) {
         .unwrap();
 
     b.iter(|| {
-        for i in words.lexicon().all_containing("beam") {
+        for i in words.lexicon().scan_all_containing("beam") {
             black_box(i);
         }
     })
@@ -59,7 +59,7 @@ fn regex_contains(b: &mut Bencher) {
         .unwrap();
 
     b.iter(|| {
-        for i in words.lexicon().all_matching_regex("beam").unwrap() {
+        for i in words.lexicon().scan_all_matching_regex("beam").unwrap() {
             black_box(i);
         }
     })

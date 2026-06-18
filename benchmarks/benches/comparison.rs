@@ -473,7 +473,7 @@ fn z_baseline_lexicon_lookup(b: &mut Bencher) {
         .unwrap();
 
     b.iter(|| {
-        black_box(words.lexicon().find_match("ziggurat"));
+        black_box(words.lexicon().scan("ziggurat"));
     })
 }
 
