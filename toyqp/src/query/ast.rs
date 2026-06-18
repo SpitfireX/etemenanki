@@ -117,4 +117,5 @@ pub struct Pattern {
     pub searchstr: String,
     pub is_regex: bool,
     pub magnitude: Option<usize>,
+    pub tids: Option<Vec<usize>>,
 }

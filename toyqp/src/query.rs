@@ -30,8 +30,37 @@ impl Query {
     }
 
     pub fn execute(&mut self, corpus: &Datastore) {
-        let primary = corpus.layer_by_name("primary").unwrap();
+        println!("Query execution");
+        println!("-------------------\n");
 
-        // patterns cannot be borrowed as mut uuuuuuhhhhhhhh
+        let primary = corpus.layer_by_name("primary").unwrap();
+        let default_varname = "word"; // todo: remove hardcoded value
+
+        println!("resolving patterns");
+        // calculate magnitude of patterns
+        for (i, pat) in self.patterns.iter_mut().enumerate() {
+            let varname = pat.varname.as_deref().unwrap_or(default_varname);
+            let var = primary.variable_by_name(varname).unwrap().as_indexed_string().unwrap();
+
+            // gather list of type IDs for searchstring
+            pat.tids = if pat.is_regex {
+                var.lexicon()
+                    .scan_all_matching_regex(&pat.searchstr)
+                    .map(|i| i.collect())
+                    .filter(|v: &Vec<usize>| v.len() > 0)
+            } else {
+                var.lex_id(&pat.searchstr)
+                    .map(|id| vec![id])
+            };
+
+            if let Some(tids) = &pat.tids {
+                let magnitude = var.inverted_index().combined_frequency(tids);
+                pat.magnitude = Some(magnitude);
+            } else {
+                pat.magnitude = Some(0);
+            }
+
+            println!("[{i}] {:#?}\n", pat);
+        }
     }
 }

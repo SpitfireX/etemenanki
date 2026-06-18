@@ -154,6 +154,7 @@ fn parse_atom(ps: &mut ParseState, atom: Pair<Rule>) -> Result<ast::TokenConstra
         is_regex,
         searchstr,
         magnitude: None,
+        tids: None,
     };
     // intern the pattern in the global pattern set
     let (i, _) = ps.patterns.insert_full(pattern);
