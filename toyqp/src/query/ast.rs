@@ -67,12 +67,16 @@ impl QueryNode {
                 if repetitions.max == Some(0) {
                     self.mark_dead();
                 } else {
-                    _ = query_nodes.extract_if(.., |node| {
+                    query_nodes.extract_if(.., |node| {
                         node.prune();
                         matches!(node, QueryNode::None)
-                    });
+                    }).for_each(drop); // to run the whole ExtractIf iterator
 
-                    if query_nodes.is_empty() {
+
+                    if query_nodes.len() == 1 {
+                        let inner = query_nodes.pop().unwrap();
+                        *self = inner;
+                    } else if query_nodes.is_empty() {
                         self.mark_dead();
                     }
                 }
