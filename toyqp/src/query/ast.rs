@@ -1,32 +1,97 @@
+use crate::query::{Query, ast::Token::Constrained, parser::Rule::query};
+
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QueryNode {
     Token(Token, Repetitions),
     Sequence(Vec<QueryNode>, Repetitions),
     Alternation(Vec<QueryNode>, Repetitions),
+    None,
 }
 
 impl QueryNode {
     pub fn repetitions(&self) -> Repetitions {
         match self {
-            QueryNode::Token(.., repetitions) => *repetitions,
-            QueryNode::Sequence(.., repetitions) => *repetitions,
-            QueryNode::Alternation(.., repetitions) => *repetitions,
+            Self::Token(.., repetitions) => *repetitions,
+            Self::Sequence(.., repetitions) => *repetitions,
+            Self::Alternation(.., repetitions) => *repetitions,
+            Self::None => Repetitions { min: 0, max: Some(0) },
         }
     }
 
     pub fn set_repetitions(&mut self, reps: Repetitions) {
         match self {
-            QueryNode::Token(.., repetitions) => *repetitions = reps,
-            QueryNode::Sequence(.., repetitions) => *repetitions = reps,
-            QueryNode::Alternation(.., repetitions) => *repetitions = reps,
+            Self::Token(.., repetitions) => *repetitions = reps,
+            Self::Sequence(.., repetitions) => *repetitions = reps,
+            Self::Alternation(.., repetitions) => *repetitions = reps,
+            Self::None => (), // nop
         }
+    }
+
+    /// This function recursively prunes the query node tee before execution.
+    /// 
+    /// All nodes that don't have any matches in the corpus get eliminated. This means:
+    /// * Tokens with estimated magnitude of 0 are marked as dead
+    /// * Sequences containing any dead node or with a maximum repetition of 0 are marked as dead
+    /// * Alternations remove all dead nodes and are makred dead themselves if no alive branches remain or the maximum repitisions are 0
+    pub fn prune(&mut self) {
+        match self {
+            Self::Token(token, repetitions) => {
+                token.prune();
+                if repetitions.max == Some(0) || matches!(token, Token::None) {
+                    self.eliminate();
+                }
+            },
+
+            Self::Sequence(query_nodes, repetitions) => {
+                if repetitions.max == Some(0) {
+                    self.eliminate();
+                } else {
+                    for node in query_nodes {
+                        node.prune();
+
+                        // if any of the nodes in the sequence becomes none,
+                        // the sequence can no longer be matched
+                        if matches!(node, QueryNode::None) {
+                            self.eliminate();
+                            break;
+                        }
+                    }
+                }
+            }
+
+            Self::Alternation(query_nodes, repetitions) => {
+                if repetitions.max == Some(0) {
+                    self.eliminate();
+                } else {
+                    _ = query_nodes.extract_if(.., |node| {
+                        node.prune();
+                        matches!(node, QueryNode::None)
+                    });
+
+                    if query_nodes.is_empty() {
+                        self.eliminate();
+                    }
+                }
+            }
+
+            Self::None => (), // nop
+        }
+    }
+
+    pub fn eliminate(&mut self) {
+        *self = Self::None;
     }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Repetitions {
+    /// Minimum number of repetitions.
+    /// This is either zero or n.
     pub min: usize,
+    /// Maximum number of repetitions.
+    /// This is None for unbounded repetition or
+    /// Some(n) for a bounded repetition including zero.
     pub max: Option<usize>,
 }
 
@@ -40,6 +105,18 @@ pub enum Token {
         magnitude: Option<usize>,
     },
     None,
+}
+
+impl Token {
+    /// Marks the token as dead if it doesn't have any matches in the corpus.
+    /// Internally this will change the token to `Token::None`.
+    pub fn prune(&mut self) {
+        if let Self::Constrained { constraint: _,  magnitude } = self {
+            if magnitude.is_some_and(|m| m == 0) {
+                *self = Self::None; // eliminate self
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

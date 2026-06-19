@@ -36,7 +36,7 @@ impl Query {
         let primary = corpus.layer_by_name("primary").unwrap();
         let default_varname = "word"; // todo: remove hardcoded value
 
-        println!("resolving patterns");
+        println!("resolving patterns...");
         // calculate magnitude of patterns
         for (i, pat) in self.patterns.iter_mut().enumerate() {
             let varname = pat.varname.as_deref().unwrap_or(default_varname);
@@ -62,5 +62,12 @@ impl Query {
 
             println!("[{i}] {:#?}\n", pat);
         }
+
+        println!("resolving constraints...");
+        
+
+        // println!("pruning tree...");
+        // self.evaltree.prune();
+        // self.print_debug();
     }
 }
