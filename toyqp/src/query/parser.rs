@@ -113,7 +113,7 @@ fn parse_token(ps: &mut ParseState, token: Pair<Rule>) -> Result<ast::Token> {
     }
 }
 
-fn parse_atom(ps: &mut ParseState, atom: Pair<Rule>) -> Result<ast::TokenConstraint> {
+fn parse_atom(ps: &mut ParseState, atom: Pair<Rule>) -> Result<ast::ConstraintNode> {
     if atom.as_rule() != Rule::atom {
         return Err(anyhow!("Expected atom, got: {:?}", atom.as_rule()));
     }
@@ -159,7 +159,7 @@ fn parse_atom(ps: &mut ParseState, atom: Pair<Rule>) -> Result<ast::TokenConstra
     // intern the pattern in the global pattern set
     let (i, _) = ps.patterns.insert_full(pattern);
 
-    Ok(ast::TokenConstraint::Pattern {
+    Ok(ast::ConstraintNode::Pattern {
         negated,
         pattern: i,
     })
@@ -204,7 +204,7 @@ fn parse_quantifier(_ps: &mut ParseState, quantifier: Pair<Rule>) -> Result<ast:
     }
 }
 
-fn parse_constraint(ps: &mut ParseState, constraint: Pair<Rule>, negated: bool) -> Result<ast::TokenConstraint> {
+fn parse_constraint(ps: &mut ParseState, constraint: Pair<Rule>, negated: bool) -> Result<ast::ConstraintNode> {
     if constraint.as_rule() != Rule::constraint {
         return Err(anyhow!(
             "Expected constraint, got: {:?}",
@@ -244,8 +244,8 @@ fn parse_constraint(ps: &mut ParseState, constraint: Pair<Rule>, negated: bool) 
             let left = Box::new(subcnstrs.pop().unwrap());
             let bright = Box::new(right);
             let mut node = match op.unwrap() {
-                '&' => ast::TokenConstraint::And { negated, left, right: bright },
-                '|' => ast::TokenConstraint::Or { negated, left, right: bright },
+                '&' => ast::ConstraintNode::And { negated, left, right: bright },
+                '|' => ast::ConstraintNode::Or { negated, left, right: bright },
                 _ => unreachable!("Constraint got impossible boolop: {:?}", op),
             };
 

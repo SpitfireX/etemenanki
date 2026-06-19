@@ -9,6 +9,9 @@ pub enum QueryNode {
     None,
 }
 
+/// Nodes of the query evaluation tree
+/// 
+/// This is a recursive tree of repetitions and alternations with `Token`s as its leaves
 impl QueryNode {
     pub fn repetitions(&self) -> Repetitions {
         match self {
@@ -39,13 +42,13 @@ impl QueryNode {
             Self::Token(token, repetitions) => {
                 token.prune();
                 if repetitions.max == Some(0) || matches!(token, Token::None) {
-                    self.eliminate();
+                    self.mark_dead();
                 }
             },
 
             Self::Sequence(query_nodes, repetitions) => {
                 if repetitions.max == Some(0) {
-                    self.eliminate();
+                    self.mark_dead();
                 } else {
                     for node in query_nodes {
                         node.prune();
@@ -53,7 +56,7 @@ impl QueryNode {
                         // if any of the nodes in the sequence becomes none,
                         // the sequence can no longer be matched
                         if matches!(node, QueryNode::None) {
-                            self.eliminate();
+                            self.mark_dead();
                             break;
                         }
                     }
@@ -62,7 +65,7 @@ impl QueryNode {
 
             Self::Alternation(query_nodes, repetitions) => {
                 if repetitions.max == Some(0) {
-                    self.eliminate();
+                    self.mark_dead();
                 } else {
                     _ = query_nodes.extract_if(.., |node| {
                         node.prune();
@@ -70,7 +73,7 @@ impl QueryNode {
                     });
 
                     if query_nodes.is_empty() {
-                        self.eliminate();
+                        self.mark_dead();
                     }
                 }
             }
@@ -79,7 +82,7 @@ impl QueryNode {
         }
     }
 
-    pub fn eliminate(&mut self) {
+    pub fn mark_dead(&mut self) {
         *self = Self::None;
     }
 }
@@ -98,10 +101,11 @@ pub struct Repetitions {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Token {
     Any {
+        // This is always equal to the variable length, but we'll explicitly intern it for now
         magnitude: Option<usize>,
     },
     Constrained {
-        constraint: TokenConstraint,
+        constraint: ConstraintNode,
         magnitude: Option<usize>,
     },
     None,
@@ -113,36 +117,39 @@ impl Token {
     pub fn prune(&mut self) {
         if let Self::Constrained { constraint: _,  magnitude } = self {
             if magnitude.is_some_and(|m| m == 0) {
-                *self = Self::None; // eliminate self
+                *self = Self::None; // mark self as dead
             }
         }
     }
 }
 
+/// Nodes of the token constraint tree
+/// 
+/// This is a binary tree of operators with `Pattern`s as its leaves.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum TokenConstraint {
+pub enum ConstraintNode {
     Pattern {
         negated: bool,
         pattern: usize
     },
     And {
         negated: bool,
-        left: Box<TokenConstraint>,
-        right: Box<TokenConstraint>,
+        left: Box<ConstraintNode>,
+        right: Box<ConstraintNode>,
     },
     Or {
         negated: bool,
-        left: Box<TokenConstraint>,
-        right: Box<TokenConstraint>,
+        left: Box<ConstraintNode>,
+        right: Box<ConstraintNode>,
     },
 }
 
-impl TokenConstraint {
+impl ConstraintNode {
     pub fn negated(&self) -> bool {
         match self {
-            TokenConstraint::Pattern { negated, .. } => *negated,
-            TokenConstraint::And { negated, .. } => *negated,
-            TokenConstraint::Or { negated, .. } => *negated,
+            Self::Pattern { negated, .. } => *negated,
+            Self::And { negated, .. } => *negated,
+            Self::Or { negated, .. } => *negated,
         }
     }
 
