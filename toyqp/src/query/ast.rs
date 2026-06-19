@@ -1,5 +1,3 @@
-use crate::query::{Query, ast::Token::Constrained, parser::Rule::query};
-
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QueryNode {
@@ -89,6 +87,30 @@ impl QueryNode {
     pub fn mark_dead(&mut self) {
         *self = Self::None;
     }
+
+    /// This function recursively traverses the whole query node tree and performs magnitude resolution
+    /// for all `Token` leaf nodes.
+    /// 
+    /// This method needs to be called before `prune()` so that prune has any effect.
+    /// 
+    /// Todo: This implementation is a bit ugly right now since it wouldn't need to be recursive with
+    /// better data structure design. In the future Tokens should be externed into a contiguous array
+    /// so that this resolution step could be performed in the query module directly (without having
+    /// to pass state via arguments);
+    pub fn resolve_magnitude(&mut self, patterns: &[Pattern], max_magnitude: usize) {
+        match self {
+            Self::None => (),
+
+            Self::Sequence(query_nodes, ..) |
+            Self::Alternation(query_nodes, ..) => {
+                for node in query_nodes {
+                    node.resolve_magnitude(patterns, max_magnitude);
+                }
+            }
+
+            Self::Token(token, ..) => token.resolve_magnitude(patterns, max_magnitude),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -123,6 +145,18 @@ impl Token {
             if magnitude.is_some_and(|m| m == 0) {
                 *self = Self::None; // mark self as dead
             }
+        }
+    }
+
+    /// See `QueryNode::resolve_magnitude()`
+    fn resolve_magnitude(&mut self, patterns: &[Pattern], max_magnitude: usize) {
+        match self {
+            Self::None => (),
+
+            Self::Any { magnitude } => *magnitude = Some(max_magnitude),
+
+            Self::Constrained { constraint, magnitude } => 
+                *magnitude = Some(constraint.estimate_magnitude(patterns, max_magnitude)),
         }
     }
 }
@@ -194,6 +228,56 @@ impl ConstraintNode {
                 right: Box::new(right.normalize()),
             },
         }
+    }
+
+    /// Uses the magnitude of each subpattern to estimate the whole constraint tree's magnitude.
+    /// 
+    /// Estimation works the following way:
+    /// * Patterns: m(p) = m(p); m(!p) = max - m(p)
+    /// * And: m(and) = min(m(left), m(right)); m(!and) = max - m(and)
+    /// * Or: m(or) = m(left) + m(right); m(!or) = max - m(or)
+    /// 
+    /// In general the value returned will be 0 <= m < max
+    fn estimate_magnitude(&self, patterns: &[Pattern], max_magnitude: usize) -> usize {
+        let magnitude = match self {
+            Self::Pattern { negated, pattern } => {
+                let magnitude = &patterns[*pattern].magnitude;
+                
+                if let Some(size) = magnitude {
+                    if *negated {
+                        return max_magnitude - *size;
+                    } else {
+                        return *size;
+                    }
+                }
+
+                0
+            }
+
+            Self::And { negated, left, right } => {
+                let lmag = left.estimate_magnitude(patterns, max_magnitude);
+                let rmag = right.estimate_magnitude(patterns, max_magnitude);
+
+                if *negated {
+                    max_magnitude - lmag.min(rmag)
+                } else {
+                    lmag.min(rmag)
+                }
+            }
+
+            Self::Or { negated, left, right } => {
+                let lmag = left.estimate_magnitude(patterns, max_magnitude);
+                let rmag = right.estimate_magnitude(patterns, max_magnitude);
+
+                if *negated {
+                    max_magnitude - (lmag + rmag)
+                } else {
+                    lmag + rmag
+                }
+            }
+        };
+
+        magnitude.clamp(0, max_magnitude)
     }
 }
 

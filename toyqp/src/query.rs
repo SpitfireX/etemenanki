@@ -64,10 +64,12 @@ impl Query {
         }
 
         println!("resolving constraints...");
-        
+        let max_magnitude = primary.variable_by_name(&default_varname).unwrap().as_indexed_string().unwrap().len();
+        self.evaltree.resolve_magnitude(&self.patterns, max_magnitude);
 
-        // println!("pruning tree...");
-        // self.evaltree.prune();
-        // self.print_debug();
+        println!("pruning tree...\n");
+        self.evaltree.prune();
+
+        self.print_debug();
     }
 }
